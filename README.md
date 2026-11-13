@@ -1,5 +1,3 @@
-# open-health-data
-to gather health records to a file
 # Open Health Data
 
 An open-source project for collecting a patient's own medical records, starting with blood work lab results, organizing them in one standardized format, and publishing them as an open dataset with interactive charts.

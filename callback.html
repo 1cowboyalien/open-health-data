@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Open Health Data – sign-in complete</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 48px auto; padding: 0 20px; line-height: 1.6; color: #222; }
+  h1 { font-size: 22px; font-weight: 600; }
+  textarea { width: 100%; height: 110px; font-family: ui-monospace, monospace; font-size: 13px; padding: 8px; box-sizing: border-box; }
+  button { margin-top: 8px; padding: 8px 16px; font-size: 15px; cursor: pointer; }
+  .err { color: #a00; }
+  .note { color: #666; font-size: 14px; }
+</style>
+</head>
+<body>
+  <h1 id="title">Sign-in complete</h1>
+  <div id="ok" hidden>
+    <p>Copy the text below and paste it into the terminal where <code>epic_pull.py</code> is waiting.</p>
+    <textarea id="payload" readonly></textarea>
+    <button id="copy">Copy</button> <span id="copied"></span>
+    <p class="note">This page runs entirely in your browser and sends nothing anywhere. The code expires in a few minutes and only works together with a secret held by the script on your computer.</p>
+  </div>
+  <div id="bad" hidden>
+    <p class="err" id="errmsg"></p>
+  </div>
+<script>
+  const q = new URLSearchParams(window.location.search);
+  if (q.get("error")) {
+    document.getElementById("title").textContent = "Sign-in failed";
+    document.getElementById("errmsg").textContent = q.get("error") + ": " + (q.get("error_description") || "");
+    document.getElementById("bad").hidden = false;
+  } else if (q.get("code")) {
+    document.getElementById("payload").value = window.location.search.slice(1);
+    document.getElementById("ok").hidden = false;
+    document.getElementById("copy").onclick = async () => {
+      const t = document.getElementById("payload");
+      try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand("copy"); }
+      document.getElementById("copied").textContent = "Copied";
+    };
+  } else {
+    document.getElementById("title").textContent = "Open Health Data";
+    document.getElementById("errmsg").textContent = "This page receives the sign-in result from a patient portal. Nothing to show here.";
+    document.getElementById("bad").hidden = false;
+  }
+  // Remove the code from the address bar and browser history.
+  history.replaceState(null, "", window.location.pathname);
+</script>
+</body>
+</html>

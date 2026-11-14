@@ -70,9 +70,9 @@ An **open-source project** that collects a patient's own medical records into on
   - Duplicate names: "Specific Gravity" vs "Specific Gravity, Urine"; "pH, Urine" vs "Urine pH".
 
 ### Knowledge Base
-- Exists at `/Volumes/ssd70/Cancer/KnowleageBase/` (spelled that way on disk), with `README.md` as the index. **No topics yet.**
-- A `knowledge-base` skill was written and offered to save in the Claude app. For Claude Code, install it at `~/.claude/skills/knowledge-base/SKILL.md`; the file is in `handoff/` here. Not confirmed installed.
-- Today's candidate lessons are **not yet saved** to the real Knowledge Base (only a demo copy): Epic registration pitfalls, and GitHub Pages as an https OAuth callback. See §7.
+- Exists at `/Volumes/ssd70/Cancer/KnowleageBase/` (spelled that way on disk), with `README.md` as the index.
+- The `knowledge-base` skill is installed for Claude Code at `~/.claude/skills/knowledge-base/SKILL.md` (it loaded in a session on 2026-11-14); the source is in `handoff/` here.
+- **Saved 2026-11-14:** `epic-fhir-patient-apps.md` (the §7 Epic registration pitfalls, GitHub Pages and firewall notes on the callback, granted scopes vs CapabilityStatement, medication resources), `js-testing-without-node.md` (osascript testing, Chart.js pitfalls) and `claude-desktop-app-tips.md` (browser pane, Terminal panel, `gh` sign-in). `claude-code-skills.md` was corrected: `python3` now works.
 
 ## 4. ~~Current blocker~~ RESOLVED: 403 on every data call
 
@@ -124,7 +124,7 @@ Two sandbox runs (12:03 and 12:05 on 2026-11-13), both logged in as `fhircamila`
 - `category`, `status`, and how `DiagnosticReport.result` links Observations into panels.
 - `specimen`, `performer`.
 
-## 7. Lessons learned today (candidates for the Knowledge Base)
+## 7. Lessons learned 2026-11-13 (saved to the Knowledge Base 2026-11-14, see §3)
 
 - **"Save & Ready for Production" locks an Epic app.** Use "Save & Ready for Sandbox" and test first. *(Observed)*
 - **Production needs at least one https redirect URI.** `http://localhost` alone shows a warning and blocks production. *(Observed)*
@@ -184,7 +184,7 @@ Two sandbox runs (12:03 and 12:05 on 2026-11-13), both logged in as `fhircamila`
 5. **Conversion:** LOINC → analyte mapping, unit conversion, duplicate removal, flags. Also convert the osteosarc TSV into the same format, so the two datasets combine.
 6. **Automatic sync, later:** create a second Epic app that's a confidential client with persistent access and rolling refresh tokens (needs a JWKS URL). Keep tokens in the keychain. Run a nightly job with a date window going back 7 days and upsert by source plus FHIR ID.
 7. **Public export:** versioned TSVs plus a data dictionary. **Dashboard:** a timeline with event overlays, trends with shaded reference ranges, correlations.
-8. **Knowledge Base:** when the user says "update the knowledge base," save the §7 lessons (Epic registration pitfalls as a new topic; GitHub Pages as an https OAuth callback).
+8. ~~**Knowledge Base:** save the §7 lessons.~~ ✅ Done 2026-11-14 (see §3). Keep adding lessons when the user says "update the knowledge base."
 
 ## 9. Open decisions (ask the user)
 

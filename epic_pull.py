@@ -16,7 +16,8 @@ Usage:
 What it does:
   1. Opens your browser to Epic's MyChart login (sandbox by default).
   2. You log in as a test patient (e.g. fhircamila / epicepic1) and approve.
-  3. It downloads Patient, labs, vitals, reports, conditions, meds, etc.
+  3. It downloads Patient, labs, vitals, reports, conditions, meds (orders,
+     dispenses and the Medication record each one points to), etc.
   4. Saves every response, unmodified, under ./epic_raw/<timestamp>/
 
 Nothing is changed or cleaned. The point is to look at the raw fields.
@@ -48,6 +49,7 @@ QUERIES = [
     ("diagnostic_reports",     "DiagnosticReport?patient={pid}"),
     ("conditions_problems",    "Condition?patient={pid}&category=problem-list-item"),
     ("medication_requests",    "MedicationRequest?patient={pid}"),
+    ("medication_dispenses",   "MedicationDispense?patient={pid}"),
     ("allergies",              "AllergyIntolerance?patient={pid}"),
     ("immunizations",          "Immunization?patient={pid}"),
     ("procedures",             "Procedure?patient={pid}"),
@@ -112,20 +114,92 @@ def wait_for_code(expected_state):
     return result["code"]
 
 
-def paste_code(expected_state):
-    """For an https redirect page: the user pastes what the page shows."""
-    print("    After approving, the page shows a block of text with a Copy button.")
-    raw = input("    Paste it here and press Enter: ").strip()
-    if "?" in raw:  # they pasted a full URL instead
+def _parse_callback(raw):
+    raw = (raw or "").strip()
+    if "?" in raw:  # a full URL instead of just the query string
         raw = raw.split("?", 1)[1]
-    result = {k: v[0] for k, v in urllib.parse.parse_qs(raw).items()}
+    return {k: v[0] for k, v in urllib.parse.parse_qs(raw).items()}
+
+
+def _clipboard():
+    """Current macOS clipboard text, or '' if unavailable."""
+    try:
+        import subprocess
+        return subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return ""
+
+
+def paste_code(expected_state, timeout=900):
+    """For an https redirect page: wait for the text the page shows.
+
+    It is picked up automatically when the user clicks the page's Copy button
+    (macOS clipboard), or can be pasted here and Enter pressed.
+    The clipboard is only read, never logged or saved.
+    """
+    import select
+    print("    After approving, the page shows a block of text with a Copy button.")
+    print("    Click Copy - it is picked up automatically (or paste it here and press Enter).")
+    before = _clipboard()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        clip = _clipboard()
+        if clip != before:
+            result = _parse_callback(clip)
+            if result.get("state") == expected_state:
+                break
+            before = clip  # something else was copied; keep waiting
+        if sys.stdin.isatty():
+            ready, _, _ = select.select([sys.stdin], [], [], 1.0)
+            if ready:
+                result = _parse_callback(sys.stdin.readline())
+                if result.get("state") == expected_state or "error" in result:
+                    break
+                print("    That text isn't from this login - try Copy again.")
+        else:
+            time.sleep(1.0)
+    else:
+        sys.exit("Timed out waiting for the login (15 minutes). Run the script again.")
     if "error" in result:
         sys.exit(f"Authorization failed: {result}")
-    if result.get("state") != expected_state:
-        sys.exit("State mismatch - the pasted text is from a different login. Run the script again.")
     if "code" not in result:
-        sys.exit("No code found in the pasted text.")
+        sys.exit("No code found in the copied text.")
+    print("    Got it.")
     return result["code"]
+
+
+def medication_refs(bundles):
+    """Unique 'Medication/<id>' references from MedicationRequest/-Dispense bundles."""
+    refs = []
+    for b in bundles:
+        for en in b.get("entry", []):
+            ref = en.get("resource", {}).get("medicationReference", {}).get("reference", "")
+            if ref.startswith("Medication/") and ref not in refs:
+                refs.append(ref)
+    return refs
+
+
+def fetch_medications(base, access, outdir, bundles):
+    """Orders and dispenses only point to Medication/<id> (the drug's codes, e.g. RxNorm).
+    Epic can't search Medication by patient, so read each one. Responses are stored
+    unchanged, collected in medications_p1.json (a 'collection' Bundle); failures are
+    listed in medications_errors.json."""
+    refs = medication_refs(bundles)
+    found, errors = [], []
+    for i, ref in enumerate(refs, 1):
+        try:
+            found.append({"fullUrl": f"{base}/{ref}", "resource": http_json(f"{base}/{ref}", access)})
+        except urllib.error.HTTPError as e:
+            errors.append({"reference": ref, "status": e.code, "body": e.read().decode()[:300]})
+        except urllib.error.URLError as e:
+            errors.append({"reference": ref, "status": "network", "body": str(e.reason)[:300]})
+        if i % 50 == 0:
+            print(f"      ... {i}/{len(refs)}")
+    save(outdir, "medications_p1.json", {"resourceType": "Bundle", "type": "collection",
+                                         "total": len(found), "entry": found})
+    if errors:
+        save(outdir, "medications_errors.json", errors)
+    return len(found) if not errors else f"{len(found)} ({len(errors)} failed)"
 
 
 def save(outdir, name, obj):
@@ -146,17 +220,33 @@ def main():
     ap.add_argument("--scope", default=" ".join(
         ["launch/patient", "openid", "fhirUser"] +
         [f"patient/{r}.read" for r in ("Patient", "Observation", "DiagnosticReport",
-         "Condition", "MedicationRequest", "AllergyIntolerance", "Immunization",
+         "Condition", "MedicationRequest", "MedicationDispense", "Medication",
+         "AllergyIntolerance", "Immunization",
          "Procedure", "Encounter", "DocumentReference", "Binary")]),
         help="OAuth scopes to request")
     ap.add_argument("--redirect-uri", default=LOCAL_REDIRECT_URI,
                     help="Must exactly match a URI registered on the app")
+    ap.add_argument("--site", default=None,
+                    help="Short name for the health system, e.g. mdanderson "
+                         "(default: taken from the --base host)")
     args = ap.parse_args()
     redirect_uri = args.redirect_uri
     local_mode = redirect_uri == LOCAL_REDIRECT_URI
+    is_sandbox = args.base.rstrip("/") == SANDBOX_BASE.rstrip("/")
+    host = urllib.parse.urlparse(args.base).hostname or "unknown"
+    site = args.site or ("sandbox" if is_sandbox else
+                         next((p for p in host.split(".") if p not in ("fhir", "www", "epicproxy")), host))
+    site = "".join(c for c in site.lower() if c.isalnum() or c in "-_") or "unknown"
 
-    outdir = os.path.join(args.out, time.strftime("%Y%m%d-%H%M%S"))
+    started = time.gmtime()
+    outdir = os.path.join(args.out, time.strftime("%Y%m%d-%H%M%S") + "-" + site)
     os.makedirs(outdir, exist_ok=True)
+    # Record where this pull came from, so pulls from many health systems never get mixed up.
+    save(outdir, "_source.json", {
+        "site": site, "fhir_base": args.base, "client_id": args.client_id,
+        "pulled_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", started),
+        "redirect_mode": "local" if local_mode else "paste",
+    })
 
     print("1/4 Discovering Epic login endpoints...")
     auth_url, token_url = discover(args.base)
@@ -180,7 +270,10 @@ def main():
     login = auth_url + "?" + urllib.parse.urlencode(params)
 
     print("2/4 Opening your browser to log in.")
-    print("    Sandbox test login: fhircamila / epicepic1  (or fhirderrick / epicepic1)")
+    if is_sandbox:
+        print("    Sandbox test login: fhircamila / epicepic1  (or fhirderrick / epicepic1)")
+    else:
+        print(f"    Log in with the patient's own MyChart account for: {site}")
     print(f"    If the browser doesn't open, paste this URL:\n    {login}\n")
     webbrowser.open(login)
     code = wait_for_code(state) if local_mode else paste_code(state)
@@ -212,6 +305,7 @@ def main():
     except urllib.error.HTTPError as e:
         summary["patient"] = f"HTTP {e.code}"
 
+    med_bundles = []
     for label, tmpl in QUERIES:
         url = f"{args.base}/{tmpl.format(pid=pid)}"
         page, total = 1, 0
@@ -224,6 +318,8 @@ def main():
                 total = f"HTTP {e.code} (API probably not enabled on your app)"
                 break
             save(outdir, f"{label}_p{page}.json", bundle)
+            if label.startswith("medication_"):
+                med_bundles.append(bundle)
             total += sum(1 for en in bundle.get("entry", [])
                          if en.get("resource", {}).get("resourceType") != "OperationOutcome")
             url = next((l["url"] for l in bundle.get("link", [])
@@ -231,6 +327,10 @@ def main():
             page += 1
         summary[label] = total
         print(f"    {label:22s} {total}")
+
+    print("    medications (one read per referenced drug)...")
+    summary["medications"] = fetch_medications(args.base, access, outdir, med_bundles)
+    print(f"    {'medications':22s} {summary['medications']}")
 
     save(outdir, "_summary.json", summary)
     print(f"\nDone. Raw files are in: {os.path.abspath(outdir)}")

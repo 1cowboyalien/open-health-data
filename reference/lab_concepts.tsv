@@ -1,0 +1,36 @@
+match_type	match	measurement	unit_if_missing	note
+loinc	1742-6	ALT		Alanine aminotransferase, serum/plasma
+loinc	1743-4	ALT		ALT with P-5'-P (method variant)
+loinc	1744-2	ALT		ALT without P-5'-P (method variant)
+loinc	1751-7	Albumin		Albumin, serum/plasma (usually BCG method)
+loinc	61152-5	Albumin		Albumin by bromocresol purple (BCP); can read slightly lower than BCG
+loinc	41276-7	Anion Gap		Anion gap in blood by calculation
+loinc	10466-1	Anion Gap		Anion gap, serum/plasma, 3 ions
+loinc	2947-0	Sodium		Sodium in blood
+loinc	2951-2	Sodium		Sodium, serum/plasma
+loinc	2069-3	Chloride		Chloride in blood
+loinc	2075-0	Chloride		Chloride, serum/plasma
+loinc	4544-3	Hematocrit		Hematocrit, automated count
+loinc	20570-8	Hematocrit		Hematocrit by calculation
+loinc	6690-2	WBC		Leukocytes, automated count
+loinc	33256-9	WBC		Leukocytes corrected for nucleated RBCs
+loinc	777-3	Platelets		Platelets, automated count
+loinc	26515-7	Platelets		Platelets
+loinc	32623-1	MPV		Mean platelet volume, automated
+loinc	28542-9	MPV		Mean platelet volume
+loinc	11580-8	TSH		TSH, detection limit <= 0.005 mIU/L
+loinc	11579-0	TSH		TSH, detection limit <= 0.05 mIU/L
+loinc	14297-6	TSH		TSH (LOINC says moles/volume, but results are reported in uIU/mL)
+loinc	6875-9	CA 15-3		Cancer antigen 15-3
+name	^CA 15-3$	CA 15-3		By name: one site sent CA 15-3 with LOINC 5587-1 (which is arsenic in 24h urine) - a coding error at the source
+loinc	17842-6	CA 27.29	U/mL	Cancer antigen 27.29; some results arrive as text without a unit (the reference ranges are in U/mL)
+loinc	2064-4	Ceruloplasmin	mg/dL	Unit missing on a text result; reference range 20-51 matches mg/dL
+loinc	6768-6	Alkaline Phosphatase	U/L	Unit missing on a text result; reference range 35-104 matches U/L
+loinc	46128-5	TTG IgA	U/mL	Tissue transglutaminase IgA; unit missing on a text result
+loinc	2965-2	Urine Specific Gravity		Specific gravity of urine
+loinc	53326-5	Urine Specific Gravity		by automated test strip
+loinc	5811-5	Urine Specific Gravity		by test strip
+loinc	5810-7	Urine Specific Gravity		by refractometry
+loinc	98979-8	eGFR (CKD-EPI 2021)		Different formulas are kept apart on purpose
+loinc	62238-1	eGFR (CKD-EPI)		CKD-EPI creatinine (pre-2021 equation)
+loinc	77147-7	eGFR (MDRD)		MDRD equation

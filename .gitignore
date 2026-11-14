@@ -17,3 +17,6 @@ jwks_private*
 __pycache__/
 *.pyc
 .venv/
+
+# Derived personal data (flattened tables, exports in progress) — never commit
+local/

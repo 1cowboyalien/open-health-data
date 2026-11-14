@@ -1,0 +1,56 @@
+match_type	match	drug	class	note
+name	fam-trastuzumab|enhertu	fam-trastuzumab deruxtecan	HER2/targeted	antibody-drug conjugate; check before plain trastuzumab
+name	trastuzumab|herceptin	trastuzumab	HER2/targeted	
+name	pertuzumab|perjeta	pertuzumab	HER2/targeted	
+name	neratinib|nerlynx	neratinib	HER2/targeted	brand Nerlynx
+name	tucatinib|tukysa	tucatinib	HER2/targeted	
+name	lapatinib|tykerb	lapatinib	HER2/targeted	
+name	docetaxel	docetaxel	chemo	
+name	paclitaxel	paclitaxel	chemo	
+name	carboplatin	carboplatin	chemo	
+name	capecitabine|xeloda	capecitabine	chemo	
+name	pegfilgrastim|neulasta|udenyca|fulphila	pegfilgrastim	supportive/antiemetic	white-cell growth factor
+name	filgrastim|neupogen|zarxio	filgrastim	supportive/antiemetic	
+name	fosaprepitant|emend	fosaprepitant	supportive/antiemetic	
+name	palonosetron	palonosetron	supportive/antiemetic	
+name	ondansetron	ondansetron	supportive/antiemetic	
+name	olanzapine	olanzapine	supportive/antiemetic	
+name	prochlorperazine	prochlorperazine	supportive/antiemetic	
+name	promethazine	promethazine	supportive/antiemetic	
+name	droperidol	droperidol	supportive/antiemetic	
+name	scopolamine	scopolamine	supportive/antiemetic	
+name	loperamide	loperamide	supportive/antiemetic	anti-diarrheal
+name	diphenoxylate	diphenoxylate-atropine	supportive/antiemetic	anti-diarrheal
+name	ciprofloxacin-dexamethasone	ciprofloxacin-dexamethasone otic	other	ear drops; before dexamethasone
+name	dexamethasone|decadron	dexamethasone	steroid	
+name	hydrocortisone-pramoxine	hydrocortisone-pramoxine	other	topical; before hydrocortisone
+name	hydrocortisone	hydrocortisone	steroid	
+name	triamcinolone	triamcinolone	steroid	topical cream
+name	gadobutrol|gadopiclenol|gadobenate|gadoterate		contrast/imaging	MRI contrast; drug = written name
+name	iohexol|iopamidol|barium		contrast/imaging	CT/X-ray contrast
+name	fdg|fludeoxyglucose	fludeoxyglucose F-18	contrast/imaging	PET tracer
+name	tc99m|technetium		contrast/imaging	nuclear medicine tracer
+name	acetaminophen(?!.*codone)	acetaminophen	pain	
+name	hydrocodone	hydrocodone-acetaminophen	pain	
+name	oxycodone	oxycodone	pain	
+name	hydromorphone	hydromorphone	pain	
+name	morphine	morphine	pain	
+name	fentanyl	fentanyl	pain	
+name	tramadol	tramadol	pain	
+name	meperidine	meperidine	pain	
+name	ibuprofen	ibuprofen	pain	
+name	guaifenesin-codeine	guaifenesin-codeine	other	cough syrup
+name	levetiracetam|keppra	levetiracetam	anticonvulsant	
+name	nayzilam	midazolam nasal	anticonvulsant	seizure rescue spray; before midazolam
+name	clonazepam	clonazepam	anticonvulsant	
+name	gabapentin	gabapentin	other	used for nerve pain and seizures; left as other
+name	nuvaring|etonogestrel	etonogestrel-ethinyl estradiol ring	other	brand NuvaRing
+name	clearlax|polyethylene glycol	polyethylene glycol	other	
+name	dextroamphetamine|amphetamine	amphetamine-dextroamphetamine	other	
+name	sennosides|senna	senna	other	
+name	^lidocaine 1% .*tumescent	lidocaine tumescent solution	other	
+name	heparin	heparin	other	includes line flushes
+name	sodium chloride	sodium chloride	other	saline, often flushes or IV carrier
+name	lactated ringer	lactated ringer's	other	
+name	^generic external medication$|^miscellaneous medication$|^non-formulary request$	(placeholder)	other	no drug name in the record; see name_placeholder column
+name	sulfamethoxazole-trimethoprim	sulfamethoxazole-trimethoprim	other	antibiotic; merges DOUBLE strength spelling

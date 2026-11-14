@@ -1,0 +1,23 @@
+target	how_it_shows_up_in_osteosarcoma	example_drugs	status_in_osteosarcoma	evidence_note
+VEGFR2 / multi-kinase (VEGFR, PDGFR, KIT, RET)	Angiogenesis; broad kinase signalling	regorafenib; sorafenib; pazopanib; lenvatinib; apatinib	Used off-label for relapsed disease; listed in NCCN bone cancer guidelines (regorafenib, sorafenib +/- everolimus)	Randomized phase 2 (SARC024, REGOBONE) showed longer PFS with regorafenib vs placebo; lenvatinib + ifosfamide/etoposide tested in phase 3 (OLIE)
+MET (+ VEGFR2)	MET overexpression common	cabozantinib	Relapsed disease; being tested with frontline chemo	Phase 2 CABONE showed activity; COG frontline trial combining cabozantinib with MAP chemo
+mTOR	PI3K/AKT/mTOR pathway activation	everolimus; sirolimus	Combined with sorafenib in relapsed disease	Phase 2 (Italian Sarcoma Group) sorafenib + everolimus; modest benefit
+NOD2 / macrophage activation	Innate immune stimulation	mifamurtide (MTP-PE)	Approved in EU (not US) for non-metastatic resectable osteosarcoma with chemo	INT-0133 trial suggested overall survival benefit; debated
+GD2	Surface ganglioside on most osteosarcomas	dinutuximab; naxitamab; GD2 CAR-T	Investigational	COG AOST1421 (dinutuximab + GM-CSF) did not meet its efficacy goal
+B7-H3 (CD276)	Highly expressed on osteosarcoma cells and vasculature	ifinatamab deruxtecan; vobramitamab duocarmazine; B7-H3 CAR-T	Investigational; active area	Early-phase ADC and CAR-T trials; responses reported in sarcoma cohorts
+HER2 (ERBB2)	Expression variable, usually low; amplification rare	trastuzumab; trastuzumab deruxtecan; HER2 CAR-T	Investigational; T-DXd has tumour-agnostic US approval for HER2 IHC 3+	Trastuzumab + chemo (COG) showed no benefit; HER2 CAR-T phase 1 showed safety and some disease control
+gpNMB	Overexpressed in many osteosarcomas	glembatumumab vedotin	Development stopped	COG phase 2 showed limited activity
+CDK4/6 (CDK4, CCND3 amplification)	Amplified in a subset; CDK4/MDM2 co-amplified in low-grade (parosteal) types	palbociclib; abemaciclib	Investigational; biomarker-matched	Responses mostly in tumours with CDK4/CCND3 amplification and intact RB1
+MDM2	Amplified in low-grade central and parosteal osteosarcoma; occasional in high-grade	brigimadlin; milademetan	Investigational	Only relevant when TP53 is wild type, which is uncommon in high-grade osteosarcoma
+FGFR1	Amplified in a subset (more in chemo-resistant tumours)	erdafitinib; pemigatinib; infigratinib	Investigational; biomarker-matched	Case reports and basket-trial responses
+VEGFA	Amplification in a subset (often with 6p21 gain)	bevacizumab	Investigational	Added to MAP chemo in a St. Jude trial without clear benefit
+PD-1 / PD-L1	Immune checkpoint; PD-L1 usually low	pembrolizumab; nivolumab	Low activity as single agent	SARC028: about 1 response in 22 osteosarcoma patients
+RANKL	Bone remodelling / osteoclast activation	denosumab	Investigational	Limited activity in osteosarcoma (unlike giant cell tumour of bone)
+Bone mineral (osteoblastic activity)	Bone-forming tumour takes up bone-seeking agents	samarium-153 EDTMP; radium-223; zoledronic acid	Palliative / investigational	Zoledronic acid added to chemo (OS2006) did not help
+PARP / DNA damage response	BRCA-like genomic signature in some tumours	olaparib; talazoparib; ATR inhibitors	Investigational	Low single-agent activity so far
+NTRK fusion	Very rare	larotrectinib; entrectinib	Tumour-agnostic US approval	Only if found on sequencing
+BRAF V600E	Very rare	dabrafenib + trametinib	Tumour-agnostic US approval	Only if found on sequencing
+RET fusion	Very rare	selpercatinib	Tumour-agnostic US approval	Only if found on sequencing
+MSI-high / TMB-high	Rare	pembrolizumab	Tumour-agnostic US approval	Only if found on sequencing
+TP53 / RB1	Inactivated in most high-grade osteosarcomas	none directly	Not directly druggable	Defining driver alterations; affect CDK4/6 and MDM2 options
+MYC	Amplified in a subset	none approved (BET and Aurora kinase inhibitors studied)	Preclinical / early phase	Associated with worse outcome

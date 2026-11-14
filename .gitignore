@@ -1,0 +1,22 @@
+# Raw downloads contain health records — never commit
+epic_raw/
+
+# Local databases and exports in progress
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env
+*.pem
+*.key
+jwks_private*
+
+# OS / Python
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+
+# Derived personal data (flattened tables, exports in progress) — never commit
+local/

@@ -561,7 +561,8 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
   pointBorderWidth:k==='skipped'?1.8:KIND[k].fill?1:1.3,showLine:false}));
  charts.set('tx',new Chart($('tx'),{type:'scatter',plugins:[bars,guide,momentPlugin],data:{datasets:ds},
   options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
-   onHover:(ev,els,c)=>{const xv=c.scales.x.getValueForPixel(ev.x);setHover(xv>=0&&xv<=100?xv:null);const u=c.scales.y.getValueForPixel(ev.y);txInfo(rows,rowAt(rows,u),xv,u);barPop(ev,els,rows[rowAt(rows,u)],xv,u);
+   onHover:(ev,els,c)=>{if(ev.type==='mouseout'){setHover(null);$('mtip').classList.add('hide');return}   // Chart.js reports leaving the chart after our mouseleave: don't show anything again
+    const xv=c.scales.x.getValueForPixel(ev.x);setHover(xv>=0&&xv<=100?xv:null);const u=c.scales.y.getValueForPixel(ev.y);txInfo(rows,rowAt(rows,u),xv,u);barPop(ev,els,rows[rowAt(rows,u)],xv,u);
     c.canvas.style.cursor='grab'},
    onClick:(ev,els,c)=>txClick(rows,els,c,ev),
    plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
@@ -664,6 +665,7 @@ function rowAt(rows,u){return rows.findIndex(r=>u>=r._u0&&u<r._u0+r._span)}
 function segAt(r,t){return r&&r.segs.find(g=>t>=dms(g.a)-DAYMS/2&&t<=dms(g.b)+DAYMS)}
 /* Medication popup for a bar (dose markers have Chart.js's own popup): period, dose, why it was given, who ordered it */
 function barPop(ev,els,r,xv,u){const el=$('mtip'),hide=()=>el.classList.add('hide');
+ if($('txEdit').matches(':hover'))return hide();
  if(els.length||!r||r.moments||xv==null||xv<0||xv>100||u>=r._u0+1)return hide();const g=segAt(r,unpos(xv));if(!g)return hide();
  el.innerHTML='';const b=document.createElement('b');b.textContent=rowLabel(r);el.appendChild(b);
  [(g.user?'entered by you ':g.note&&/joined/.test(g.note)?'given ':'ordered ')+g.a+' to '+g.b+(g.src&&g.src!=='you'?' · '+g.src:''),
@@ -684,7 +686,7 @@ const pxPerDay=c=>(c.chartArea.right-c.chartArea.left)*(pos(W.a+DAYMS)-pos(W.a))
 let editAt=null;
 function anchorEdit(c,r,ev){const B=$('txBody').getBoundingClientRect(),C=c.canvas.getBoundingClientRect();
  editAt={y:C.top-B.top+(r?c.scales.y.getPixelForValue(r._u0+1):ev.y)+4,x:C.left-B.left+ev.x}}
-function txClick(rows,els,c,ev){
+function txClick(rows,els,c,ev){$('mtip').classList.add('hide');
  {const u=c.scales.y.getValueForPixel(ev.y);anchorEdit(c,rows[rowAt(rows,u)],ev)}
  const mh=els.map(el=>c.data.datasets[el.datasetIndex].data[el.index]).find(p=>p&&p.e.k==='moment');if(mh){openMoment(mh.e.m);return}
  const hit=els.map(el=>c.data.datasets[el.datasetIndex].data[el.index]).find(p=>p&&(p.e.doseKey||p.e.k==='assumed'));
@@ -799,4 +801,5 @@ function txInit(){initTxSel();
  $('txAdd').onclick=()=>{editAt=null;if(txHidden){txHidden=false;store.set('txhidden',false);render()}openAdd(null)};
  $('txExport').onclick=exportEdits;$('txImport').onclick=()=>$('txFile').click();$('txFile').onchange=e=>{if(e.target.files[0])importEdits(e.target.files[0]);e.target.value=''};
  $('roleBtn').onclick=()=>setRole(canEdit()?'view':'edit');applyRole();
+ $('txEdit').addEventListener('mouseenter',()=>$('mtip').classList.add('hide'));
  txLegend();txStatus();loadShared()}

@@ -72,6 +72,19 @@ def numeric_dose(val, unit, aval="", aunit=""):
     return None, ""
 
 
+RANGE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$")
+
+
+def range_dose(val, unit, aval="", aunit=""):
+    """{"rlo", "rhi", "ru"} when the record gives only a range ("2-4 mg", e.g. "as needed" orders): the amount
+    actually given is not in the record. Used only for the half-life curve (shaded low to high), never as a dose."""
+    for v, u in ((aval, aunit), (val, unit)):
+        m = RANGE.match(v or "")
+        if m and u and not PER_BODY.search(u):
+            return {"rlo": float(m.group(1)), "rhi": float(m.group(2)), "ru": u}
+    return {}
+
+
 def _d(s):
     return date.fromisoformat(s[:10]) if s else None
 
@@ -144,7 +157,9 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
             r = row(o["drug"], o["drug_class"], "facility")
             once = o["frequency"].strip().lower() == "once" or (o["start"][:10] == o["end"][:10])
             if once and o["status"] == "completed" and not o["dispense_count"]:
-                r["ev"].append({"d": o["date"], "k": "order", **info,
+                rng = {} if dv is not None else range_dose(
+                    o["dose_value"] + ("-" + o["dose_value_high"] if o["dose_value_high"] else ""), o["dose_unit"])
+                r["ev"].append({"d": o["date"], "k": "order", **info, **rng,
                                 "at": o["start"] if "T" in o["start"] else ""})
             if not once and o["start"] and o["end"]:   # inpatient course: bar for its period
                 r["segs"].append({"a": o["start"][:10], "b": o["end"][:10], "src": o["source"], "note": "inpatient order"})
@@ -191,7 +206,9 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
                         "src": x["source"], "dose": dose, "route": x["route"], "freq": x["frequency"],
                         "status": x["status"], "text": x["dosage_text"][:160],
                         "qty": f"{x['quantity']} {x['quantity_unit']}".strip(), "id": x["dispense_id"],
-                        "at": x["handed_over"] if "T" in x["handed_over"] else ""})   # full time (UTC), shown in local time
+                        "at": x["handed_over"] if "T" in x["handed_over"] else "",
+                        **({} if dv is not None else range_dose(x["dose_value"], x["dose_unit"],
+                                                                x.get("dose_admin_value", ""), x.get("dose_admin_unit", "")))})   # full time (UTC), shown in local time
 
     # ---- facility bars: join doses closer than GAP_DAYS
     for r in rows.values():

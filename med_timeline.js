@@ -113,9 +113,14 @@ function doseChanges(pts){const out=[];let last=null;pts.forEach(p=>{if(p.k==='r
 function nextDoseState(cur){return cur==null?'taken':cur==='taken'?'skipped':null}
 
 /* ---- drawing ---- */
+/* the order of drugs in the Treatment panel: drugs you moved (txOrder) first, in that order; others by class and first date */
+let txOrder=store.get('txorder',[]);
+const ordRank=d=>{const i=txOrder.indexOf(d);return i<0?1e6:i};
+function moveDrug(drug,d){const ds=[...new Set(txShown.filter(r=>!r.moments).map(r=>r.drug))],i=ds.indexOf(drug),j=i+d;if(i<0||j<0||j>=ds.length)return;
+ [ds[i],ds[j]]=[ds[j],ds[i]];txOrder=[...ds,...txOrder.filter(x=>!ds.includes(x))];store.set('txorder',txOrder);render()}
 function txRows(){const vis=t=>t>=W.a-DAYMS&&t<=W.b+DAYMS;
  return effRows(TX,E).filter(r=>txSel.includes(r.drug)&&(r.segs.some(g=>dms(g.b)+DAYMS>=W.a&&dms(g.a)<=W.b)||r.ev.some(e=>vis(dms(e.d)))))
-  .sort((p,q)=>CLS_ORDER.indexOf(p.cls)-CLS_ORDER.indexOf(q.cls)||p.first.localeCompare(q.first)||p.setting.localeCompare(q.setting))}
+  .sort((p,q)=>ordRank(p.drug)-ordRank(q.drug)||CLS_ORDER.indexOf(p.cls)-CLS_ORDER.indexOf(q.cls)||p.first.localeCompare(q.first)||p.drug.localeCompare(q.drug)||p.setting.localeCompare(q.setting))}
 /* "generic (Brand)" - brands only as the records name them (med_timeline.py) */
 const drugLabel=(drug,brands)=>drug+(brands&&brands.length?' ('+brands.join(', ')+')':'');
 const rowLabel=r=>r.moments?'Moments — your own notes (click the row to add one)':drugLabel(r.drug,r.brands)+(r.setting==='home'?' · taken at home':' · given at hospital/clinic');
@@ -346,10 +351,11 @@ function rangeGroup(S,q){queueLay();const rs=(E.ranges||[]).filter(r=>!q||r.name
    Update overwrites it with what is on screen now. Layouts are shared like the other edits. */
 let activeR=store.get('activerange',null);
 function setActive(rid,lid){activeR=rid?{rid,lid:lid||null}:null;store.set('activerange',activeR)}
-function viewNow(){return{mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),
+function viewNow(){return{mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice(),
   mon:Object.fromEntries((E.moments||[]).map(m=>[m.id,momentOn(m)]))}}   // which moments are shown
 /* for "changed?": compare only moments that the saved layout knows and that still exist (new moments don't count) */
-function layCmp(v,ref){const c=Object.assign({},v);if(!ref.mon){delete c.mon;return c}const ids=new Set((E.moments||[]).map(m=>m.id));
+function layCmp(v,ref){const c=Object.assign({},v);if(!ref.txOrder)delete c.txOrder;   // layouts saved before the drug order existed
+ if(!ref.mon){delete c.mon;return c}const ids=new Set((E.moments||[]).map(m=>m.id));
  c.mon=Object.fromEntries(Object.keys(ref.mon).filter(id=>ids.has(id)).map(id=>[id,!!(v.mon||{})[id]]));return c}
 const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,k)=>(o[k]=x[k],o),{}):x);
 function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' lab chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')+(v.mon?', '+Object.values(v.mon).filter(Boolean).length+' moment(s) shown':'')}
@@ -357,7 +363,8 @@ function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])
  txSel=(v.txSel||[]).slice();txDose=(v.txDose||[]).slice();txHidden=!!v.txHidden;hlOn=v.hlOn!==false;hlH=v.hlH||28;heights=Object.assign({},v.heights||{});soloLab=null;soloMed=null;
  if(v.mon){let ch=false;(E.moments||[]).forEach(m=>{if(m.id in v.mon&&momentOn(m)!==v.mon[m.id]){m.on=v.mon[m.id];ch=true}});
   if(ch&&canEdit())saveEdits()}   // moment visibility is shared: saved only while Editing (View only changes this screen)
- [['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
+ if(v.txOrder)txOrder=v.txOrder.slice();
+ [['txorder',txOrder],['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
 function useLayout(r,l){setActive(r.id,l.id);W={a:r.a,b:r.b};store.set('window',W);syncWin();applyView(l.v);updateBar();list();render()}
 function saveLayout(r){if(!canEdit())return;const n=(r.layouts||[]).length;const name=prompt('Name for this layout of "'+r.name+'":','Layout '+(n+1));if(name==null||!name.trim())return;
  const l={id:'l'+Date.now().toString(36),name:name.trim(),v:viewNow()};r.layouts=(r.layouts||[]).concat([l]);setActive(r.id,l.id);saveEdits();list();layBar()}
@@ -430,7 +437,7 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
 function renderBand(){renderMomentTrack();hlControls();renderBandChart();renderDoses()}
 function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txBody').classList.toggle('hide',txHidden);if(txHidden||(!TX.length&&!E.added.length))return;
  const rows=txRows(),TK=ticks();txShown=rows;$('txEmpty').textContent=rows.length?'':txSel.length?'None of the ticked medications fall in this window.':'Tick medications in the list on the left to show them here.';
- $('txBox').querySelectorAll('.txx').forEach(b=>b.remove());
+ $('txBox').querySelectorAll('.txx,.txmv').forEach(b=>b.remove());
  $('txBox').classList.toggle('hide',!rows.length);if(!rows.length)return;
  /* row layout in "row units": the bar line is 1 unit; a drug with a half-life gets hlH px more below its bar */
  let acc=0;rows.forEach(r=>{const hd=hlOn&&HLD[r.drug]?hlDoses([r]):null;r._hl=hd&&hd.doses.length?hd:null;
@@ -512,7 +519,11 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
  {const c=charts.get('tx'),y=c.scales.y,A=c.chartArea,done=new Set();
   rows.forEach(r=>{if(r.moments||done.has(r.drug))return;done.add(r.drug);
    const b=btn('×',e=>{e.stopPropagation();setMedSel([r.drug],false)},'txx');b.title='Remove '+drugLabel(r.drug,r.brands)+' from the Treatment panel (tick it in the Library to bring it back)';
-   b.setAttribute('aria-label','Remove '+r.drug+' from the Treatment panel');b.style.top=(y.getPixelForValue(r._u0)+1)+'px';b.style.left=(A.left-20)+'px';$('txBox').appendChild(b)})}
+   b.setAttribute('aria-label','Remove '+r.drug+' from the Treatment panel');b.style.top=(y.getPixelForValue(r._u0)+1)+'px';b.style.left=(A.left-20)+'px';$('txBox').appendChild(b);
+   const k=[...done].length-1,last=k===new Set(rows.filter(x=>!x.moments).map(x=>x.drug)).size-1;
+   [['↑',-1,k===0],['↓',1,last]].forEach(([t,d,off],m)=>{const mv=btn(t,e=>{e.stopPropagation();moveDrug(r.drug,d)},'txmv');mv.disabled=off;
+    mv.title='Move '+r.drug+(d<0?' up':' down')+' in the Treatment panel';mv.setAttribute('aria-label',mv.title);
+    mv.style.top=b.style.top;mv.style.left=(A.left-58+m*19)+'px';$('txBox').appendChild(mv)})})}
  $('txBox').onmouseleave=()=>{setHover(null);$('txInfo').textContent='';$('mtip').classList.add('hide')}}
 /* ---- half-life estimates: estimated amount still in the body after each dose ----
    amount(t) = Σ dose × ½^(days since dose ÷ t½), for the low and high half-life in
@@ -558,9 +569,12 @@ function renderDoses(){const box=$('txDoses');box.innerHTML='';if(txHidden)retur
   const nIn=dp.pts.filter(p=>p.t>=W.a&&p.t<=W.b&&p.k!=='rxend').length;u.textContent=dp.u+(nIn?'':' · no doses in this window');
   const ctl=document.createElement('span');ctl.className='ctl';const id='dose:'+drug;
   const mk=(l,t,fn)=>{const x=document.createElement('button');x.textContent=l;x.title=t;x.setAttribute('aria-label',t);x.onclick=fn;ctl.appendChild(x)};
-  const mvDose=d=>{const j=di+d;if(j<0||j>=txDose.length)return;[txDose[di],txDose[j]]=[txDose[j],txDose[di]];store.set('txdose',txDose);render()};
-  mk('↑','Move this dose chart up',()=>mvDose(-1));mk('↓','Move this dose chart down',()=>mvDose(1));
-  if(di===0)ctl.lastChild.previousSibling.disabled=true;if(di===txDose.length-1)ctl.lastChild.disabled=true;
+  const mvDose=d=>{const j=d==='top'?0:d==='bottom'?txDose.length-1:di+d;if(j<0||j>=txDose.length||j===di)return;txDose.splice(di,1);txDose.splice(j,0,drug);store.set('txdose',txDose);render()};
+  const first=di===0,last=di===txDose.length-1;
+  mk('⤒','Move this dose chart to the top',()=>mvDose('top'));if(first)ctl.lastChild.disabled=true;
+  mk('↑','Move this dose chart up',()=>mvDose(-1));if(first)ctl.lastChild.disabled=true;
+  mk('↓','Move this dose chart down',()=>mvDose(1));if(last)ctl.lastChild.disabled=true;
+  mk('⤓','Move this dose chart to the bottom',()=>mvDose('bottom'));if(last)ctl.lastChild.disabled=true;
   mk('−','Shorter',()=>{setH(id,hOf(id,140)-40);render()});mk('+','Taller',()=>{setH(id,hOf(id,140)+40);render()});mk('×','Close dose chart',()=>setDoseChart(drug,false));
   h.append(b,u,ctl);const cb=document.createElement('div');cb.style.cssText='position:relative;height:'+hOf(id,140)+'px';
   const cv=document.createElement('canvas');cv.setAttribute('role','img');cv.setAttribute('aria-label','Dose of '+drug+' over time');cb.appendChild(cv);w.append(h,cb);box.appendChild(w);

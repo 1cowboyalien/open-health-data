@@ -234,6 +234,7 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 #txInfo{min-height:20px;margin-top:4px}.shape{display:inline-flex;align-items:center;gap:5px}
 #txBody{position:relative}
 .whybox{margin-top:8px;padding:6px 10px;border-left:3px solid var(--accent);background:var(--bg);font-size:12px;color:var(--ink2)}.whybox b{display:block;font-size:12px;color:var(--ink);margin-bottom:2px}
+#txBox .txmv{position:absolute;z-index:5;width:17px;height:17px;padding:0;line-height:15px;font-size:11px;border-radius:4px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer}#txBox .txmv:hover:not(:disabled){border-color:var(--line);background:var(--card);color:var(--ink)}#txBox .txmv:disabled{opacity:.25;cursor:default}
 #txBox .txx{position:absolute;z-index:5;width:17px;height:17px;padding:0;line-height:15px;font-size:13px;border-radius:50%;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer}#txBox .txx:hover{border-color:var(--line);background:var(--card);color:var(--hi)}
 #txEdit{position:absolute;z-index:30;max-height:70vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
 body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:none}#libBtn{font-size:13px}
@@ -268,7 +269,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 </div>
 <div id="ptpop" class="ptpop hide"></div><div id="calPop" class="calpop hide"></div><div id="mtip" class="ptpop mtip hide"></div><div id="mEdit" class="mpanel hide"></div>
 <div class="card" id="txCard">
-<div class="txh"><b>Treatments</b><span class="sub">ticked in the Medications list</span><span class="pmove"><button id="txUp" title="Move this panel up" aria-label="Move Treatments up">↑</button><button id="txDown" title="Move this panel down" aria-label="Move Treatments down">↓</button></span>
+<div class="txh"><b>Treatments</b><span class="sub">ticked in the Medications list</span><span class="pmove"><button id="txTop" title="Move this panel to the top" aria-label="Move Treatments to the top">⤒</button><button id="txUp" title="Move this panel up" aria-label="Move Treatments up">↑</button><button id="txDown" title="Move this panel down" aria-label="Move Treatments down">↓</button><button id="txBottom" title="Move this panel to the bottom" aria-label="Move Treatments to the bottom">⤓</button></span>
 <span class="ctl"><span class="sub" id="txStatus"></span><button id="txAdd">+ Add medication</button><button id="txExport" title="Save your changes to a file (med_edits.json)">Export</button><button id="txImport" title="Load changes from med_edits.json">Import</button><span id="hlCtl" class="hlctl"><button id="hlOn" title="Show or hide the half-life estimate curves under each drug">Half-life: on</button><button id="hlSmall" title="Make the half-life curves shorter">−</button><button id="hlBig" title="Make the half-life curves taller">+</button></span><button id="txHide" title="Show or hide the Treatment panel's timeline">Hide</button></span>
 <input type="file" id="txFile" accept="application/json,.json" class="hide"></div>
 <div id="txBody"><div style="position:relative;margin-top:6px" id="txBox"><canvas id="tx" role="img" aria-label="Treatment timeline: bars are ordered periods, markers are doses"></canvas></div>
@@ -277,7 +278,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <div id="txEdit" class="hide"></div>
 <div class="legend txlegend" id="txLegend"></div></div></div>
 <section id="single">
-<div class="dethead" style="margin-top:16px"><div><h2 id="title"></h2><div class="sub" id="desc"></div></div><span class="pmove"><button id="detUp" title="Move this panel up" aria-label="Move the detail panel up">↑</button><button id="detDown" title="Move this panel down" aria-label="Move the detail panel down">↓</button></span></div>
+<div class="dethead" style="margin-top:16px"><div><h2 id="title"></h2><div class="sub" id="desc"></div></div><span class="pmove"><button id="detTop" title="Move this panel to the top" aria-label="Move the detail panel to the top">⤒</button><button id="detUp" title="Move this panel up" aria-label="Move the detail panel up">↑</button><button id="detDown" title="Move this panel down" aria-label="Move the detail panel down">↓</button><button id="detBottom" title="Move this panel to the bottom" aria-label="Move the detail panel to the bottom">⤓</button></span></div>
 <div class="stats" id="stats"></div>
 <div class="card"><div style="position:relative" id="sbox"><canvas id="c" role="img" aria-label="Trend of the selected lab test with its normal range shaded"></canvas></div>
 <div class="bar" style="margin-top:8px"><span class="sub">Height</span><button data-h="-">−</button><button data-h="+">+</button></div></div>
@@ -471,17 +472,19 @@ function setH(id,h){heights[id]=Math.max(70,Math.min(600,h));store.set('heights'
    Treatment panel and the Detail panel ('__det'), with txPos 0 or 1. */
 let txPos=store.get('txpos',0);
 function stageOrder(){const o=mode==='compare'?sel.slice():['__det'];o.splice(Math.min(txPos,o.length),0,'__tx');return o}
-function moveStage(key,d){const o=stageOrder(),i=o.indexOf(key),j=i+d;if(i<0||j<0||j>=o.length)return;
- [o[i],o[j]]=[o[j],o[i]];txPos=o.indexOf('__tx');store.set('txpos',txPos);
+/* d: -1 / 1 = one step, 'top' / 'bottom' = to the first / last place */
+function moveStage(key,d){const o=stageOrder(),i=o.indexOf(key),j=d==='top'?0:d==='bottom'?o.length-1:i+d;if(i<0||j<0||j>=o.length||j===i)return;
+ o.splice(i,1);o.splice(j,0,key);txPos=o.indexOf('__tx');store.set('txpos',txPos);
  if(mode==='compare'){sel=o.filter(k=>k!=='__tx');store.set('selected',sel)}
  render()}
 function placeTx(){const tc=$('txCard');if(mode==='compare'){const cards=[...$('cmpList').querySelectorAll(':scope > .cmp')],i=Math.min(txPos,cards.length);
   if(i<cards.length)$('cmpList').insertBefore(tc,cards[i]);else $('cmpList').appendChild(tc)}
  else{const sg=$('single');if(txPos>0)sg.after(tc);else sg.before(tc)}
- const o=stageOrder(),i=o.indexOf('__tx');$('txUp').disabled=i<=0;$('txDown').disabled=i>=o.length-1;
- $('detUp').disabled=txPos>0;$('detDown').disabled=txPos===0;
+ const o=stageOrder(),i=o.indexOf('__tx');$('txTop').disabled=$('txUp').disabled=i<=0;$('txBottom').disabled=$('txDown').disabled=i>=o.length-1;
+ $('detTop').disabled=$('detUp').disabled=txPos>0;$('detBottom').disabled=$('detDown').disabled=txPos===0;
  if(mode==='compare'){const n=o.length;[...$('cmpList').querySelectorAll(':scope > .cmp')].forEach(c=>{const k=o.indexOf(c.dataset.id);
-  c.querySelector('[data-mv="-1"]').disabled=k<=0;c.querySelector('[data-mv="1"]').disabled=k>=n-1})}}
+  c.querySelector('[data-mv="top"]').disabled=c.querySelector('[data-mv="-1"]').disabled=k<=0;
+  c.querySelector('[data-mv="bottom"]').disabled=c.querySelector('[data-mv="1"]').disabled=k>=n-1})}}
 function moveTx(d){moveStage('__tx',d)}
 /* redraws keep the page where it is: hold main's height while the charts are rebuilt, then restore the scroll */
 function keepScroll(f){const se=document.scrollingElement,y=se.scrollTop,m=document.querySelector('main');m.style.minHeight=m.offsetHeight+'px';
@@ -515,8 +518,10 @@ function renderCompare(){const box=$('cmpList');box.innerHTML='';$('cmpEmpty').c
   const b=document.createElement('b');b.textContent=labLabel(t);b.title=t.name;const u=document.createElement('span');u.className='u';u.textContent=t.unit||'';
   const ctl=document.createElement('span');ctl.className='ctl';
   const mk=(label,title,fn)=>{const x=document.createElement('button');x.textContent=label;x.title=title;x.setAttribute('aria-label',title);x.onclick=fn;ctl.appendChild(x);return x};
+  mk('⤒','Move this panel to the top',()=>moveStage(id,'top')).dataset.mv='top';
   mk('↑','Move this panel up',()=>moveStage(id,-1)).dataset.mv='-1';
   mk('↓','Move this panel down',()=>moveStage(id,1)).dataset.mv='1';
+  mk('⤓','Move this panel to the bottom',()=>moveStage(id,'bottom')).dataset.mv='bottom';
   mk('−','Shorter',()=>{setH(id,hOf(id,160)-40);render()});
   mk('+','Taller',()=>{setH(id,hOf(id,160)+40);render()});
   mk('×','Remove from comparison',()=>{toggle(id,false);list()});
@@ -582,6 +587,7 @@ $('mSingle').onclick=()=>setMode('single');$('mCompare').onclick=()=>setMode('co
 $('clr').onclick=()=>{sel=[];store.set('selected',sel);updateBar();list();if(mode==='compare')render()};
 $('q').oninput=list;
 $('txUp').onclick=()=>moveTx(-1);$('txDown').onclick=()=>moveTx(1);$('detUp').onclick=()=>moveStage('__det',-1);$('detDown').onclick=()=>moveStage('__det',1);
+$('txTop').onclick=()=>moveTx('top');$('txBottom').onclick=()=>moveTx('bottom');$('detTop').onclick=()=>moveStage('__det','top');$('detBottom').onclick=()=>moveStage('__det','bottom');
 $('collapseAll').onclick=()=>setAllOpen(false);$('expandAll').onclick=()=>setAllOpen(true);
 txInit();
 const LT=D.tests.filter(t=>t.kind!=='vital'),VT=D.tests.filter(t=>t.kind==='vital');

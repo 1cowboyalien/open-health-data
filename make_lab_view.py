@@ -207,6 +207,7 @@ button:hover{border-color:var(--muted)}button.on{background:var(--accent);border
 .calpop input{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}.calpop .bar{justify-content:flex-end}
 body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 .nrow.lay{gap:6px;font-size:12px;flex-wrap:wrap}.nrow.lay button{font-size:12px;padding:1px 8px}.nrow.lay .laychip{border-radius:12px}.nrow.lay .laychip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.t .goto{flex:none;font-size:12px;padding:0 5px;line-height:17px}.nrow.lay button:disabled{opacity:.35}
 .t.ract .nm{font-weight:600}.t.layrow{padding:3px 8px 3px 26px;font-size:13px}.t.layon{background:var(--accent);color:#fff}
 body.viewonly #mAdd,body.viewonly #txAdd,body.viewonly #txImport,body.viewonly .ptpop button:not(.pclose),body.viewonly #mLinks button,body.viewonly .madd{display:none!important}.pmove button{padding:0 7px;font-size:12px}
 .navpin .mcard{margin-top:6px;padding:4px 16px 2px}.mhead{display:flex;align-items:center;gap:8px;font-size:12px}.mhead b{font-size:13px}.mhead .mtbtn{margin-left:auto;display:flex;gap:4px}.mhead .mtbtn button{font-size:11px;padding:1px 7px}
@@ -261,6 +262,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Moments → Saved ranges)">☆ Save range</button>
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
+<div class="nrow lay hide" id="findBar"></div>
 <div class="card mcard"><div class="mhead"><b>Moments</b><span class="sub">your own notes on the timeline</span><span class="mtbtn"><button id="mAdd" title="Add a moment: your own note on the timeline">+ Moment</button><button id="mLines" title="Show or hide the moment lines across all charts">Lines: on</button></span></div>
 <div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Moments: your own notes on the timeline"></canvas></div></div>
 </div>

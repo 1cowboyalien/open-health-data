@@ -256,7 +256,23 @@ function momentRings(test,pv,tm){return{id:'mrings',afterDatasetsDraw(c){const e
   ctx.strokeStyle=MCOL[m.color]||MCOL.red;ctx.lineWidth=2;ctx.setLineDash(m===ed?[3,2]:[]);ctx.beginPath();ctx.arc(x,y,8,0,7);ctx.stroke();ctx.setLineDash([]);
   ctx.fillStyle=ctx.strokeStyle;drawShape(ctx,mShape(m),x,y-15,5);ctx.fill()}));
  ctx.restore()}}}
-function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':'';
+/* ---- step through moments (⏮ ◀ ▶ ⏭ in the Moments panel header), like the Find bar for a medication ----
+   Steps through the shown moments with a date (all of them if none is shown), in time order. Each step moves the
+   window to the moment (keeping its length, or 2 weeks when it is longer than 2 months) and puts the Hover line on it.
+   Without a current moment, ◀ / ▶ go to the nearest one before / after the middle of the window. */
+let momCur=null;
+function momList(){const all=(E.moments||[]).filter(m=>m.date),on=all.filter(momentOn);return(on.length?on:all).sort((a,b)=>momentT(a)-momentT(b))}
+function goMoment(m){if(!m)return;momCur=m.id;const t=momentT(m);let len=W.b-W.a;if(len>60*DAYMS)len=14*DAYMS;
+ const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len);setTimeout(()=>setHover(pos(t)),40)}
+function momNav(){const el=$('mNav');if(!el)return;el.innerHTML='';const L=momList(),n=L.length;if(!n)return;const mid=(W.a+W.b)/2;
+ let i=L.findIndex(m=>m.id===momCur);if(i>=0&&(momentT(L[i])<W.a||momentT(L[i])>W.b))i=-1;
+ let prev=i>=0?i-1:-1,next=i>=0?i+1:n;if(i<0){for(let k=0;k<n;k++){if(momentT(L[k])<mid)prev=k;else{next=k;break}}}
+ const b=(t,tip,j)=>{const x=btn(t,()=>goMoment(L[j]),'');x.title=tip;x.disabled=j<0||j>=n||j===i;return x};
+ const lab=document.createElement('span');lab.className='mnavl';
+ if(i>=0){const m=L[i];lab.textContent=(i+1)+' of '+n+' · '+(m.title.length>28?m.title.slice(0,27)+'…':m.title)+' · '+m.date;lab.title='Open this moment';lab.onclick=()=>openMoment(m)}
+ else lab.textContent=n+' moment'+(n>1?'s':'');
+ el.append(b('⏮','First moment',0),b('◀','Previous moment',prev),lab,b('▶','Next moment',next),b('⏭','Last moment',n-1))}
+function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':'';momNav();
  const k=$('mKinds');if(k&&!k.childNodes.length)Object.values(MKIND).forEach(v=>{const e=document.createElement('span');e.append(shapeSvg(v.shape,css('--muted'),10),v.label.split(' /')[0].toLowerCase());k.appendChild(e)})}
 function setMomentsOn(ids,on){(E.moments||[]).forEach(m=>{if(ids.includes(m.id))m.on=on});saveEdits();list();render()}
 /* jump: centre the window on the moment, keeping its length (3 days if the window is over ~2 months) */
@@ -314,6 +330,7 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
    ctx.restore()},
   afterDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c,cy=(A.top+A.bottom)/2;ctx.save();
    shown.forEach(m=>{const px=x.getPixelForValue(pos(Math.max(momentT(m),W.a))),sh=mShape(m);
+    if(m.id===momCur){ctx.beginPath();ctx.arc(px,cy,13,0,7);ctx.lineWidth=2;ctx.strokeStyle=MCOL[m.color]||MCOL.red;ctx.stroke()}
     drawShape(ctx,sh,px,cy,sh==='star'?10:8);ctx.fillStyle=MCOL[m.color]||MCOL.red;ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke()});ctx.font='10px system-ui';
    if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown moments in this window':'click here or “+ Moment” to add one; or click a reading on a chart and choose ★ Make moment',A.left+4,A.top+12)}
    ctx.restore()}};

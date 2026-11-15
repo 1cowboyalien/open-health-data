@@ -211,7 +211,9 @@ body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 .t.ract .nm{font-weight:600}.t.layrow{padding:3px 8px 3px 26px;font-size:13px}.t.layon{background:var(--accent);color:#fff}
 body.viewonly #mAdd,body.viewonly #txAdd,body.viewonly #txImport,body.viewonly .ptpop button:not(.pclose),body.viewonly #mLinks button,body.viewonly .madd{display:none!important}.pmove button{padding:0 7px;font-size:12px}
 .navpin .mcard{margin-top:6px;padding:4px 16px 2px}.mhead{display:flex;align-items:center;gap:8px;font-size:12px}.mhead b{font-size:13px}.mhead .mtbtn{margin-left:auto;display:flex;gap:4px}.mhead .mtbtn button{font-size:11px;padding:1px 7px}
-.mtrack{position:relative;height:64px}.mshape{flex:none;vertical-align:middle}.mklegend{display:inline-flex;gap:8px;align-items:center;color:var(--muted);font-size:11px}.mklegend span{display:inline-flex;gap:3px;align-items:center}
+.mtrack{position:relative;height:64px}.mshape{flex:none;vertical-align:middle}.mhead{flex-wrap:wrap;row-gap:3px}.mhead>.sub{white-space:nowrap}
+.mnav{display:inline-flex;align-items:center;gap:4px;margin-left:8px}.mnav button{font-size:11px;padding:1px 7px}.mnav button:disabled{opacity:.35}.mnavl{font-size:12px;color:var(--ink2);cursor:pointer;max-width:330px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mnavl:hover{color:var(--ink)}
+.mklegend{display:inline-flex;gap:8px;align-items:center;color:var(--muted);font-size:11px}.mklegend span{display:inline-flex;gap:3px;align-items:center}
 .mlinkh{display:flex;align-items:center;gap:8px}.mpick{font-size:11px;padding:1px 8px}.mpick.on{background:var(--accent);color:#fff;border-color:var(--accent)}body.picking main canvas{cursor:crosshair!important}.nrow.lay .wl{width:auto}.mtip{pointer-events:none;z-index:60;max-width:340px}
 .ptpop{position:fixed;z-index:50;background:var(--ink);color:var(--bg);border-radius:8px;padding:6px 9px;font-size:12px;max-width:250px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .ptpop.pinned{outline:2px solid #e34948}.ptpop .pclose{position:absolute;top:2px;right:4px;margin:0;background:transparent;border:0;color:inherit;font-size:14px;padding:0 4px}.ptpop .pnote{font-size:10px;opacity:.7;margin-top:3px}
@@ -265,7 +267,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
-<div class="card mcard"><div class="mhead"><b>Moments</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mtbtn"><button id="mAdd" title="Add a moment: your own note on the timeline">+ Moment</button><button id="mLines" title="Show or hide the moment lines across all charts">Lines: on</button></span></div>
+<div class="card mcard"><div class="mhead"><b>Moments</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a moment: your own note on the timeline">+ Moment</button><button id="mLines" title="Show or hide the moment lines across all charts">Lines: on</button></span></div>
 <div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Moments: your own notes on the timeline"></canvas></div></div>
 </div>
 <div id="ptpop" class="ptpop hide"></div><div id="calPop" class="calpop hide"></div><div id="mtip" class="ptpop mtip hide"></div><div id="mEdit" class="mpanel hide"></div>

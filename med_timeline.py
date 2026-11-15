@@ -144,7 +144,8 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
             r = row(o["drug"], o["drug_class"], "facility")
             once = o["frequency"].strip().lower() == "once" or (o["start"][:10] == o["end"][:10])
             if once and o["status"] == "completed" and not o["dispense_count"]:
-                r["ev"].append({"d": o["date"], "k": "order", **info})
+                r["ev"].append({"d": o["date"], "k": "order", **info,
+                                "at": o["start"] if "T" in o["start"] else ""})
             if not once and o["start"] and o["end"]:   # inpatient course: bar for its period
                 r["segs"].append({"a": o["start"][:10], "b": o["end"][:10], "src": o["source"], "note": "inpatient order"})
         else:
@@ -189,7 +190,8 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
         r["ev"].append({"dv": dv, "du": du, "d": x["date"], "k": "given" if r["setting"] == "facility" else "fill",
                         "src": x["source"], "dose": dose, "route": x["route"], "freq": x["frequency"],
                         "status": x["status"], "text": x["dosage_text"][:160],
-                        "qty": f"{x['quantity']} {x['quantity_unit']}".strip(), "id": x["dispense_id"]})
+                        "qty": f"{x['quantity']} {x['quantity_unit']}".strip(), "id": x["dispense_id"],
+                        "at": x["handed_over"] if "T" in x["handed_over"] else ""})   # full time (UTC), shown in local time
 
     # ---- facility bars: join doses closer than GAP_DAYS
     for r in rows.values():

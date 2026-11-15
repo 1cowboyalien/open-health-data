@@ -19,6 +19,8 @@ const KIND={moment:{style:'star',fill:true,r:7,label:'Moment you added (your own
 const ROWPX=30,BARY=0.17,DAYMS=864e5;
 const EMPTY_EDITS=()=>({version:1,ts:0,seg:{},dose:{},added:[],moments:[],ranges:[]});
 const isoD=t=>new Date(t).toISOString().slice(0,10);
+/* when a dose was given: date and local time from the record ("at", UTC), else just the date */
+const evWhen=e=>e&&e.at?localStamp(Date.parse(e.at)):e?e.d:'';
 const dms=s=>Date.parse(s+'T12:00:00Z');
 
 /* ---- edits: newest of (this browser, local/med_edits.json) wins ---- */
@@ -378,7 +380,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
    onHover:(ev,els,c)=>{const xv=c.scales.x.getValueForPixel(ev.x);setHover(xv>=0&&xv<=100?xv:null);const u=c.scales.y.getValueForPixel(ev.y);txInfo(rows,rowAt(rows,u),xv,u);
     c.canvas.style.cursor='grab'},
    onClick:(ev,els,c)=>txClick(rows,els,c,ev),
-   plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+p.e.d},
+   plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
     label:c=>{const e=c.raw.e;if(e.k==='moment')return [e.m.title,...(e.m.note?(e.m.note.match(/.{1,70}(\s|$)/g)||[e.m.note]).slice(0,4).map(x=>x.trim()):[]),'Click to edit'];const L=[KIND[e.k].label,[e.dose,e.route,e.k==='assumed'&&e.perDay>1?e.perDay+' doses/day':e.freq,e.qty].filter(Boolean).join(' · ')+(e.src?'  · '+e.src:'')];
      if(e.k==='assumed'||e.k==='skipped'||e.doseKey)L.push(pxPerDay(c.chart)<4?'Click to edit; zoom in to click single doses':'Click to change: taken / skipped / assumed');return L}}}},
    layout:{padding:{right:8}},
@@ -445,7 +447,7 @@ function renderDoses(){const box=$('txDoses');box.innerHTML='';if(txHidden)retur
     pointBackgroundColor:data.map(d=>st(d)[2]?col(d):css('--card')),pointBorderColor:data.map(d=>st(d)[2]?css('--card'):col(d)),pointBorderWidth:1.3}]},
    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
     onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null)},
-    plugins:{legend:{display:false},tooltip:{filter:c=>!!(c.raw.p&&st(c.raw)[1]),callbacks:{title:c=>{const p=c[0].raw.p;return isoD(p.t)},
+    plugins:{legend:{display:false},tooltip:{filter:c=>!!(c.raw.p&&st(c.raw)[1]),callbacks:{title:c=>{const p=c[0].raw.p;return p.e?evWhen(p.e):isoD(p.t)},
      label:c=>{const p=c.raw.p;const what=p.k==='rx'?'prescribed from this date':KIND[p.k]?KIND[p.k].label:'';return [fmt(p.v)+' '+dp.u+(p.src?'  · '+p.src:''),what]}}}},
     layout:{padding:{right:8}},
     scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
@@ -465,7 +467,12 @@ function txInfo(rows,i,xv,u){const r=rows[i];if(!r||xv==null){$('txInfo').textCo
 /* ---- clicking ---- */
 /* doses can be clicked one by one only when they are at least 4px apart; otherwise open the editor */
 const pxPerDay=c=>(c.chartArea.right-c.chartArea.left)*(pos(W.a+DAYMS)-pos(W.a))/100;
+/* where the editor pops up: just under the clicked medication's bar (px from the top of #txBody) */
+let editAt=null;
+function anchorEdit(c,r,ev){const B=$('txBody').getBoundingClientRect(),C=c.canvas.getBoundingClientRect();
+ editAt={y:C.top-B.top+(r?c.scales.y.getPixelForValue(r._u0+1):ev.y)+4,x:C.left-B.left+ev.x}}
 function txClick(rows,els,c,ev){
+ {const u=c.scales.y.getValueForPixel(ev.y);anchorEdit(c,rows[rowAt(rows,u)],ev)}
  const mh=els.map(el=>c.data.datasets[el.datasetIndex].data[el.index]).find(p=>p&&p.e.k==='moment');if(mh){openMoment(mh.e.m);return}
  const hit=els.map(el=>c.data.datasets[el.datasetIndex].data[el.index]).find(p=>p&&(p.e.doseKey||p.e.k==='assumed'));
  if(hit&&pxPerDay(c)<4){openSeg(hit.r,segAt(hit.r,dms(hit.e.d)),hit.e.d);return}
@@ -476,13 +483,19 @@ function txClick(rows,els,c,ev){
  const t=unpos(xv),g=segAt(r,t);if(g&&g.user){openAdd((E.added||[]).find(m=>m.id===g.uid));return}
  openSeg(r,g,isoD(t))}
 
+/* float the editor under the clicked row (or under the panel's header for "+ Add medication"),
+   keep it inside the panel's width, and scroll only as far as needed to show all of it */
+function placeEdit(){const p=$('txEdit'),W0=$('txBody').clientWidth,w=Math.min(720,W0);
+ const a=editAt||{y:0,x:0};p.style.top=a.y+'px';p.style.left=Math.max(0,Math.min(a.x-80,W0-w))+'px';p.style.width=w+'px';
+ requestAnimationFrame(()=>{if(!p.classList.contains('hide'))p.scrollIntoView({block:'nearest',behavior:'smooth'})})}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('txEdit').classList.contains('hide')&&!e.target.closest('#txEdit input,#txEdit textarea,#txEdit select'))$('txEdit').classList.add('hide')});
 /* ---- small form helpers ---- */
 function field(label,input){const w=document.createElement('label');w.className='fld';const s=document.createElement('span');s.textContent=label;w.append(s,input);return w}
 function inp(type,val,attrs){const i=document.createElement(type==='select'||type==='textarea'?type:'input');if(type!=='select'&&type!=='textarea')i.type=type;
  Object.assign(i,attrs||{});if(type==='checkbox')i.checked=!!val;else if(val!=null&&type!=='select')i.value=val;return i}
 function selBox(opts,val){const s=inp('select');opts.forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];s.appendChild(op)});s.value=val;return s}
 function btn(text,fn,cls){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=fn;if(cls)b.className=cls;return b}
-function panel(title,sub){const p=$('txEdit');p.innerHTML='';p.classList.remove('hide');const h=document.createElement('div');h.className='txh';
+function panel(title,sub){const p=$('txEdit');p.innerHTML='';p.classList.remove('hide');placeEdit();const h=document.createElement('div');h.className='txh';
  const b=document.createElement('b');b.textContent=title;h.appendChild(b);h.appendChild(Object.assign(document.createElement('span'),{className:'ctl'}));
  h.lastChild.appendChild(btn('Close',()=>{p.classList.add('hide')}));p.appendChild(h);
  if(sub){const s=document.createElement('div');s.className='sub';s.textContent=sub;p.appendChild(s)}
@@ -562,7 +575,7 @@ function txInit(){initTxSel();
  const hlSize=dlt=>{hlH=Math.max(16,Math.min(200,hlH+dlt));store.set('hlh',hlH);render()};
  $('hlSmall').onclick=()=>hlSize(-8);$('hlBig').onclick=()=>hlSize(8);if(!TX.length&&!E.added.length&&!D.tx)$('txCard').classList.add('hide');
  $('txHide').onclick=()=>{txHidden=!txHidden;store.set('txhidden',txHidden);render()};
- $('txAdd').onclick=()=>{if(txHidden){txHidden=false;store.set('txhidden',false);render()}openAdd(null)};
+ $('txAdd').onclick=()=>{editAt=null;if(txHidden){txHidden=false;store.set('txhidden',false);render()}openAdd(null)};
  $('txExport').onclick=exportEdits;$('txImport').onclick=()=>$('txFile').click();$('txFile').onchange=e=>{if(e.target.files[0])importEdits(e.target.files[0]);e.target.value=''};
  $('roleBtn').onclick=()=>setRole(canEdit()?'view':'edit');applyRole();
  txLegend();txStatus();loadShared()}

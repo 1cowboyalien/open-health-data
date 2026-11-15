@@ -43,6 +43,7 @@ COLS = ["date", "authored_on", "source", "drug", "drug_class", "drug_name_origin
         "rxnorm_code", "dose_value", "dose_value_high", "dose_unit", "dose_admin_value", "dose_admin_unit",
         "dosage_text", "route", "frequency", "as_needed", "start", "end", "start_end_from",
         "status", "intent", "category", "course_of_therapy", "reported", "encounter",
+        "reason", "prn_for", "visit_reason",
         "dispense_count", "first_dispensed", "last_dispensed",
         "medication_ref", "request_id", "prior_request_id"]
 DISP_COLS = ["date", "handed_over", "source", "drug", "drug_class", "drug_name_original", "rxnorm_code",
@@ -166,7 +167,44 @@ def flatten_dispenses(site, d, rules, meds):
     return rows
 
 
+def load_visits(d):
+    """{encounter id: "visit type: reason; diagnosis"} from the pull's Encounter records (reasonCode, diagnosis)."""
+    out = {}
+    for f in sorted(glob.glob(os.path.join(d, "encounters_p*.json"))):
+        for e in json.load(open(f)).get("entry", []):
+            r = e["resource"]
+            if r["resourceType"] != "Encounter":
+                continue
+            why = [c.get("text") or (c.get("coding") or [{}])[0].get("display", "") for c in r.get("reasonCode", [])]
+            why += [(x.get("condition") or {}).get("display", "") for x in r.get("diagnosis", [])]
+            kind = ((r.get("type") or [{}])[0].get("text") or (r.get("class") or {}).get("display", "")).strip()
+            why = list(dict.fromkeys(w.strip() for w in why if w and w.strip() and w.strip().lower() != kind.lower()))
+            if why:
+                out[r["id"]] = (kind + ": " if kind else "") + "; ".join(why)
+    return out
+
+
+PRN = re.compile(r"\b(?:PRN|as needed)\b\.?,?\s*(?:for\b,?\s*)?(.*)", re.I | re.S)
+PRN_STOP = re.compile(r",?\s*\b(?:Starting|Until|Last dose|Normal|may not exceed|Use |up to)\b|\s/\s|\.(?:\s|$)|\|", re.I)
+
+
+def prn_for(text):
+    """"nausea" from "... every 8 hours as needed for nausea." / "Moderate Pain, Severe Pain" from
+    "EVERY 2 HOURS PRN, Moderate Pain, Severe Pain, Starting on ...". Empty when no reason is written."""
+    m = PRN.search(text or "")
+    if not m:
+        return ""
+    why = PRN_STOP.split(m.group(1), 1)[0]
+    why = re.split(r"\s+Max Daily", why, 1, flags=re.I)[0].strip(" ,;:.")
+    why = re.sub(r"^(?:other,\s*)+", "", why, flags=re.I).strip(" ,;:.")
+    why = re.sub(r",\s*other\b", "", why, flags=re.I)
+    if why.startswith("(") and why.endswith(")"):
+        why = why[1:-1].strip()
+    return "" if why.lower() in ("", "other", "for", "historical med") else why[:120]
+
+
 def flatten(site, d, rules, meds):
+    visits = load_visits(d)
     rows = []
     for f in sorted(glob.glob(os.path.join(d, "medication_requests_p*.json"))):
         for e in json.load(open(f)).get("entry", []):
@@ -211,6 +249,13 @@ def flatten(site, d, rules, meds):
                 "course_of_therapy": (r.get("courseOfTherapyType") or {}).get("text", ""),
                 "reported": "yes" if r.get("reportedBoolean") or r.get("reportedReference") else "",
                 "encounter": (r.get("encounter") or {}).get("display", ""),
+                # why it was given, only as the record says it: the diagnosis linked to the order, the
+                # "as needed for ..." words of the order, and the reason/diagnosis of the visit it was ordered in
+                "reason": " | ".join(dict.fromkeys(
+                    (c.get("text") or (c.get("coding") or [{}])[0].get("display", "")).strip()
+                    for c in r.get("reasonCode", []) if c.get("text") or c.get("coding"))),
+                "prn_for": prn_for(" | ".join(x.get("text", "") for x in r.get("dosageInstruction", []))),
+                "visit_reason": visits.get((r.get("encounter") or {}).get("reference", "").split("/")[-1], ""),
                 "medication_ref": ref.get("reference", ""),
                 "request_id": r["id"],
                 "prior_request_id": (r.get("priorPrescription") or {}).get("reference", "").split("/")[-1],

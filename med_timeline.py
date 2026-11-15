@@ -151,7 +151,9 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
                                     o["dose_unit"]) if x)
         dv, du = numeric_dose(o["dose_value"] if not o["dose_value_high"] else "", o["dose_unit"],
                               o["dose_admin_value"], o["dose_admin_unit"])
-        info = {"src": o["source"], "dose": dose, "route": o["route"], "freq": o["frequency"],
+        # why it was given, only as recorded (see flatten_meds.py): order diagnosis, "as needed for", visit reason
+        why = {k: o.get(c, "") for k, c in (("order", "reason"), ("prn", "prn_for"), ("visit", "visit_reason")) if o.get(c)}
+        info = {"src": o["source"], "dose": dose, "route": o["route"], "freq": o["frequency"], "why": why,
                 "status": o["status"], "text": o["dosage_text"][:160], "id": o["request_id"], "dv": dv, "du": du}
         if fac:
             r = row(o["drug"], o["drug_class"], "facility")
@@ -162,7 +164,7 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
                 r["ev"].append({"d": o["date"], "k": "order", **info, **rng,
                                 "at": o["start"] if "T" in o["start"] else ""})
             if not once and o["start"] and o["end"]:   # inpatient course: bar for its period
-                r["segs"].append({"a": o["start"][:10], "b": o["end"][:10], "src": o["source"], "note": "inpatient order"})
+                r["segs"].append({"a": o["start"][:10], "b": o["end"][:10], "src": o["source"], "note": "inpatient order", "why": why})
         else:
             if o["reported"] or "historical med" in o["dosage_text"].lower():
                 continue
@@ -206,6 +208,8 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
                         "src": x["source"], "dose": dose, "route": x["route"], "freq": x["frequency"],
                         "status": x["status"], "text": x["dosage_text"][:160],
                         "qty": f"{x['quantity']} {x['quantity_unit']}".strip(), "id": x["dispense_id"],
+                        "why": {k: o.get(c, "") for k, c in (("order", "reason"), ("prn", "prn_for"), ("visit", "visit_reason"))
+                                if o and o.get(c)},
                         "at": x["handed_over"] if "T" in x["handed_over"] else "",
                         **({} if dv is not None else range_dose(x["dose_value"], x["dose_unit"],
                                                                 x.get("dose_admin_value", ""), x.get("dose_admin_unit", "")))})   # full time (UTC), shown in local time

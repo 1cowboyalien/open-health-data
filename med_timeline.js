@@ -406,7 +406,7 @@ function layCmp(v,ref){const c=Object.assign({},v);if(!ref.txOrder)delete c.txOr
  c.mon=Object.fromEntries(Object.keys(ref.mon).filter(id=>ids.has(id)).map(id=>[id,!!(v.mon||{})[id]]));return c}
 const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,k)=>(o[k]=x[k],o),{}):x);
 function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' lab chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')+(v.mon?', '+Object.values(v.mon).filter(Boolean).length+' moment(s) shown':'')}
-function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(id=>BYID[id]);txPos=v.txPos||0;
+function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var)$/.test(id)));txPos=v.txPos||0;
  txSel=(v.txSel||[]).slice();txDose=(v.txDose||[]).slice();txHidden=!!v.txHidden;hlOn=v.hlOn!==false;hlH=v.hlH||28;heights=Object.assign({},v.heights||{});soloLab=null;soloMed=null;
  if(v.mon){let ch=false;(E.moments||[]).forEach(m=>{if(m.id in v.mon&&momentOn(m)!==v.mon[m.id]){m.on=v.mon[m.id];ch=true}});
   if(ch&&canEdit())saveEdits()}   // moment visibility is shared: saved only while Editing (View only changes this screen)

@@ -25,6 +25,9 @@ Start by reading `HANDOFF.md` in this folder. It has the full state of the proje
 3. Rebuild again, check the viewer, then `python3 check_new_data.py --mark-reviewed`.
 4. Tell the user what was added, what was estimated and what was skipped.
 
+## New Natera (Signatera) files
+- Extract a new report PDF with `swift ../records/pdftext.swift in.pdf out.txt`, add the text path to `local/mrd_sources.json`, save emailed allele .xlsx files in its `allele_dir`, then run `python3 flatten_mrd.py`. If it says "new variants", run `python3 liftover_mrd.py --ensembl --genes` (sends only chromosome, position and base to Ensembl). Then `python3 make_lab_view.py`.
+
 ## Viewer
 - Serve it with `python3 serve_viewer.py` (port 8766, this Mac only; `--lan` for the home Wi-Fi). Don't use `python3 -m http.server` for it any more: that lists every private file in `local/` and doesn't save shared edits.
 - Shared edits live in `local/med_edits.json` (backups in `local/edits_history/`). Don't delete or overwrite it without asking: it holds the user's moments and medication changes.

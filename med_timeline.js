@@ -221,6 +221,21 @@ function setHlDrug(drug){drug=drug||(FIND&&FIND.drug)||null;if(drug===hlDrug)ret
    Shown in the pinned keyframe track, listed in the sidebar (groups, ticks, jump), with optional
    lines across every chart; readings can be linked to a moment (ringed with a star on their chart). */
 const MCOL={red:'#e34948',orange:'#eb6834',purple:'#6250d6',green:'#1baf7a',grey:'#8a8984'};
+/* moment kinds: each has its own shape (colour stays your choice); moments without a kind are events */
+const MKIND={event:{label:'Event',shape:'star'},symptom:{label:'Symptom',shape:'triangle'},procedure:{label:'Procedure / treatment',shape:'rectRot'},
+ test:{label:'Test / scan',shape:'rect'},note:{label:'Note',shape:'circle'}};
+const mShape=m=>(MKIND[m.kind]||MKIND.event).shape;
+/* draw a moment shape on a canvas, centred at x,y, radius r */
+function drawShape(ctx,shape,x,y,r){ctx.beginPath();
+ if(shape==='star'){for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,q=i%2?r*.45:r;ctx.lineTo(x+q*Math.cos(a),y+q*Math.sin(a))}}
+ else if(shape==='triangle'){ctx.moveTo(x,y-r);ctx.lineTo(x+r*.95,y+r*.75);ctx.lineTo(x-r*.95,y+r*.75)}
+ else if(shape==='rectRot'){ctx.moveTo(x,y-r);ctx.lineTo(x+r,y);ctx.lineTo(x,y+r);ctx.lineTo(x-r,y)}
+ else if(shape==='rect'){ctx.rect(x-r*.8,y-r*.8,r*1.6,r*1.6)}
+ else ctx.arc(x,y,r*.85,0,7);
+ ctx.closePath()}
+/* the same shape as a small inline SVG (Library rows, legend) */
+function shapeSvg(shape,col,px){const c=document.createElement('canvas');c.width=c.height=px*2;const x=c.getContext('2d');x.scale(2,2);drawShape(x,shape,px/2,px/2,px/2-1);x.fillStyle=col;x.fill();
+ const i=document.createElement('img');i.src=c.toDataURL();i.width=i.height=px;i.alt='';i.className='mshape';return i}
 const momentT=m=>!m||!m.date?null:m.time?new Date(m.date+'T'+m.time).getTime():dms(m.date);   // with a time: your local time
 const momentOn=m=>m.on!==false;
 let mLines=store.get('mlines',true),editingMoment=null;
@@ -230,15 +245,19 @@ const momentPlugin={id:'moments',afterDatasetsDraw(c){const ms_=(E.moments||[]).
  ms_.forEach(m=>{const t=momentT(m),te=m.end?dms(m.end):null,colr=MCOL[m.color]||MCOL.red;if((te||t)<W.a||t>W.b)return;
   const px=x.getPixelForValue(pos(Math.max(t,W.a)));
   if(te&&te>t){const p2=x.getPixelForValue(pos(Math.min(te,W.b)));ctx.globalAlpha=.08;ctx.fillStyle=colr;ctx.fillRect(px,a.top,p2-px,a.bottom-a.top)}
-  if(t>=W.a){ctx.globalAlpha=.75;ctx.strokeStyle=colr;ctx.setLineDash([2,3]);ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(px,a.top);ctx.lineTo(px,a.bottom);ctx.stroke();ctx.setLineDash([])}});
+  if(t>=W.a){ctx.globalAlpha=.75;ctx.strokeStyle=colr;ctx.setLineDash([2,3]);ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(px,a.top);ctx.lineTo(px,a.bottom);ctx.stroke();ctx.setLineDash([]);
+   ctx.globalAlpha=.9;ctx.fillStyle=colr;drawShape(ctx,mShape(m),px,a.top+5,4.5);ctx.fill()}});
  ctx.restore()}};
 /* star rings on readings linked to a shown moment (t = the chart's test, pv = its points in the window, tm = point time) */
-function momentRings(test,pv,tm){return{id:'mrings',afterDatasetsDraw(c){const ms_=(E.moments||[]).filter(m=>momentOn(m)&&(m.links||[]).some(l=>l.test===test.id));if(!ms_.length)return;
+function momentRings(test,pv,tm){return{id:'mrings',afterDatasetsDraw(c){const ed=editingMoment;
+ const ms_=(E.moments||[]).filter(m=>!ed||m.id!==ed.id).concat(ed?[ed]:[]).filter(m=>(m===ed||momentOn(m))&&(m.links||[]).some(l=>l.test===test.id));if(!ms_.length)return;
  const{ctx}=c,meta=c.getDatasetMeta(0);ctx.save();
  ms_.forEach(m=>m.links.filter(l=>l.test===test.id).forEach(l=>{const i=(c.$pv||pv).findIndex(x=>tm(x)===l.t);if(i<0||!meta.data[i])return;const{x,y}=meta.data[i];
-  ctx.strokeStyle=MCOL[m.color]||MCOL.red;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,8,0,7);ctx.stroke();ctx.fillStyle=ctx.strokeStyle;ctx.font='11px system-ui';ctx.fillText('★',x-4,y-11)}));
+  ctx.strokeStyle=MCOL[m.color]||MCOL.red;ctx.lineWidth=2;ctx.setLineDash(m===ed?[3,2]:[]);ctx.beginPath();ctx.arc(x,y,8,0,7);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=ctx.strokeStyle;drawShape(ctx,mShape(m),x,y-15,5);ctx.fill()}));
  ctx.restore()}}}
-function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':''}
+function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':'';
+ const k=$('mKinds');if(k&&!k.childNodes.length)Object.values(MKIND).forEach(v=>{const e=document.createElement('span');e.append(shapeSvg(v.shape,css('--muted'),10),v.label.split(' /')[0].toLowerCase());k.appendChild(e)})}
 function setMomentsOn(ids,on){(E.moments||[]).forEach(m=>{if(ids.includes(m.id))m.on=on});saveEdits();list();render()}
 /* jump: centre the window on the moment, keeping its length (3 days if the window is over ~2 months) */
 function jumpMoment(m){if(!m.date){openMoment(m);return}let len=W.b-W.a;if(len>60*DAYMS)len=3*DAYMS;if(!momentOn(m)){m.on=true;saveEdits()}
@@ -283,14 +302,25 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
  const shown=(E.moments||[]).filter(m=>momentOn(m)&&m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b);
  const titles={id:'mtitles',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c;ctx.save();
    let last=A.left;ctx.font='10px system-ui';
+   const cy=(A.top+A.bottom)/2;
    shown.forEach(m=>{const t=momentT(m),te=m.end?dms(m.end):null,colr=MCOL[m.color]||MCOL.red,px=x.getPixelForValue(pos(Math.max(t,W.a)));
-    if(te&&te>t){const p2=x.getPixelForValue(pos(Math.min(te,W.b)));ctx.globalAlpha=.45;ctx.fillStyle=colr;ctx.fillRect(px,A.bottom-5,Math.max(2,p2-px),3);ctx.globalAlpha=1}
-    const txt=m.title.length>40?m.title.slice(0,39)+'…':m.title,w=ctx.measureText(txt).width;if(px+9>last&&px+9+w<A.right){ctx.fillStyle=colr;ctx.fillText(txt,px+9,A.top+12);last=px+9+w+8}});
+    if(te&&te>t){const p2=x.getPixelForValue(pos(Math.min(te,W.b)));ctx.globalAlpha=.16;ctx.fillStyle=colr;ctx.fillRect(px,A.top,Math.max(2,p2-px),A.bottom-A.top);
+     ctx.globalAlpha=.7;ctx.fillRect(px,A.bottom-4,Math.max(2,p2-px),4);ctx.globalAlpha=1}
+    if(t>=W.a){ctx.strokeStyle=colr;ctx.globalAlpha=.6;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,A.top);ctx.lineTo(px,A.bottom);ctx.stroke();ctx.globalAlpha=1}
+    /* title label: a tinted pill to the right of the shape, with the number of linked readings */
+    ctx.font='600 11px system-ui';const n=(m.links||[]).length,txt0=m.title.length>36?m.title.slice(0,35)+'…':m.title,txt=txt0+(n?'  ·  '+n+' reading'+(n>1?'s':''):''),w=ctx.measureText(txt).width+12;
+    const lx=px+12;if(lx>last&&lx+w<A.right){ctx.globalAlpha=.2;ctx.fillStyle=colr;ctx.beginPath();ctx.roundRect(lx,cy-9,w,18,9);ctx.fill();ctx.globalAlpha=1;
+     ctx.fillStyle=colr;ctx.fillText(txt,lx+6,cy+4);last=lx+w+6}});
+   ctx.restore()},
+  afterDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c,cy=(A.top+A.bottom)/2;ctx.save();
+   shown.forEach(m=>{const px=x.getPixelForValue(pos(Math.max(momentT(m),W.a))),sh=mShape(m);
+    drawShape(ctx,sh,px,cy,sh==='star'?10:8);ctx.fillStyle=MCOL[m.color]||MCOL.red;ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke()});ctx.font='10px system-ui';
    if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown moments in this window':'click here or “+ Moment” to add one; or click a reading on a chart and choose ★ Make moment',A.left+4,A.top+12)}
    ctx.restore()}};
- charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,momentPlugin,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:0,m})),pointStyle:'star',pointRadius:7,pointHoverRadius:9,
-   pointBackgroundColor:shown.map(m=>MCOL[m.color]||MCOL.red),pointBorderColor:shown.map(m=>MCOL[m.color]||MCOL.red)}]},
-  options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,layout:{padding:{right:8,bottom:RULERH}},
+ charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:0,m})),
+   pointStyle:shown.map(mShape),pointRadius:shown.map(m=>mShape(m)==='star'?10:8),pointHoverRadius:shown.map(m=>mShape(m)==='star'?12:10),
+   pointBackgroundColor:'transparent',pointBorderColor:'transparent',clip:false}]},   // the shapes are drawn filled by the titles plugin (Chart.js draws stars as outlines only)
+  options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,layout:{autoPadding:false,padding:{top:3,right:8,bottom:RULERH}},
    onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null)},
    onClick:(e,els,c)=>{if(e.y>c.chartArea.bottom)return;const xv=c.scales.x.getValueForPixel(e.x);setTimeout(()=>{if(els[0])openMoment(c.data.datasets[0].data[els[0].index].m);else if(xv>=0&&xv<=100)openMoment(null,{date:localStamp(unpos(xv)).slice(0,10)})},0)},
    plugins:{legend:{display:false},tooltip:{enabled:false,external:({chart,tooltip})=>{const el=$('mtip');if(!tooltip.opacity||!tooltip.dataPoints||!tooltip.dataPoints.length){el.classList.add('hide');return}
@@ -299,7 +329,7 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
       .filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
      const r=chart.canvas.getBoundingClientRect();el.style.left=Math.min(r.left+tooltip.caretX+12,innerWidth-270)+'px';el.style.top=(r.top+tooltip.caretY+16)+'px';el.classList.remove('hide')}}},
    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
-    y:{min:-1,max:.5,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}));
+    y:{min:-1,max:1,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}));
  cv.parentNode.onmouseleave=()=>setHover(null)}
 
 /* sidebar: Moments section (groups you name; tick to show; click a name to jump there) */
@@ -316,7 +346,7 @@ function momentSection(el,q){const all=(E.moments||[]).filter(m=>!q||(m.title+' 
   gs.insertBefore(miniBtn('Only','Show only this group',()=>{(E.moments||[]).forEach(m=>m.on=gid.includes(m.id));saveEdits();list();render()}),gs.lastChild);
   ms_.forEach(m=>{const row=document.createElement('div');row.className='t';
    const c=document.createElement('input');c.type='checkbox';c.checked=momentOn(m);c.setAttribute('aria-label','Show '+m.title);c.onclick=e=>{e.stopPropagation();setMomentsOn([m.id],c.checked)};
-   const dot=document.createElement('span');dot.className='mdot';dot.style.background=MCOL[m.color]||MCOL.red;
+   const dot=shapeSvg(mShape(m),MCOL[m.color]||MCOL.red,11);dot.title=(MKIND[m.kind]||MKIND.event).label;
    const nm=document.createElement('span');nm.className='nm';nm.textContent=m.title;nm.title='Click to jump to this moment'+(m.note?' — '+m.note:'');
    const ln=document.createElement('span');ln.className='tag';ln.textContent=(m.links||[]).length?'🔗'+m.links.length:'';
    const d=document.createElement('span');d.className='n';d.textContent=m.date?m.date.slice(2)+(m.time?' '+m.time:''):'no date';
@@ -386,12 +416,14 @@ function layBar(){const bar=$('layBar'),r=activeR&&(E.ranges||[]).find(x=>x.id==
 let popTimer=0,popPinned=false;
 function hidePop(){popPinned=false;$('ptpop').classList.add('hide')}
 function pointPop(e,els,c,test,pv,tm,pin){const pop=$('ptpop');clearTimeout(popTimer);
+ if(pickMode&&editingMoment){if(pin&&els.length&&pv[els[0].index]){const x=pv[els[0].index];   // picking: a click links / unlinks the reading
+   toggleLink({test:test.id,name:labLabel(test),t:tm(x),text:valText(x)+(test.unit?' '+test.unit:''),src:x.src})}return}
  if(popPinned&&!pin)return;                       // a pinned box ignores hovering
  if(!els.length||!pv[els[0].index]){if(pin){hidePop();return}popTimer=setTimeout(()=>{if(!pop.matches(':hover'))pop.classList.add('hide')},350);return}
  const x=pv[els[0].index],t=tm(x),link={test:test.id,name:labLabel(test),t,text:valText(x)+(test.unit?' '+test.unit:''),src:x.src};
  pop.innerHTML='';const h=document.createElement('div');h.textContent=(x.ts!=null?localStamp(t):x.date)+' · '+link.name;const v=document.createElement('div');v.innerHTML='<b></b>';v.firstChild.textContent=link.text+' · '+x.src;
  const b=document.createElement('button');b.type='button';b.textContent=editingMoment?'★ Link to “'+(editingMoment.title||'this moment').slice(0,24)+'”':'★ Make moment';
- b.onclick=()=>{hidePop();if(editingMoment){editingMoment.links=editingMoment.links||[];if(!editingMoment.links.some(l=>l.test===link.test&&l.t===link.t))editingMoment.links.push(link);drawLinks()}
+ b.onclick=()=>{hidePop();if(editingMoment){editingMoment.links=editingMoment.links||[];if(!editingMoment.links.some(l=>l.test===link.test&&l.t===link.t))editingMoment.links.push(link);drawLinks();charts.forEach(c=>c.draw())}
   else openMoment(null,{date:localStamp(t).slice(0,10),time:x.ts!=null?localStamp(t).slice(11):'',links:[link]})};
  pop.append(h,v,b);
  if(pin){popPinned=true;pop.classList.add('pinned');const x_=document.createElement('button');x_.type='button';x_.className='pclose';x_.textContent='×';x_.title='Close (Esc)';x_.onclick=hidePop;
@@ -405,11 +437,19 @@ document.addEventListener('scroll',()=>{const pop=$('ptpop'),dy=scrollY-popScrol
 document.addEventListener('mousedown',e=>{if(popPinned&&!e.target.closest('#ptpop')&&!e.target.closest('main canvas'))hidePop()});
 
 /* the moment editor: a small floating panel, so it is reachable from anywhere on the page */
+/* Pick readings: while on, clicking a reading on any chart adds it to (or removes it from) the moment being edited */
+let pickMode=false;
+function setPick(on){pickMode=!!on&&!!editingMoment;document.body.classList.toggle('picking',pickMode);const b=$('mPick');
+ if(b){b.textContent=pickMode?'◉ Picking: click readings · Done':'◎ Pick readings';b.classList.toggle('on',pickMode)}}
+function toggleLink(link){const ls=editingMoment.links=editingMoment.links||[],i=ls.findIndex(l=>l.test===link.test&&l.t===link.t);
+ if(i>=0)ls.splice(i,1);else ls.push(link);drawLinks();charts.forEach(c=>c.draw())}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&pickMode)setPick(false)});
 function drawLinks(){const L=$('mLinks');if(!L||!editingMoment)return;L.innerHTML='';const ls=editingMoment.links||[];
- if(!ls.length){L.innerHTML='<span class="sub">none yet — hover a reading on any chart and click “★ Link”</span>';return}
+ const n=$('mLinkN');if(n)n.textContent='Linked readings ('+ls.length+'):';
+ if(!ls.length){L.innerHTML='<span class="sub">none yet — press “◎ Pick readings” and click readings on any chart, or hover a reading and click “★ Link”</span>';return}
  ls.forEach((l,i)=>{const c=document.createElement('span');c.className='chip';const s=document.createElement('span');s.textContent=l.name+': '+l.text+' · '+localStamp(l.t).slice(2);
   const go=btn('↗',()=>{let len=W.b-W.a;if(len>60*DAYMS)len=3*DAYMS;shiftWin(l.t-len/2,len)});go.title='Jump to this reading';
-  const x=btn('×',()=>{ls.splice(i,1);drawLinks()});x.title='Unlink';c.append(s,go,x);L.appendChild(c)})}
+  const x=btn('×',()=>{ls.splice(i,1);drawLinks();charts.forEach(c=>c.draw())});x.title='Unlink';c.append(s,go,x);L.appendChild(c)})}
 function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Object.assign({id:'mo'+Date.now().toString(36),title:'',group:'',date:'',time:'',end:'',note:'',color:'red',line:true,on:true,links:[]},pre||{});
  if(isNew&&!pre)m.date=localStamp(Math.min(Date.now(),(W.a+W.b)/2)).slice(0,10);
  const draft=Object.assign({},m,{links:[...(m.links||[])]});editingMoment=draft;
@@ -418,17 +458,19 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
  sp.textContent='your own note, not from the record · private';h.append(b,sp);P.appendChild(h);
  const groups=[...new Set((E.moments||[]).map(x=>x.group).filter(Boolean))];
  const F={title:inp('text',m.title,{placeholder:'e.g. noticed symptoms'}),group:inp('text',m.group||'',{placeholder:'e.g. Delivery – Oct 2021'}),date:inp('date',m.date||''),time:inp('time',m.time||''),
-  end:inp('date',m.end||''),color:selBox(Object.keys(MCOL).map(c=>[c,c]),m.color||'red'),line:inp('checkbox',m.line!==false),note:inp('textarea',m.note||'',{rows:2,placeholder:'what happened, who noticed, what was done'})};
+  end:inp('date',m.end||''),color:selBox(Object.keys(MCOL).map(c=>[c,c]),m.color||'red'),kind:selBox(Object.entries(MKIND).map(([k,v])=>[k,v.label]),m.kind||'event'),line:inp('checkbox',m.line!==false),note:inp('textarea',m.note||'',{rows:2,placeholder:'what happened, who noticed, what was done'})};
  F.title.oninput=()=>{draft.title=F.title.value};   // so “★ Link to …” shows the title being typed
  const dl=document.createElement('datalist');dl.id='mgroups';groups.forEach(g=>{const o=document.createElement('option');o.value=g;dl.appendChild(o)});F.group.setAttribute('list','mgroups');
  const g=document.createElement('div');g.className='fgrid';g.append(field('Title',F.title),field('Group',F.group),field('Date (optional)',F.date),field('Time (optional)',F.time),
-  field('End date (for a period)',F.end),field('Color',F.color),field('Line across all charts',F.line));P.append(g,dl,field('Note',F.note));
- const lh=document.createElement('div');lh.className='sub';lh.style.marginTop='6px';lh.textContent='Linked readings:';const L=document.createElement('div');L.id='mLinks';P.append(lh,L);drawLinks();
+  field('End date (for a period)',F.end),field('Kind (shape)',F.kind),field('Color',F.color),field('Line across all charts',F.line));P.append(g,dl,field('Note',F.note));
+ const lh=document.createElement('div');lh.className='sub mlinkh';lh.style.marginTop='6px';const lt=document.createElement('span');lt.id='mLinkN';lh.appendChild(lt);
+ const pk=btn('',()=>setPick(!pickMode),'mpick');pk.id='mPick';pk.title='While on, every reading you click on any chart is added to this moment (click it again to remove it)';lh.appendChild(pk);
+ const L=document.createElement('div');L.id='mLinks';P.append(lh,L);setPick(false);drawLinks();
  const act=document.createElement('div');act.className='bar';act.style.marginTop='8px';
- const close=()=>{editingMoment=null;P.classList.add('hide')};
+ const close=()=>{setPick(false);editingMoment=null;P.classList.add('hide');charts.forEach(c=>c.draw())};
  act.append(btn('Save',()=>{const title=F.title.value.trim();if(!title){alert('Enter a title.');return}
    if(F.end.value&&F.date.value&&F.end.value<F.date.value){alert('End date is before the date.');return}
-   const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,line:F.line.checked,links:draft.links,on:m.on!==false});
+   const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,kind:F.kind.value,line:F.line.checked,links:draft.links,on:m.on!==false});
    E.moments=(E.moments||[]).filter(x=>x.id!==rec.id).concat([rec]);saveEdits();close();list();setTimeout(render,0)},'on'));
  if(!isNew)act.appendChild(btn('Delete',()=>{if(!confirm('Delete the moment "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
  act.appendChild(btn('Close',close));P.appendChild(act);

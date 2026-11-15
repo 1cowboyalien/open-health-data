@@ -409,7 +409,10 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
     const pn = document.createElement('span'); pn.className = 'nm'; pn.innerHTML = 'Signatera <span class="tag">' + esc(LAST.vendor || 'Natera') + ' · full page</span>';
     pn.title = 'Open the full Signatera page: results, variants, positions and every draw';
     const pc = document.createElement('span'); pc.className = 'n'; pc.textContent = done.length + (det.length ? ' · ' + det.length + ' detected' : '');
-    pg.append(pn, pc); pg.onclick = open; G.appendChild(pg);
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'mini goto'; go.textContent = '⌖';
+    go.title = 'Find Signatera on the timeline: step through its draws'; go.setAttribute('aria-label', go.title);
+    go.onclick = e => { e.preventDefault(); e.stopPropagation(); startFind(); };
+    pg.append(pn, go, pc); pg.onclick = open; G.appendChild(pg);
     // one row per panel: tick = Compare; name = full page
     IDS.forEach(id => {
       const d = document.createElement('div'); d.className = 't';
@@ -423,6 +426,52 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
     });
   }
   function open() { on = true; store.set('mrd.on', true); setMode('single'); }
+
+  /* ---------- Find: step through the Signatera draws (⌖ in the Library), like the medications' Find bar ----------
+     Each step moves the window to the draw (keeping its length, or 3 months when it is longer than 6), makes sure an
+     Over time chart is on screen (the full page in One test view, the panel in Compare), puts the hover line on the
+     draw and scrolls the chart into view. "Signal only" steps through draws Natera called detected or where the
+     allele file shows any variant. */
+  let MF = null;
+  const signal = r => r.result === 'DETECTED' || (SCORE[r.draw_date] && SCORE[r.draw_date].n > 0);
+  function findList() { return ROWS.filter(r => !MF.sig || signal(r)); }
+  function startFind() {
+    if (typeof FIND !== 'undefined' && FIND) { FIND = null; setHlDrug(null); }   // one Find bar at a time
+    MF = {sig: store.get('mrd.findsig', false), i: 0};
+    const L = findList(), j = L.findIndex(r => inW(r.draw_date));
+    findGo(j >= 0 ? j : 0);
+  }
+  function findGo(i) {
+    const L = findList(); if (!L.length) return;
+    MF.i = i = Math.max(0, Math.min(L.length - 1, i)); const r = L[i], t = ms(r.draw_date);
+    let len = W.b - W.a; if (len > 180 * DAY) len = 90 * DAY; const a = Math.max(X0, Math.min(t - len / 2, X1 - len));
+    const shown = mode === 'single' ? active() : sel.includes('mrd:ot');
+    if (!shown) { if (mode === 'single') { on = true; store.set('mrd.on', true); } else { sel.push('mrd:ot'); store.set('selected', sel); }
+      W = {a, b: a + len}; store.set('window', W); syncWin(); updateBar(); list(); window.render(); }
+    else setWin(a, a + len);
+    findBar(); setTimeout(() => { setHover(pos(t)); findScroll(); }, 40);
+  }
+  function findScroll() {
+    const c = charts.get('mrd:ot@page#c') || charts.get('mrd:ot#c'); if (!c) return;
+    const r = c.canvas.getBoundingClientRect(), top = document.querySelector('.navpin').getBoundingClientRect().bottom + 10;
+    if (r.top < top || r.bottom > innerHeight - 20) scrollBy({top: r.top - top - 40, behavior: 'smooth'});
+  }
+  function findBar() {
+    const bar = $('findBar'); bar.innerHTML = ''; bar.classList.toggle('hide', !MF); if (!MF) return;
+    const L = findList(), r = L[MF.i], n = L.length, s = SCORE[r.draw_date];
+    const ic = document.createElement('span'); ic.className = 'wl'; ic.textContent = '⌖';
+    const nb = document.createElement('b'); nb.textContent = 'Signatera';
+    const k = document.createElement('span'); k.className = 'sub'; k.textContent = (MF.i + 1) + ' of ' + n + (MF.sig ? ' with a signal' : ' draws');
+    const b = (txt, tip, i, off) => { const x = btn(txt, tip, () => findGo(i)); x.disabled = off; return x; };
+    const d = document.createElement('span');
+    d.textContent = fd(r.draw_date) + ' · ' + (r.result === 'NOT PERFORMED' ? 'test not performed' : (r.value || '0') + ' MTM/mL, ' + (r.result === 'DETECTED' ? 'detected' : 'not detected')) +
+      (s ? ' · ' + s.n + ' of ' + s.of + ' variants found' : '') + ' · ' + (r.result === 'NOT PERFORMED' ? r.source : 'Natera report' + (r.also_in ? ' · ' + r.also_in : ''));
+    const sg = btn('Signal only', 'Step only through draws Natera called detected or with any variant in the allele file', () => {
+      const cur = L[MF.i]; MF.sig = !MF.sig; store.set('mrd.findsig', MF.sig);
+      const L2 = findList(); let j = L2.findIndex(x => x.draw_date >= cur.draw_date); findGo(j >= 0 ? j : L2.length - 1); }, MF.sig);
+    bar.append(ic, nb, k, b('⏮', 'First', 0, MF.i === 0), b('◀', 'Previous', MF.i - 1, MF.i === 0), b('▶', 'Next', MF.i + 1, MF.i === n - 1), b('⏭', 'Last', n - 1, MF.i === n - 1), d, sg);
+    const x = btn('×', 'Close the Find bar', () => { MF = null; findBar(); }); x.style.marginLeft = 'auto'; bar.appendChild(x);
+  }
 
   function render() { LIVE.forEach((f, k) => { if (k.endsWith('@page')) LIVE.delete(k); }); page(); }
   function close() { if (on) { on = false; store.set('mrd.on', false); } }

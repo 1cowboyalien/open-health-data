@@ -145,8 +145,32 @@ for f in (HL_FILE, HL_LOCAL):
                                    "refers": r.get("refers_to", ""), "basis": r.get("basis", "label")}
 edits_file = os.path.join(here, "med_edits.json")
 edits = json.load(open(edits_file)) if os.path.exists(edits_file) else None
+# MRD tests (Signatera ctDNA): private tables from flatten_mrd.py / liftover_mrd.py, shown when present
+def load_mrd():
+    f = lambda n: os.path.join(here, n)
+    if not os.path.exists(f("mrd_tests.tsv")):
+        return None
+    rd = lambda n: list(csv.DictReader(open(f(n)), delimiter="\t")) if os.path.exists(f(n)) else []
+    AA = {"Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G", "His": "H", "Ile": "I", "Leu": "L", "Lys": "K",
+          "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V", "Ter": "*"}
+    EFF = {"missense_variant": "missense", "synonymous_variant": "synonymous (no protein change)", "intron_variant": "intron", "splice_donor_variant": "splice site",
+           "splice_acceptor_variant": "splice site", "stop_gained": "stop gained", "5_prime_UTR_variant": "5′ UTR", "3_prime_UTR_variant": "3′ UTR",
+           "upstream_gene_variant": "upstream of gene", "downstream_gene_variant": "downstream of gene", "intergenic_variant": "between genes"}
+    alleles = [{k: r[k] for k in ("draw_date", "target_id", "chrom", "position", "ref", "alt", "change_type", "allele_ratio", "call")} for r in rd("mrd_alleles.tsv")]
+    vars_ = {}
+    for a in alleles:   # positions as Natera sent them, so the page works before liftover_mrd.py has run
+        vars_.setdefault(a["target_id"], {"chrom": a["chrom"], "pos_grch37": a["position"], "ref": a["ref"], "alt": a["alt"], "change_type": a["change_type"]})
+    for r in rd("mrd_variants.tsv"):
+        m = re.search(r"p\.([A-Z][a-z]{2})(\d+)([A-Z][a-z]{2}|=)", r.get("hgvsp", ""))
+        v = vars_.setdefault(r["target_id"], {})
+        v.update({k: r.get(k, "") for k in ("chrom", "pos_grch37", "chrom_grch38", "pos_grch38", "ref", "alt", "change_type", "check", "gene", "consequence", "hgvsc", "hgvsp")})
+        v["prot"] = (AA[m[1]] + m[2] + (AA[m[1]] if m[3] == "=" else AA[m[3]])) if m else ""
+        v["near"] = r.get("consequence") in ("upstream_gene_variant", "downstream_gene_variant")
+        v["effect"] = EFF.get(r.get("consequence", ""), r.get("consequence", "").replace("_", " "))
+    return {"rows": rd("mrd_tests.tsv"), "alleles": alleles, "vars": vars_}
+mrd = load_mrd()
 data = json.dumps({"tests": tests, "sources": sources, "span": span, "tx": tx, "edits": edits, "halflife": halflife,
-                   "brk": brk, "brkw": COMPRESS_WIDTH}, separators=(",", ":"))
+                   "brk": brk, "brkw": COMPRESS_WIDTH, "mrd": mrd}, separators=(",", ":"))
 
 html = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -287,6 +311,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <div class="bar" style="margin-top:8px"><span class="sub">Height</span><button data-h="-">−</button><button data-h="+">+</button></div></div>
 <div class="card"><table id="tbl"></table></div>
 </section>
+<section id="mrd" class="hide"></section>
 <section id="compare" class="hide"><div id="cmpList"></div>
 <div class="sub" id="cmpEmpty" style="margin-top:14px">Tick the boxes next to tests in the list to stack them here on the same time scale.</div></section>
 <div class="sub" style="margin-top:12px">Point color = hospital. Shaded band = normal range (latest result). Larger points with a red ring = flagged high, blue ring = flagged low. In wide windows, time before May 2023 is compressed left of the darker vertical line. Window, selection and heights are remembered in this browser.
@@ -316,7 +341,7 @@ let libHidden=store.get('libhidden',false);
 function applyLib(){document.body.classList.toggle('nolib',libHidden);const b=$('libBtn');b.textContent=libHidden?'☰ Show Library':'◧ Hide Library';b.setAttribute('aria-pressed',String(libHidden))}
 $('libBtn').onclick=()=>{libHidden=!libHidden;store.set('libhidden',libHidden);applyLib()};applyLib();
 let cur=store.get('current',D.tests[0].id);if(!BYID[cur])cur=D.tests[0].id;
-let sel=store.get('selected',[]).filter(id=>BYID[id]);
+let sel=store.get('selected',[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var)$/.test(id)));   // lab ids, or the MRD panels (mrd_view.js)
 let heights=store.get('heights',{});
 let hoverX=null;const charts=new Map();
 
@@ -384,6 +409,8 @@ function setHover(xv){if(xv===hoverX)return;hoverX=xv;charts.forEach(c=>c.draw()
 
 __TXJS__
 
+__MRDJS__
+
 /* sidebar: collapsible sections (open state remembered; all open while filtering) */
 let openState=store.get('open',{});let sectionIds=[];
 function setAllOpen(on){sectionIds.forEach(id=>openState[id]=on);store.set('open',openState);list()}
@@ -448,15 +475,15 @@ function list(){const q=$('q').value.toLowerCase();const el=$('list');el.innerHT
   vs.insertBefore(groupOnlyBtn('vital','grp:Vitals',vids,soloLab&&soloLab.key==='grp:Vitals',soloLab&&soloLab.key.startsWith('id:')&&vids.includes(soloLab.ids[0]),
    ()=>onlyLab('grp:Vitals',vids,'Vitals')),vs.lastChild);
   V.forEach(t=>testRow(t,VS))}
- momentSection(el,q);medSection(el,q);soloBarRender()}
+ MRD.section(el,q);momentSection(el,q);medSection(el,q);soloBarRender()}
 /* one lab or vital row in the sidebar */
-function testRow(t,G){const d=document.createElement('div');d.className='t'+(mode==='single'&&t.id===cur?' on':'');
+function testRow(t,G){const d=document.createElement('div');d.className='t'+(mode==='single'&&!MRD.active()&&t.id===cur?' on':'');
  const cb=document.createElement('input');cb.type='checkbox';cb.checked=sel.includes(t.id);cb.setAttribute('aria-label','Compare '+t.name);
  cb.onclick=e=>{e.stopPropagation();toggle(t.id,cb.checked)};
  const nm=document.createElement('span');nm.className='nm';nm.textContent=labLabel(t);nm.title=labLabel(t)+(labLabel(t).includes(t.name)?'':' — as named by the lab: '+t.name);
  const n=document.createElement('span');n.className='n';n.textContent=t.n+(t.flagged?' · '+t.flagged+'⚑':'');
  const only=onlyBtn('Show only '+t.name+' (deselect the others)',()=>onlyLab('id:'+t.id,[t.id],labLabel(t)),soloLab&&soloLab.key==='id:'+t.id);
- d.append(cb,nm,only,n);d.onclick=()=>{cur=t.id;store.set('current',cur);setMode('single')};
+ d.append(cb,nm,only,n);d.onclick=()=>{MRD.close();cur=t.id;store.set('current',cur);setMode('single')};
  d.onmouseenter=()=>setHlLab(t.id);d.onmouseleave=()=>setHlLab(null);G.appendChild(d)}
 function toggle(id,on){setLabSel([id],on)}
 /* add or remove lab tests from the comparison (keeps the order they were ticked in) */
@@ -465,7 +492,7 @@ function setLabSel(ids,on){sel=sel.filter(x=>!ids.includes(x));if(on)sel.push(..
  updateBar();list();if(mode==='compare')render()}
 function setMode(m){mode=m;store.set('mode',m);updateBar();list();render()}
 function updateBar(){$('mCompare').textContent='Compare selected ('+sel.length+')';$('mSingle').className=mode==='single'?'on':'';$('mCompare').className=mode==='compare'?'on':'';
- $('single').classList.toggle('hide',mode!=='single');$('compare').classList.toggle('hide',mode!=='compare');
+ $('single').classList.toggle('hide',mode!=='single'||MRD.active());$('mrd').classList.toggle('hide',!MRD.active());$('compare').classList.toggle('hide',mode!=='compare');
  $('hint').textContent=mode==='compare'?'Hover any chart to line up a date across all of them.':''}
 function hOf(id,def){return heights[id]||def}
 function setH(id,h){heights[id]=Math.max(70,Math.min(600,h));store.set('heights',heights)}
@@ -482,7 +509,7 @@ function moveStage(key,d){const o=stageOrder(),i=o.indexOf(key),j=d==='top'?0:d=
  render()}
 function placeTx(){const tc=$('txCard');if(mode==='compare'){const cards=[...$('cmpList').querySelectorAll(':scope > .cmp')],i=Math.min(txPos,cards.length);
   if(i<cards.length)$('cmpList').insertBefore(tc,cards[i]);else $('cmpList').appendChild(tc)}
- else{const sg=$('single');if(txPos>0)sg.after(tc);else sg.before(tc)}
+ else{const sg=MRD.active()?$('mrd'):$('single');if(txPos>0)sg.after(tc);else sg.before(tc)}
  const o=stageOrder(),i=o.indexOf('__tx');$('txTop').disabled=$('txUp').disabled=i<=0;$('txBottom').disabled=$('txDown').disabled=i>=o.length-1;
  $('detTop').disabled=$('detUp').disabled=txPos>0;$('detBottom').disabled=$('detDown').disabled=txPos===0;
  if(mode==='compare'){const n=o.length;[...$('cmpList').querySelectorAll(':scope > .cmp')].forEach(c=>{const k=o.indexOf(c.dataset.id);
@@ -494,14 +521,15 @@ function keepScroll(f){const se=document.scrollingElement,y=se.scrollTop,m=docum
  try{f()}finally{m.style.minHeight='';se.scrollTop=y}}
 function render(){keepScroll(()=>{charts.forEach(c=>c.destroy());charts.clear();hoverX=null;
  $('single').before($('txCard'));   // park it before the charts are rebuilt, then put it back in its place
- renderBand();if(mode==='single')renderSingle();else renderCompare();placeTx()})}
+ renderBand();if(MRD.active())MRD.render();else if(mode==='single')renderSingle();else renderCompare();placeTx()})}
 /* only the time window changed (move, zoom, drag, presets): rebuild the Treatment panel, update the lab charts in place */
 function renderWin(){if(!$('ptpop').classList.contains('hide'))hidePop();   // the reading it pointed at has moved
+ if(MRD.active()){keepScroll(()=>{[...charts.keys()].filter(k=>!k.startsWith('mrd:')).forEach(k=>{charts.get(k).destroy();charts.delete(k)});renderBand();MRD.render()});return}
  const labKeys=mode==='single'?['single']:sel;
- const ok=mode==='single'?(charts.get('single')||{}).$t===cur:sel.every(id=>(charts.get(id)||{}).$t===id);
+ const ok=mode==='single'?(charts.get('single')||{}).$t===cur:sel.every(id=>MRD.isId(id)||(charts.get(id)||{}).$t===id);
  if(!ok)return render();
  keepScroll(()=>{[...charts.keys()].filter(k=>!labKeys.includes(k)).forEach(k=>{charts.get(k).destroy();charts.delete(k)});
-  renderBand();if(mode==='single')renderSingle(true);else sel.forEach((id,i)=>refreshChart(charts.get(id),BYID[id],{compact:true,dateLabel:false,showX:true}))})}
+  renderBand();if(mode==='single')renderSingle(true);else sel.forEach((id,i)=>MRD.isId(id)?MRD.refresh(id):refreshChart(charts.get(id),BYID[id],{compact:true,dateLabel:false,showX:true}))})}
 function renderSingle(reuse){const t=BYID[cur],p=t.pts,last=p[p.length-1],lo=last.lo,hi=last.hi,vals=p.map(x=>x.v),pv=p.filter(inWin);
  $('title').textContent=labLabel(t)+(t.unit?' ('+t.unit+')':'');
  $('desc').textContent=pv.length+' of '+p.length+' results in window · '+t.panel+' · all results '+p[0].date+' to '+last.date+' · '+t.sources.join(', ')+(t.loinc?' · LOINC '+t.loinc:'')+(labLabel(t).includes(t.name)?'':' · named "'+t.name+'" by the lab');
@@ -516,19 +544,20 @@ function renderSingle(reuse){const t=BYID[cur],p=t.pts,last=p[p.length-1],lo=las
  const tb=$('tbl');tb.innerHTML='<tr><th>Date</th><th>Value</th><th>Range</th><th>Flag</th><th>Hospital</th></tr>';
  [...pv].reverse().forEach(x=>{const r=tb.insertRow();[x.ts!=null?localStamp(x.ts):x.date,valText(x),(x.lo!=null?fmt(x.lo):'')+' – '+(x.hi!=null?fmt(x.hi):''),x.flag,x.src].forEach((v,i)=>{const c=r.insertCell();c.textContent=v;if(i===3&&v)c.className=/H/.test(v)?'H':'L'})})}
 function renderCompare(){const box=$('cmpList');box.innerHTML='';$('cmpEmpty').classList.toggle('hide',sel.length>0);
- sel.forEach((id,i)=>{const t=BYID[id];const w=document.createElement('div');w.className='cmp'+(id===hlLab?' hl':'');w.dataset.id=id;
+ sel.forEach((id,i)=>{const isM=MRD.isId(id),t=isM?null:BYID[id],H0=isM?MRD.h0(id):160;const w=document.createElement('div');w.className='cmp'+(id===hlLab?' hl':'');w.dataset.id=id;
   const h=document.createElement('div');h.className='cmph';
-  const b=document.createElement('b');b.textContent=labLabel(t);b.title=t.name;const u=document.createElement('span');u.className='u';u.textContent=t.unit||'';
+  const b=document.createElement('b');b.textContent=isM?MRD.title(id):labLabel(t);b.title=isM?MRD.title(id):t.name;const u=document.createElement('span');u.className='u';u.textContent=isM?MRD.unit(id):t.unit||'';
   const ctl=document.createElement('span');ctl.className='ctl';
   const mk=(label,title,fn)=>{const x=document.createElement('button');x.textContent=label;x.title=title;x.setAttribute('aria-label',title);x.onclick=fn;ctl.appendChild(x);return x};
   mk('⤒','Move this panel to the top',()=>moveStage(id,'top')).dataset.mv='top';
   mk('↑','Move this panel up',()=>moveStage(id,-1)).dataset.mv='-1';
   mk('↓','Move this panel down',()=>moveStage(id,1)).dataset.mv='1';
   mk('⤓','Move this panel to the bottom',()=>moveStage(id,'bottom')).dataset.mv='bottom';
-  mk('−','Shorter',()=>{setH(id,hOf(id,160)-40);render()});
-  mk('+','Taller',()=>{setH(id,hOf(id,160)+40);render()});
+  mk('−','Shorter',()=>{setH(id,hOf(id,H0)-40);render()});
+  mk('+','Taller',()=>{setH(id,hOf(id,H0)+40);render()});
   mk('×','Remove from comparison',()=>{toggle(id,false);list()});
   h.append(b,u,ctl);
+  if(isM){const body=document.createElement('div');w.append(h,body);box.appendChild(w);MRD.panel(id,body);return}   // MRD panel: mrd_view.js draws it
   const cb=document.createElement('div');cb.style.cssText='position:relative;height:'+hOf(id,160)+'px';
   const cv=document.createElement('canvas');cv.setAttribute('role','img');cv.setAttribute('aria-label','Trend of '+t.name);cb.appendChild(cv);
   w.append(h,cb);box.appendChild(w);
@@ -600,6 +629,8 @@ const sl=$('srcLegend');D.sources.forEach(s=>{const e=document.createElement('sp
 syncWin();updateBar();list();render();
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__DATA__", data))
+mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
-      f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else ""))
+      f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
+      + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else ""))

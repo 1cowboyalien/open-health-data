@@ -229,7 +229,9 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 .chips{display:flex;flex-wrap:wrap;gap:5px}.chips button{font-size:12px;padding:2px 9px;border-radius:12px}
 .txh .ctl{margin-left:auto;display:flex;gap:4px}.txh .ctl button{padding:1px 8px;font-size:12px}
 #txInfo{min-height:20px;margin-top:4px}.shape{display:inline-flex;align-items:center;gap:5px}
-#txEdit{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+#txBody{position:relative}
+#txEdit{position:absolute;z-index:30;max-height:70vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:none}#libBtn{font-size:13px}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px;margin-top:8px}
 .fld{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink2)}
 .fld input,.fld select,.fld textarea{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
@@ -244,7 +246,7 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 <div id="list"></div></aside>
 <main>
 <div class="navpin">
-<div class="nrow"><button id="mSingle">One test</button><button id="mCompare">Compare selected (0)</button><button id="clr">Clear</button>
+<div class="nrow"><button id="libBtn" title="Hide or show the Library (left bar) to give the charts more room" aria-pressed="false"></button><button id="mSingle">One test</button><button id="mCompare">Compare selected (0)</button><button id="clr">Clear</button>
 <span class="wbtn" role="group" aria-label="Window presets"><button data-p="all" title="Whole record">All</button><button data-p="brk" title="Since May 2023">May '23</button><button data-p="24" title="Last 2 years">2y</button><button data-p="12" title="Last 12 months">12m</button><button data-p="6" title="Last 6 months">6m</button><button data-p="3" title="Last 3 months">3m</button></span>
 <span class="wnav"><button id="wPrev" title="Move the window back by a quarter of its length" aria-label="Move back">◀</button>
 <input type="range" id="wp" aria-label="Move the window along the timeline (keeps its length)" title="Drag to move the window along the timeline"><button id="wNext" title="Move the window forward by a quarter of its length" aria-label="Move forward">▶</button>
@@ -298,6 +300,10 @@ const YW=64;
 const MINW=DAY/2;   // shortest window: 12 hours (hospital stays with readings every few hours)
 let W=store.get('window',{a:X0,b:X1});if(!(W.a>=X0&&W.b<=X1&&W.b-W.a>=MINW))W={a:X0,b:X1};
 let mode=store.get('mode','single');
+/* Library (left bar): hide/show, remembered; Chart.js resizes the charts on its own */
+let libHidden=store.get('libhidden',false);
+function applyLib(){document.body.classList.toggle('nolib',libHidden);const b=$('libBtn');b.textContent=libHidden?'☰ Show Library':'◧ Hide Library';b.setAttribute('aria-pressed',String(libHidden))}
+$('libBtn').onclick=()=>{libHidden=!libHidden;store.set('libhidden',libHidden);applyLib()};applyLib();
 let cur=store.get('current',D.tests[0].id);if(!BYID[cur])cur=D.tests[0].id;
 let sel=store.get('selected',[]).filter(id=>BYID[id]);
 let heights=store.get('heights',{});

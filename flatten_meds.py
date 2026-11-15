@@ -43,7 +43,7 @@ COLS = ["date", "authored_on", "source", "drug", "drug_class", "drug_name_origin
         "rxnorm_code", "dose_value", "dose_value_high", "dose_unit", "dose_admin_value", "dose_admin_unit",
         "dosage_text", "route", "frequency", "as_needed", "start", "end", "start_end_from",
         "status", "intent", "category", "course_of_therapy", "reported", "encounter",
-        "reason", "prn_for", "visit_reason",
+        "reason", "prn_for", "visit_reason", "prescriber",
         "dispense_count", "first_dispensed", "last_dispensed",
         "medication_ref", "request_id", "prior_request_id"]
 DISP_COLS = ["date", "handed_over", "source", "drug", "drug_class", "drug_name_original", "rxnorm_code",
@@ -255,6 +255,7 @@ def flatten(site, d, rules, meds):
                     (c.get("text") or (c.get("coding") or [{}])[0].get("display", "")).strip()
                     for c in r.get("reasonCode", []) if c.get("text") or c.get("coding"))),
                 "prn_for": prn_for(" | ".join(x.get("text", "") for x in r.get("dosageInstruction", []))),
+                "prescriber": (r.get("requester") or {}).get("display", ""),   # the ordering clinician, as named in the record
                 "visit_reason": visits.get((r.get("encounter") or {}).get("reference", "").split("/")[-1], ""),
                 "medication_ref": ref.get("reference", ""),
                 "request_id": r["id"],

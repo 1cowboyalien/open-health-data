@@ -24,7 +24,7 @@ const isoD=t=>new Date(t).toISOString().slice(0,10);
    "as needed for ..." words, and the reason of the visit it was ordered in. Nothing is guessed. */
 const cut=(t,n)=>t.length>n?t.slice(0,n-1)+'…':t;
 function whyLines(w,n){if(!w)return[];n=n||90;const L=[];if(w.order)L.push('Reason on the order: '+cut(w.order.replace(/ \| /g,'; '),n));
- if(w.prn&&!(w.order||'').toLowerCase().includes(w.prn.toLowerCase()))L.push('As needed for: '+cut(w.prn,n));if(w.visit)L.push('Visit: '+cut(w.visit,n));return L}
+ if(w.prn&&!(w.order||'').toLowerCase().includes(w.prn.toLowerCase()))L.push('As needed for: '+cut(w.prn,n));if(w.visit)L.push('Visit: '+cut(w.visit,n));if(w.by)L.push('Ordered by: '+cut(w.by,n));return L}
 /* when a dose was given, in ms: the recorded time if there is one, else the start of its date */
 const evT=e=>e.at?Date.parse(e.at):dms(e.d);
 const evWhen=e=>e&&e.at?localStamp(Date.parse(e.at)):e?e.d:'';
@@ -465,7 +465,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
   pointBorderWidth:k==='skipped'?1.8:KIND[k].fill?1:1.3,showLine:false}));
  charts.set('tx',new Chart($('tx'),{type:'scatter',plugins:[bars,guide,momentPlugin],data:{datasets:ds},
   options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
-   onHover:(ev,els,c)=>{const xv=c.scales.x.getValueForPixel(ev.x);setHover(xv>=0&&xv<=100?xv:null);const u=c.scales.y.getValueForPixel(ev.y);txInfo(rows,rowAt(rows,u),xv,u);
+   onHover:(ev,els,c)=>{const xv=c.scales.x.getValueForPixel(ev.x);setHover(xv>=0&&xv<=100?xv:null);const u=c.scales.y.getValueForPixel(ev.y);txInfo(rows,rowAt(rows,u),xv,u);barPop(ev,els,rows[rowAt(rows,u)],xv,u);
     c.canvas.style.cursor='grab'},
    onClick:(ev,els,c)=>txClick(rows,els,c,ev),
    plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
@@ -483,7 +483,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
   rows.forEach(r=>{if(r.moments||done.has(r.drug))return;done.add(r.drug);
    const b=btn('×',e=>{e.stopPropagation();setMedSel([r.drug],false)},'txx');b.title='Remove '+drugLabel(r.drug,r.brands)+' from the Treatment panel (tick it in the Library to bring it back)';
    b.setAttribute('aria-label','Remove '+r.drug+' from the Treatment panel');b.style.top=(y.getPixelForValue(r._u0)+1)+'px';b.style.left=(A.left-20)+'px';$('txBox').appendChild(b)})}
- $('txBox').onmouseleave=()=>{setHover(null);$('txInfo').textContent=''}}
+ $('txBox').onmouseleave=()=>{setHover(null);$('txInfo').textContent='';$('mtip').classList.add('hide')}}
 /* ---- half-life estimates: estimated amount still in the body after each dose ----
    amount(t) = Σ dose × ½^(days since dose ÷ t½), for the low and high half-life in
    reference/med_halflife.tsv (shaded between). Drawn inside the band under each drug's bar for
@@ -559,6 +559,14 @@ function renderDoses(){const box=$('txDoses');box.innerHTML='';if(txHidden)retur
  box.onmouseleave=()=>setHover(null)}
 function rowAt(rows,u){return rows.findIndex(r=>u>=r._u0&&u<r._u0+r._span)}
 function segAt(r,t){return r&&r.segs.find(g=>t>=dms(g.a)-DAYMS/2&&t<=dms(g.b)+DAYMS)}
+/* Medication popup for a bar (dose markers have Chart.js's own popup): period, dose, why it was given, who ordered it */
+function barPop(ev,els,r,xv,u){const el=$('mtip'),hide=()=>el.classList.add('hide');
+ if(els.length||!r||r.moments||xv==null||xv<0||xv>100||u>=r._u0+1)return hide();const g=segAt(r,unpos(xv));if(!g)return hide();
+ el.innerHTML='';const b=document.createElement('b');b.textContent=rowLabel(r);el.appendChild(b);
+ [(g.user?'entered by you ':g.note&&/joined/.test(g.note)?'given ':'ordered ')+g.a+' to '+g.b+(g.src&&g.src!=='you'?' · '+g.src:''),
+  [g.dose,g.freq||(g.sch&&g.sch.perDay>1?g.sch.perDay+'×/day':'')].filter(Boolean).join(' · '),g.edited?'changed by you':'',
+  ...whyLines(g.why,140),canEdit()?'click to edit':''].filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
+ const n=ev.native||ev;el.style.left=Math.min(n.clientX+14,innerWidth-350)+'px';el.style.top=(n.clientY+16)+'px';el.classList.remove('hide')}
 function txInfo(rows,i,xv,u){const r=rows[i];if(!r||xv==null){$('txInfo').textContent='';return}
  if(r._hl&&u!=null&&u>=r._u0+1){const t=unpos(xv),hl=HLD[r.drug];
   $('txInfo').textContent=drugLabel(r.drug,r.brands)+' on '+iso(t)+': about '+rangeAmt(r._hl.doses,t,hl)+' '+r._hl.u+' estimated in the body ('+hlText(hl)+(r._hl.ranged?'; some doses are only a range in the record, so counted low to high':'')+') — '+(hl.basis==='estimate'?'based on an UNOFFICIAL half-life estimate, not from a drug label':'based on the half-life in the drug label')+(r._hl.assumed?', assuming it was taken as prescribed':'')+', not a measured level';return}

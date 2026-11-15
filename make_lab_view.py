@@ -210,7 +210,7 @@ body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 .t.ract .nm{font-weight:600}.t.layrow{padding:3px 8px 3px 26px;font-size:13px}.t.layon{background:var(--accent);color:#fff}
 body.viewonly #mAdd,body.viewonly #txAdd,body.viewonly #txImport,body.viewonly .ptpop button:not(.pclose),body.viewonly #mLinks button,body.viewonly .madd{display:none!important}.pmove button{padding:0 7px;font-size:12px}
 .navpin .mcard{margin-top:6px;padding:4px 16px 2px}.mhead{display:flex;align-items:center;gap:8px;font-size:12px}.mhead b{font-size:13px}.mhead .mtbtn{margin-left:auto;display:flex;gap:4px}.mhead .mtbtn button{font-size:11px;padding:1px 7px}
-.mtrack{position:relative;height:52px}.nrow.lay .wl{width:auto}.mtip{pointer-events:none;z-index:60}
+.mtrack{position:relative;height:52px}.nrow.lay .wl{width:auto}.mtip{pointer-events:none;z-index:60;max-width:340px}
 .ptpop{position:fixed;z-index:50;background:var(--ink);color:var(--bg);border-radius:8px;padding:6px 9px;font-size:12px;max-width:250px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .ptpop.pinned{outline:2px solid #e34948}.ptpop .pclose{position:absolute;top:2px;right:4px;margin:0;background:transparent;border:0;color:inherit;font-size:14px;padding:0 4px}.ptpop .pnote{font-size:10px;opacity:.7;margin-top:3px}
 .ptpop button{margin-top:5px;background:#e34948;border-color:#e34948;color:#fff;font-size:11px;padding:2px 8px}

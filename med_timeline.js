@@ -203,6 +203,40 @@ function jumpMoment(m){if(!m.date){openMoment(m);return}let len=W.b-W.a;if(len>6
  shiftWin(momentT(m)-len/2,len);list();openMoment(m)}
 
 /* the pinned keyframe track (one row in the navigation bar, aligned with the charts) */
+/* ---- time ruler under the Moments panel (pinned with the Navigator) ----
+   Divisions follow the zoom: years → months → weeks (1st/8th/15th/22nd) → days → 6 h / 1 h → 15 / 5 / 1 min (the shortest window is 12 hours).
+   Minor marks: the smallest unit at least 5 px apart; labelled marks: the smallest at least 34 px apart.
+   While the mouse is over any chart, the Hover line's date (and time, when zoomed in to hours) is shown here. Local time. */
+const HOURMS=3600e3,MINMS=60e3,WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],z2=n=>String(n).padStart(2,'0');
+const dayName=d=>MON[d.getMonth()]+' '+d.getDate();
+const RUNITS=[
+ {ms:365.25*DAYMS,fl:d=>new Date(d.getFullYear(),0,1),nx:d=>new Date(d.getFullYear()+1,0,1),lb:d=>String(d.getFullYear())},
+ {ms:30.44*DAYMS,fl:d=>new Date(d.getFullYear(),d.getMonth(),1),nx:d=>new Date(d.getFullYear(),d.getMonth()+1,1),lb:d=>d.getMonth()?MON[d.getMonth()]:String(d.getFullYear())},
+ {ms:7.6*DAYMS,fl:d=>new Date(d.getFullYear(),d.getMonth(),[22,15,8,1].find(k=>k<=d.getDate())),   // 1st, 8th, 15th, 22nd
+  nx:d=>d.getDate()>=22?new Date(d.getFullYear(),d.getMonth()+1,1):new Date(d.getFullYear(),d.getMonth(),d.getDate()+7),
+  lb:d=>d.getDate()===1?(d.getMonth()?MON[d.getMonth()]:String(d.getFullYear())):String(d.getDate())},
+ {ms:DAYMS,fl:d=>new Date(d.getFullYear(),d.getMonth(),d.getDate()),nx:d=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+1),
+  lb:d=>d.getDate()===1?(d.getMonth()?MON[d.getMonth()]:String(d.getFullYear())):String(d.getDate())},
+ ...[6,1].map(h=>({ms:h*HOURMS,fl:d=>new Date(d.getFullYear(),d.getMonth(),d.getDate(),Math.floor(d.getHours()/h)*h),
+  nx:d=>new Date(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours()+h),lb:d=>d.getHours()?z2(d.getHours())+':00':dayName(d)})),
+ ...[15,5,1].map(k=>({ms:k*MINMS,fl:d=>new Date(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours(),Math.floor(d.getMinutes()/k)*k),
+  nx:d=>new Date(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours(),d.getMinutes()+k),lb:d=>d.getHours()||d.getMinutes()?z2(d.getHours())+':'+z2(d.getMinutes()):dayName(d)}))];
+const RULERH=26;
+function rulerUnits(wpx){const px=u=>u.ms/(W.b-W.a)*wpx,small=[...RUNITS].reverse();
+ return{minor:small.find(u=>px(u)>=5)||RUNITS[0],major:small.find(u=>px(u)>=34)||RUNITS[0]}}
+function rulerTimes(u){const out=[];let d=u.fl(new Date(W.a)),n=0;while(d.getTime()<=W.b&&n++<3000){if(d.getTime()>=W.a)out.push(d);d=u.nx(d)}return out}
+function cursorText(t,u){const d=new Date(t);return WD[d.getDay()]+' '+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear()+(u.ms<DAYMS?' · '+z2(d.getHours())+':'+z2(d.getMinutes()):'')}
+const rulerPlugin={id:'ruler',afterDraw(c){const{ctx,chartArea:A,scales:{x}}=c,U=rulerUnits(A.right-A.left),y0=A.bottom+2,X=t=>x.getPixelForValue(pos(t));
+ ctx.save();ctx.strokeStyle=css('--line');ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(A.left,y0+.5);ctx.lineTo(A.right,y0+.5);ctx.stroke();
+ ctx.strokeStyle=css('--muted');ctx.beginPath();let last=-1e9;
+ rulerTimes(U.minor).forEach(d=>{const px=X(d.getTime());if(px-last<4)return;last=px;ctx.moveTo(Math.round(px)+.5,y0);ctx.lineTo(Math.round(px)+.5,y0+4)});ctx.stroke();
+ ctx.strokeStyle=css('--ink2');ctx.fillStyle=css('--ink2');ctx.font='10px system-ui';ctx.textAlign='center';ctx.beginPath();let lend=-1e9;
+ rulerTimes(U.major).forEach(d=>{const px=X(d.getTime());ctx.moveTo(Math.round(px)+.5,y0);ctx.lineTo(Math.round(px)+.5,y0+8);
+  const t=U.major.lb(d),w=ctx.measureText(t).width;if(px-w/2>lend+6&&px+w/2<=A.right+6){ctx.fillText(t,px,y0+18);lend=px+w/2}});ctx.stroke();
+ if(hoverX!=null){const px=x.getPixelForValue(hoverX);ctx.setLineDash([3,3]);ctx.strokeStyle=css('--ink2');ctx.beginPath();ctx.moveTo(px,A.top);ctx.lineTo(px,y0+6);ctx.stroke();ctx.setLineDash([]);
+  ctx.font='600 11px system-ui';const t=cursorText(unpos(hoverX),U.minor),w=ctx.measureText(t).width+12,bx=Math.max(A.left-YW+2,Math.min(px-w/2,A.right-w));
+  ctx.fillStyle=css('--ink');ctx.beginPath();ctx.roundRect(bx,y0+5,w,17,8);ctx.fill();ctx.fillStyle=css('--bg');ctx.fillText(t,bx+w/2,y0+17)}
+ ctx.restore()}};
 function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls();const TK=ticks();
  const shown=(E.moments||[]).filter(m=>momentOn(m)&&m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b);
  const titles={id:'mtitles',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c;ctx.save();
@@ -212,18 +246,19 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
     const txt=m.title.length>40?m.title.slice(0,39)+'…':m.title,w=ctx.measureText(txt).width;if(px+9>last&&px+9+w<A.right){ctx.fillStyle=colr;ctx.fillText(txt,px+9,A.top+12);last=px+9+w+8}});
    if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown moments in this window':'click here or “+ Moment” to add one; or click a reading on a chart and choose ★ Make moment',A.left+4,A.top+12)}
    ctx.restore()}};
- charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,momentPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:0,m})),pointStyle:'star',pointRadius:7,pointHoverRadius:9,
+ charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,momentPlugin,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:0,m})),pointStyle:'star',pointRadius:7,pointHoverRadius:9,
    pointBackgroundColor:shown.map(m=>MCOL[m.color]||MCOL.red),pointBorderColor:shown.map(m=>MCOL[m.color]||MCOL.red)}]},
-  options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,layout:{padding:{right:8}},
+  options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,layout:{padding:{right:8,bottom:RULERH}},
    onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null)},
-   onClick:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setTimeout(()=>{if(els[0])openMoment(c.data.datasets[0].data[els[0].index].m);else if(xv>=0&&xv<=100)openMoment(null,{date:localStamp(unpos(xv)).slice(0,10)})},0)},
+   onClick:(e,els,c)=>{if(e.y>c.chartArea.bottom)return;const xv=c.scales.x.getValueForPixel(e.x);setTimeout(()=>{if(els[0])openMoment(c.data.datasets[0].data[els[0].index].m);else if(xv>=0&&xv<=100)openMoment(null,{date:localStamp(unpos(xv)).slice(0,10)})},0)},
    plugins:{legend:{display:false},tooltip:{enabled:false,external:({chart,tooltip})=>{const el=$('mtip');if(!tooltip.opacity||!tooltip.dataPoints||!tooltip.dataPoints.length){el.classList.add('hide');return}
      const m=tooltip.dataPoints[0].raw.m;el.innerHTML='';const b=document.createElement('b');b.textContent=m.title;el.appendChild(b);
      [m.date+(m.time?' '+m.time:'')+(m.end?' → '+m.end:'')+(m.group?' · '+m.group:''),m.note?m.note.slice(0,140):'',(m.links||[]).length?(m.links.length+' linked reading'+(m.links.length>1?'s':'')):'','click to edit']
       .filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
      const r=chart.canvas.getBoundingClientRect();el.style.left=Math.min(r.left+tooltip.caretX+12,innerWidth-270)+'px';el.style.top=(r.top+tooltip.caretY+16)+'px';el.classList.remove('hide')}}},
    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
-    y:{min:-1,max:.5,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}))}
+    y:{min:-1,max:.5,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}));
+ cv.parentNode.onmouseleave=()=>setHover(null)}
 
 /* sidebar: Moments section (groups you name; tick to show; click a name to jump there) */
 function momentSection(el,q){const all=(E.moments||[]).filter(m=>!q||(m.title+' '+(m.group||'')+' '+(m.note||'')).toLowerCase().includes(q)||'moments'.includes(q));
@@ -414,8 +449,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
     const txt=(ch.prev==null&&!skipped.length?'':'→ ')+[...skipped,ch.v].map(fmt).join(' → ')+' '+dp.u;
     if(px>nameEnd&&px>lastEnd+6&&px+ctx.measureText(txt).width<A.right){ctx.fillText(txt,px,top+11);lastEnd=px+ctx.measureText(txt).width;skipped=[]}else skipped.push(ch.v)})});ctx.restore()}};
  const guide={id:'guide',afterDatasetsDraw(c){if(hoverX==null)return;const{ctx,chartArea:a,scales:{x}}=c;const px=x.getPixelForValue(hoverX);if(px<a.left||px>a.right)return;
-  ctx.save();ctx.strokeStyle=css('--muted');ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(px,a.top);ctx.lineTo(px,a.bottom);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle=css('--ink2');ctx.font='11px system-ui';ctx.fillText(whenText(unpos(hoverX)),Math.min(px+4,a.right-100),a.bottom-3);ctx.restore()}};
+  ctx.save();ctx.strokeStyle=css('--muted');ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(px,a.top);ctx.lineTo(px,a.bottom);ctx.stroke();ctx.setLineDash([]);ctx.restore()}};
  const col=e=>e.src==='you'?css('--ink'):srcColor(e.src);
  const ds=Object.keys(pts).map(k=>({label:k,data:pts[k],pointStyle:KIND[k].style,pointRadius:KIND[k].r,pointHoverRadius:KIND[k].r+2,
   pointBackgroundColor:pts[k].map(p=>k==='moment'?MCOL[p.e.m.color]||MCOL.red:KIND[k].fill?col(p.e):css('--card')),pointBorderColor:pts[k].map(p=>k==='skipped'?css('--ink2'):KIND[k].fill?css('--card'):col(p.e)),

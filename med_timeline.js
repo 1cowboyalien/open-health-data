@@ -358,6 +358,7 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
 function renderBand(){renderMomentTrack();hlControls();renderBandChart();renderDoses()}
 function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txBody').classList.toggle('hide',txHidden);if(txHidden||(!TX.length&&!E.added.length))return;
  const rows=txRows(),TK=ticks();txShown=rows;$('txEmpty').textContent=rows.length?'':txSel.length?'None of the ticked medications fall in this window.':'Tick medications in the list on the left to show them here.';
+ $('txBox').querySelectorAll('.txx').forEach(b=>b.remove());
  $('txBox').classList.toggle('hide',!rows.length);if(!rows.length)return;
  /* row layout in "row units": the bar line is 1 unit; a drug with a half-life gets hlH px more below its bar */
  let acc=0;rows.forEach(r=>{const hd=hlOn&&HLD[r.drug]?hlDoses([r]):null;r._hl=hd&&hd.doses.length?hd:null;
@@ -432,6 +433,11 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
      ticks:{color:css('--muted'),autoSkip:false,maxRotation:0,callback:(v,i)=>TK[i]?TK[i].label:''},
      grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}}},
     y:{type:'linear',reverse:true,min:0,max:acc,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}));
+ /* a small × left of each medication's name: untick it here instead of in the Library (a view setting, not an edit) */
+ {const c=charts.get('tx'),y=c.scales.y,A=c.chartArea,done=new Set();
+  rows.forEach(r=>{if(r.moments||done.has(r.drug))return;done.add(r.drug);
+   const b=btn('×',e=>{e.stopPropagation();setMedSel([r.drug],false)},'txx');b.title='Remove '+drugLabel(r.drug,r.brands)+' from the Treatment panel (tick it in the Library to bring it back)';
+   b.setAttribute('aria-label','Remove '+r.drug+' from the Treatment panel');b.style.top=(y.getPixelForValue(r._u0)+1)+'px';b.style.left=(A.left-20)+'px';$('txBox').appendChild(b)})}
  $('txBox').onmouseleave=()=>{setHover(null);$('txInfo').textContent=''}}
 /* ---- half-life estimates: estimated amount still in the body after each dose ----
    amount(t) = Σ dose × ½^(days since dose ÷ t½), for the low and high half-life in

@@ -15,6 +15,20 @@ Start by reading `HANDOFF.md` in this folder. It has the full state of the proje
 - Keep the 14 osteosarc.com lab columns, plus the added columns listed in `HANDOFF.md` §6.
 - `epic_pull.py` in this folder is the canonical version of the script.
 
+## After every pull (do this without being asked)
+1. Rebuild: `python3 flatten_labs.py && python3 flatten_vitals.py && python3 flatten_meds.py && python3 make_lab_view.py`
+2. Run `python3 check_new_data.py` and work through what it lists:
+   - **Drugs needing a half-life:** look each up on its US label (DailyMed, section 12.3), and add a row to `reference/med_halflife.tsv` with the label sentence, link and date (basis `label`). If no label states one, add a best estimate (basis `estimate`, reasoning in `refers_to`; the viewer draws these grey and dotted). If a half-life doesn't apply (IV fluids, flushes, local/topical use, vaccines), add basis `none` with the reason.
+   - **Drugs with no class rule:** add a rule to `reference/med_classes.tsv`.
+   - **New lab tests at only one hospital:** check whether another hospital has the same test under another code or name; join true matches in `reference/lab_concepts.tsv` (keep different formulas or methods apart). Give new tests an abbreviation/full name in `reference/lab_names.tsv` where useful.
+   - **Sensitive drugs** (e.g. reproductive or obstetric): put their class and half-life rows in the private `local/med_classes.local.tsv` / `local/med_halflife.local.tsv`, never in `reference/`.
+3. Rebuild again, check the viewer, then `python3 check_new_data.py --mark-reviewed`.
+4. Tell the user what was added, what was estimated and what was skipped.
+
+## Viewer
+- Serve it with `python3 serve_viewer.py` (port 8766, this Mac only; `--lan` for the home Wi-Fi). Don't use `python3 -m http.server` for it any more: that lists every private file in `local/` and doesn't save shared edits.
+- Shared edits live in `local/med_edits.json` (backups in `local/edits_history/`). Don't delete or overwrite it without asking: it holds the user's moments and medication changes.
+
 ## Knowledge Base
 - Shared Knowledge Base: `/Volumes/ssd70/Cancer/KnowleageBase/` (spelled that way on disk). Before work involving established tools, setups, integrations or previously solved problems, read its `README.md` index first and open only the documents it points to (the knowledge-base skill).
 - Update it only when the user asks ("update the knowledge base", "save what we learned").

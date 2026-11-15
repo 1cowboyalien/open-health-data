@@ -47,14 +47,21 @@ COLS = ["date", "authored_on", "source", "drug", "drug_class", "drug_name_origin
         "medication_ref", "request_id", "prior_request_id"]
 DISP_COLS = ["date", "handed_over", "source", "drug", "drug_class", "drug_name_original", "rxnorm_code",
              "quantity", "quantity_unit", "days_supply", "fill_type", "dose_value", "dose_unit",
+             "dose_admin_value", "dose_admin_unit",
              "dosage_text", "route", "frequency", "status", "request_id", "dispense_id"]
 
 PLACEHOLDER = re.compile(r"^(generic external medication|miscellaneous medication|non-formulary request)$", re.I)
 RXNORM = "http://www.nlm.nih.gov/research/umls/rxnorm"
 
 
+LOCAL_CLASSES_FILE = os.path.join(HERE, "local", "med_classes.local.tsv")   # private rules, read first
+
+
 def load_rules():
-    rules = list(csv.DictReader(open(CLASSES_FILE), delimiter="\t"))
+    rules = []
+    if os.path.exists(LOCAL_CLASSES_FILE):   # private rules for sensitive drugs, kept out of the public file
+        rules += list(csv.DictReader((l for l in open(LOCAL_CLASSES_FILE) if not l.startswith("#")), delimiter="\t"))
+    rules += list(csv.DictReader(open(CLASSES_FILE), delimiter="\t"))
     return [(re.compile(r["match"], re.I), r) for r in rules if r["match_type"] == "name"]
 
 
@@ -133,6 +140,8 @@ def flatten_dispenses(site, d, rules, meds):
             di = (r.get("dosageInstruction") or [{}])[0]
             dose = {x.get("type", {}).get("text", ""): quantity(x) for x in di.get("doseAndRate", [])}
             ordered = dose.get("ordered") or dose.get("calculated") or ("", "", "")
+            # amount given: admin-amount, else the calculated amount (e.g. 5.4 mg/kg -> 290 mg)
+            admin = dose.get("admin-amount") or dose.get("calculated") or ("", "", "")
             q = r.get("quantity", {})
             when = r.get("whenHandedOver") or r.get("whenPrepared", "")
             rows.append({
@@ -143,6 +152,8 @@ def flatten_dispenses(site, d, rules, meds):
                 "fill_type": ",".join(c.get("display", "") for c in r.get("type", {}).get("coding", [])),
                 "dose_value": ordered[0] if not ordered[1] else f"{ordered[0]}-{ordered[1]}",
                 "dose_unit": ordered[2],
+                "dose_admin_value": admin[0] if not admin[1] else f"{admin[0]}-{admin[1]}",
+                "dose_admin_unit": admin[2],
                 "dosage_text": " | ".join(x.get("text", "") for x in r.get("dosageInstruction", [])
                                           ).replace("\r", "").replace("\n", " / ").replace("\t", " "),
                 "route": (di.get("route") or {}).get("text", ""),

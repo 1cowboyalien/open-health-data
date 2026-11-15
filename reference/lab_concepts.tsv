@@ -34,3 +34,15 @@ loinc	5810-7	Urine Specific Gravity		by refractometry
 loinc	98979-8	eGFR (CKD-EPI 2021)		Different formulas are kept apart on purpose
 loinc	62238-1	eGFR (CKD-EPI)		CKD-EPI creatinine (pre-2021 equation)
 loinc	77147-7	eGFR (MDRD)		MDRD equation
+loinc	33037-3	Anion Gap		Anion gap, serum/plasma (formula not stated; values run lower than 10466-1/41276-7)
+loinc	33914-3	eGFR (MDRD)		MDRD equation (creatinine-based)
+loinc	48643-1	eGFR, race-based (African American)		MDRD equation, race-based variant
+name	^eGFR, African American$	eGFR, race-based (African American)		race-based eGFR reported without LOINC
+loinc	30392-5	nRBC #		Nucleated RBCs, absolute count (automated)
+loinc	771-6	nRBC #		Nucleated RBCs, absolute count
+loinc	19048-8	nRBC %		Nucleated RBCs per 100 WBC (automated)
+loinc	18309-5	nRBC %		Nucleated RBCs per 100 WBC
+loinc	30341-2	ESR		Erythrocyte sedimentation rate (method not stated / Westergren)
+loinc	82477-1	ESR		Erythrocyte sedimentation rate, automated (designed to agree with Westergren)
+loinc	5803-2	Urine pH		pH of urine
+loinc	50560-2	Urine pH		pH of urine by test strip

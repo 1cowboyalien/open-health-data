@@ -29,6 +29,49 @@ FACILITY_ROUTES = re.compile(r"intraven|iv\b|subcut|intramusc|inject|infus|push|
 HOME_CATS = re.compile(r"community|discharge|outpatient", re.I)
 
 
+# Brand names are taken only from how the records name the drug: a word in brackets
+# ("trastuzumab (Herceptin) chemo infusion") or a first word that is a brand ("NERLYNX 40 MG Tabs").
+NOT_BRANDS = {"pf", "cmpd", "ns", "d5w", "lr", "porcine", "cardiac", "fdg", "by auc", "mpf",
+              "generic", "miscellaneous", "fluorine", "sennosides"}
+
+
+def brand_of(name, drug):
+    """'fam-trastuzumab deruxtecan-nxki (ENHERTU) injection' -> 'Enhertu'; '' when none."""
+    def tidy(b):
+        b = re.sub(r"-MPF$", "", b.strip(), flags=re.I)
+        return " ".join(w.upper() if len(w) <= 2 else w[0].upper() + w[1:].lower() for w in b.split())
+    for p in re.findall(r"\(([^)]*)\)", name):
+        if re.fullmatch(r"[A-Za-z][A-Za-z -]{2,}", p.strip()) and p.strip().lower() not in NOT_BRANDS \
+                and p.strip().lower() not in drug.lower():
+            return tidy(p)
+    first = re.split(r"[\s(]", name.strip(), 1)[0]
+    if first and re.fullmatch(r"[A-Za-z]{3,}", first) and first.lower() not in NOT_BRANDS \
+            and first.lower() not in drug.lower() and not any(first.lower() in w for w in drug.lower().split()):
+        return tidy(first)
+    return ""
+
+
+PER_BODY = re.compile(r"/(kg|m2|m\^2)", re.I)
+
+
+def numeric_dose(val, unit, aval="", aunit=""):
+    """(value, unit) of one dose for charting, or (None, ""). Uses the ordered dose when it is an
+    absolute amount (5 mg); for per-kg / per-m2 orders (5.4 mg/kg) the amount given (320 mg).
+    Ranges ("2-4") are skipped."""
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    v = num(val)
+    if v is not None and unit and not PER_BODY.search(unit):
+        return v, unit
+    a = num(aval)
+    if a is not None and aunit:
+        return a, aunit
+    return None, ""
+
+
 def _d(s):
     return date.fromisoformat(s[:10]) if s else None
 
@@ -77,6 +120,14 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
             rows[k] = {"key": k, "drug": drug, "cls": cls, "setting": setting, "segs": [], "ev": [], "ndisp": 0}
         return rows[k]
 
+    # brands per drug, from every order and dispense (also ones not drawn), most used first
+    brands = {}
+    for x in orders + disp:
+        b = brand_of(x["drug_name_original"], x["drug"])
+        if b:
+            brands.setdefault(x["drug"], {}).setdefault(b, 0)
+            brands[x["drug"]][b] += 1
+
     # ---- orders
     home = {}
     for o in orders:
@@ -85,8 +136,10 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
         fac = is_facility(o)
         dose = " ".join(x for x in (o["dose_value"] + ("-" + o["dose_value_high"] if o["dose_value_high"] else ""),
                                     o["dose_unit"]) if x)
+        dv, du = numeric_dose(o["dose_value"] if not o["dose_value_high"] else "", o["dose_unit"],
+                              o["dose_admin_value"], o["dose_admin_unit"])
         info = {"src": o["source"], "dose": dose, "route": o["route"], "freq": o["frequency"],
-                "status": o["status"], "text": o["dosage_text"][:160], "id": o["request_id"]}
+                "status": o["status"], "text": o["dosage_text"][:160], "id": o["request_id"], "dv": dv, "du": du}
         if fac:
             r = row(o["drug"], o["drug_class"], "facility")
             once = o["frequency"].strip().lower() == "once" or (o["start"][:10] == o["end"][:10])
@@ -115,8 +168,13 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
             b = min(b, today)
             if b < a:
                 b = a
-            r["segs"].append({"a": a.isoformat(), "b": b.isoformat(), "src": o["source"], "note": note,
-                              "sch": schedule(o["frequency"], o["dosage_text"], o["as_needed"]), **info})
+            seg = {"a": a.isoformat(), "b": b.isoformat(), "src": o["source"], "note": note,
+                   "sch": schedule(o["frequency"], o["dosage_text"], o["as_needed"]), **info}
+            if seg["dv"] is None:   # dose only in the text ("1000 mg twice daily"): take the first amount, flagged
+                m = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*(mg|mcg|g|units?)\b", o["dosage_text"], re.I)
+                if m:
+                    seg["dv"], seg["du"], seg["dose_from_text"] = float(m.group(1).replace(",", "")), m.group(2).lower(), True
+            r["segs"].append(seg)
 
     # ---- dispenses
     for x in disp:
@@ -127,7 +185,8 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
         r = row(x["drug"], x["drug_class"], "facility" if unit_dose or (o and is_facility(o)) else "home")
         r["ndisp"] += 1
         dose = " ".join(v for v in (x["dose_value"], x["dose_unit"]) if v)
-        r["ev"].append({"d": x["date"], "k": "given" if r["setting"] == "facility" else "fill",
+        dv, du = numeric_dose(x["dose_value"], x["dose_unit"], x.get("dose_admin_value", ""), x.get("dose_admin_unit", ""))
+        r["ev"].append({"dv": dv, "du": du, "d": x["date"], "k": "given" if r["setting"] == "facility" else "fill",
                         "src": x["source"], "dose": dose, "route": x["route"], "freq": x["frequency"],
                         "status": x["status"], "text": x["dosage_text"][:160],
                         "qty": f"{x['quantity']} {x['quantity_unit']}".strip(), "id": x["dispense_id"]})
@@ -148,6 +207,14 @@ def build(meds_tsv="local/meds_all.tsv", disp_tsv="local/med_dispenses.tsv", tod
         r["ev"].sort(key=lambda e: e["d"])
 
     out = [r for r in rows.values() if r["segs"] or r["ev"]]
+    for r in rows.values():
+        units = {}
+        for x in r["ev"] + r["segs"]:
+            if x.get("dv") is not None:
+                units[x["du"]] = units.get(x["du"], 0) + 1
+        r["du"] = max(units, key=units.get) if units else ""   # the unit charted for this drug
+        bc = brands.get(r["drug"], {})
+        r["brands"] = sorted(bc, key=lambda b: -bc[b])
     for r in out:
         r["first"] = min([s["a"] for s in r["segs"]] + [e["d"] for e in r["ev"]])
     return out

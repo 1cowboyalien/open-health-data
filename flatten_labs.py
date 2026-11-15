@@ -46,6 +46,8 @@ SYNONYMS = {
     "second(s)": "s", "seconds": "s", "sec": "s",
     "mciu/ml": "uIU/mL", "uiu/ml": "uIU/mL",
     "% hba1c": "%",
+    "per 100 wbcs": "%",            # nRBC per 100 WBC is reported as % at other labs
+    "ml/min/1.73m2": "mL/min/1.73 m2", "ml/min/1.73 sq. m": "mL/min/1.73 m2", "ml/min/1.73 m2": "mL/min/1.73 m2",
 }
 # Real conversions: (loinc, from_unit) -> (factor, to_unit). Originals are kept.
 CONVERT = {

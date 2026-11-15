@@ -20,6 +20,11 @@ const ROWPX=30,BARY=0.17,DAYMS=864e5;
 const EMPTY_EDITS=()=>({version:1,ts:0,seg:{},dose:{},added:[],moments:[],ranges:[]});
 const isoD=t=>new Date(t).toISOString().slice(0,10);
 /* when a dose was given: date and local time from the record ("at", UTC), else just the date */
+/* why it was given, only as the record says it (flatten_meds.py): the diagnosis on the order, the order's
+   "as needed for ..." words, and the reason of the visit it was ordered in. Nothing is guessed. */
+const cut=(t,n)=>t.length>n?t.slice(0,n-1)+'…':t;
+function whyLines(w,n){if(!w)return[];n=n||90;const L=[];if(w.order)L.push('Reason on the order: '+cut(w.order.replace(/ \| /g,'; '),n));
+ if(w.prn&&!(w.order||'').toLowerCase().includes(w.prn.toLowerCase()))L.push('As needed for: '+cut(w.prn,n));if(w.visit)L.push('Visit: '+cut(w.visit,n));return L}
 /* when a dose was given, in ms: the recorded time if there is one, else the start of its date */
 const evT=e=>e.at?Date.parse(e.at):dms(e.d);
 const evWhen=e=>e&&e.at?localStamp(Date.parse(e.at)):e?e.d:'';
@@ -466,6 +471,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
    plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
     label:c=>{const e=c.raw.e;if(e.k==='moment')return [e.m.title,...(e.m.note?(e.m.note.match(/.{1,70}(\s|$)/g)||[e.m.note]).slice(0,4).map(x=>x.trim()):[]),'Click to edit'];const L=[KIND[e.k].label,[e.dose,e.route,e.k==='assumed'&&e.perDay>1?e.perDay+' doses/day':e.freq,e.qty].filter(Boolean).join(' · ')+(e.src?'  · '+e.src:'')];
      if(e.rlo!=null)L.push('amount given not in the record (only the range '+e.dose+')');
+     L.push(...whyLines(e.why));
      if(e.k==='assumed'||e.k==='skipped'||e.doseKey)L.push(pxPerDay(c.chart)<4?'Click to edit; zoom in to click single doses':'Click to change: taken / skipped / assumed');return L}}}},
    layout:{padding:{right:8}},
    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
@@ -544,7 +550,7 @@ function renderDoses(){const box=$('txDoses');box.innerHTML='';if(txHidden)retur
    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
     onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null)},
     plugins:{legend:{display:false},tooltip:{filter:c=>!!(c.raw.p&&st(c.raw)[1]),callbacks:{title:c=>{const p=c[0].raw.p;return p.e?evWhen(p.e):isoD(p.t)},
-     label:c=>{const p=c.raw.p;const what=p.k==='rx'?'prescribed from this date':KIND[p.k]?KIND[p.k].label:'';return [fmt(p.v)+' '+dp.u+(p.src?'  · '+p.src:''),what]}}}},
+     label:c=>{const p=c.raw.p;const what=p.k==='rx'?'prescribed from this date':KIND[p.k]?KIND[p.k].label:'';return [fmt(p.v)+' '+dp.u+(p.src?'  · '+p.src:''),what,...whyLines((p.e||p.g||{}).why)]}}}},
     layout:{padding:{right:8}},
     scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
       ticks:{color:css('--muted'),autoSkip:false,maxRotation:0,callback:(v,i)=>TK[i]?TK[i].label:''},
@@ -558,7 +564,7 @@ function txInfo(rows,i,xv,u){const r=rows[i];if(!r||xv==null){$('txInfo').textCo
   $('txInfo').textContent=drugLabel(r.drug,r.brands)+' on '+iso(t)+': about '+rangeAmt(r._hl.doses,t,hl)+' '+r._hl.u+' estimated in the body ('+hlText(hl)+(r._hl.ranged?'; some doses are only a range in the record, so counted low to high':'')+') — '+(hl.basis==='estimate'?'based on an UNOFFICIAL half-life estimate, not from a drug label':'based on the half-life in the drug label')+(r._hl.assumed?', assuming it was taken as prescribed':'')+', not a measured level';return}
  const g=segAt(r,unpos(xv));
  $('txInfo').textContent=(g?rowLabel(r)+': '+(g.user?'entered by you ':'ordered ')+g.a+' to '+g.b+(g.src&&g.src!=='you'?' · '+g.src:'')+(g.dose?' · '+g.dose:'')+(g.freq?' · '+g.freq:g.sch&&g.sch.perDay>1?' · '+g.sch.perDay+'×/day':'')
-  +(g.sch&&g.sch.on?' · '+g.sch.on+' days on / '+g.sch.off+' off':'')+(g.sch&&g.sch.prn?' · as needed (no assumed doses drawn)':'')+(g.note?' · '+g.note:'')+(g.edited?' · changed by you':''):rowLabel(r))+'  — click to edit'+(r.setting==='home'?' or mark doses (zoom to 3 months to click single doses)':'')}
+  +(g.sch&&g.sch.on?' · '+g.sch.on+' days on / '+g.sch.off+' off':'')+(g.sch&&g.sch.prn?' · as needed (no assumed doses drawn)':'')+(g.note?' · '+g.note:'')+(g.edited?' · changed by you':'')+(g.why?whyLines(g.why,160).map(x=>' · '+x).join(''):''):rowLabel(r))+'  — click to edit'+(r.setting==='home'?' or mark doses (zoom to 3 months to click single doses)':'')}
 
 /* ---- clicking ---- */
 /* doses can be clicked one by one only when they are at least 4px apart; otherwise open the editor */

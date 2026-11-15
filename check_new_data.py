@@ -6,8 +6,8 @@ Usage (after the rebuild):
     python3 check_new_data.py
 
 Reports, for the newly combined data in local/:
-  1. Drugs that can get a half-life curve (recorded doses with an amount, or home
-     prescriptions with a dose) but have no row in reference/med_halflife.tsv or the private
+  1. Every drug in the records (any recorded dose, even without an amount or only a range such
+     as "2-4 mg", and any prescription, "as needed" included) that has no row in reference/med_halflife.tsv or the private
      local/med_halflife.local.tsv. Look each up on its US label (DailyMed, section 12.3) and
      add it with the quote and link; use basis "estimate" when no label gives one, or basis
      "none" with a reason when a half-life doesn't apply (IV fluids, local use, vaccines...).
@@ -52,9 +52,10 @@ covered |= {r["drug"] for r in read_tsv(os.path.join(LOCAL, "med_halflife.local.
 rows = med_timeline.build(os.path.join(LOCAL, "meds_all.tsv"), os.path.join(LOCAL, "med_dispenses.tsv"))
 need = defaultdict(lambda: {"cls": "", "rec": 0, "rx": 0})
 for r in rows:
-    rec = sum(1 for e in r["ev"] if e.get("dv") is not None and e["k"] in ("given", "order"))
-    rx = sum(1 for g in r["segs"] if r["setting"] == "home" and g.get("dv") is not None
-             and not (g.get("sch") or {}).get("prn"))
+    # every drug counts: doses without an amount or only a range ("2-4 mg") and "as needed" prescriptions too
+    # (range doses are drawn low-to-high, and doses you mark as taken use the half-life)
+    rec = sum(1 for e in r["ev"] if e["k"] in ("given", "order"))
+    rx = sum(1 for g in r["segs"] if r["setting"] == "home" and g.get("src"))
     if (rec or rx) and r["drug"] not in covered and r["drug"] != "(placeholder)":
         n = need[r["drug"]]
         n["cls"], n["rec"], n["rx"] = r["cls"], n["rec"] + rec, n["rx"] + rx

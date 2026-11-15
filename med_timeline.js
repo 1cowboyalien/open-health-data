@@ -248,15 +248,59 @@ function momentSection(el,q){const all=(E.moments||[]).filter(m=>!q||(m.title+' 
 /* saved time ranges (shared with the other edits): click to show that range again */
 function saveRange(){if(!canEdit())return;const dl=t=>localStamp(t).slice(0,10);
  const name=prompt('Name for this time range:',dl(W.a)+' to '+dl(W.b));if(name==null||!name.trim())return;
- E.ranges=(E.ranges||[]).concat([{id:'r'+Date.now().toString(36),name:name.trim(),a:Math.round(W.a),b:Math.round(W.b)}]);saveEdits();list()}
-function rangeGroup(S,q){const rs=(E.ranges||[]).filter(r=>!q||r.name.toLowerCase().includes(q)||'saved ranges'.includes(q)).sort((x,y)=>x.a-y.a);if(!rs.length)return;
+ const r={id:'r'+Date.now().toString(36),name:name.trim(),a:Math.round(W.a),b:Math.round(W.b),layouts:[]};
+ E.ranges=(E.ranges||[]).concat([r]);setActive(r.id,null);saveEdits();list()}
+function rangeGroup(S,q){queueLay();const rs=(E.ranges||[]).filter(r=>!q||r.name.toLowerCase().includes(q)||'saved ranges'.includes(q)).sort((x,y)=>x.a-y.a);if(!rs.length)return;
  const G=section(S,'mom:__ranges','Saved ranges',rs.length,true,'grp',q);
  rs.forEach(r=>{const row=document.createElement('div');row.className='t';const len=(r.b-r.a)/DAYMS;
   const nm=document.createElement('span');nm.className='nm';nm.textContent='⟷ '+r.name;nm.title='Click to show this range';
   const d=document.createElement('span');d.className='n';d.textContent=localStamp(r.a).slice(2,10)+(len<2?' '+localStamp(r.a).slice(11):'')+' · '+(len>=60?Math.round(len/30.44)+' mo':len>=2?Math.round(len)+' d':Math.round(len*24)+' h');
   const x=document.createElement('button');x.type='button';x.className='mini redit';x.textContent='×';x.title='Delete this saved range';
-  x.onclick=e=>{e.stopPropagation();if(!confirm('Delete the saved range "'+r.name+'"?'))return;E.ranges=E.ranges.filter(y=>y.id!==r.id);saveEdits();list()};
-  row.append(nm,d,x);row.onclick=()=>setWin(r.a,r.b);G.appendChild(row)})}
+  x.onclick=e=>{e.stopPropagation();if(!confirm('Delete the saved range "'+r.name+'"'+((r.layouts||[]).length?' and its '+r.layouts.length+' layout(s)':'')+'?'))return;
+   E.ranges=E.ranges.filter(y=>y.id!==r.id);if(activeR&&activeR.rid===r.id)setActive(null);saveEdits();list()};
+  if(activeR&&activeR.rid===r.id)row.classList.add('ract');
+  row.append(nm,d,x);row.onclick=()=>{setActive(r.id,null);setWin(r.a,r.b);list()};G.appendChild(row);
+  (r.layouts||[]).forEach(l=>{const lr=document.createElement('div');lr.className='t layrow'+(activeR&&activeR.lid===l.id?' layon':'');
+   const ln=document.createElement('span');ln.className='nm';ln.textContent='▸ '+l.name;ln.title='Show this range with this layout ('+layDesc(l.v)+')';
+   const lx=document.createElement('button');lx.type='button';lx.className='mini redit';lx.textContent='×';lx.title='Delete this layout';
+   lx.onclick=e=>{e.stopPropagation();if(!confirm('Delete the layout "'+l.name+'" of "'+r.name+'"?'))return;r.layouts=r.layouts.filter(y=>y.id!==l.id);
+    if(activeR&&activeR.lid===l.id)setActive(r.id,null);saveEdits();list()};
+   lr.append(ln,lx);lr.onclick=()=>useLayout(r,l);G.appendChild(lr)})})}
+
+/* ---- layouts of a saved range: which panels, tests and medications are shown, in which order ----
+   A layout is a snapshot of the view (not the time window: that belongs to the range). One range can
+   have several layouts to show different relationships (e.g. chemo + liver tests; all medications + vitals).
+   The bar under the Navigator shows the active range's layouts; Reset goes back to the saved one,
+   Update overwrites it with what is on screen now. Layouts are shared like the other edits. */
+let activeR=store.get('activerange',null);
+function setActive(rid,lid){activeR=rid?{rid,lid:lid||null}:null;store.set('activerange',activeR)}
+function viewNow(){return{mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),
+  mon:Object.fromEntries((E.moments||[]).map(m=>[m.id,momentOn(m)]))}}   // which moments are shown
+/* for "changed?": compare only moments that the saved layout knows and that still exist (new moments don't count) */
+function layCmp(v,ref){const c=Object.assign({},v);if(!ref.mon){delete c.mon;return c}const ids=new Set((E.moments||[]).map(m=>m.id));
+ c.mon=Object.fromEntries(Object.keys(ref.mon).filter(id=>ids.has(id)).map(id=>[id,!!(v.mon||{})[id]]));return c}
+const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,k)=>(o[k]=x[k],o),{}):x);
+function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' lab chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')+(v.mon?', '+Object.values(v.mon).filter(Boolean).length+' moment(s) shown':'')}
+function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(id=>BYID[id]);txPos=v.txPos||0;
+ txSel=(v.txSel||[]).slice();txDose=(v.txDose||[]).slice();txHidden=!!v.txHidden;hlOn=v.hlOn!==false;hlH=v.hlH||28;heights=Object.assign({},v.heights||{});soloLab=null;soloMed=null;
+ if(v.mon){let ch=false;(E.moments||[]).forEach(m=>{if(m.id in v.mon&&momentOn(m)!==v.mon[m.id]){m.on=v.mon[m.id];ch=true}});
+  if(ch&&canEdit())saveEdits()}   // moment visibility is shared: saved only while Editing (View only changes this screen)
+ [['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
+function useLayout(r,l){setActive(r.id,l.id);W={a:r.a,b:r.b};store.set('window',W);syncWin();applyView(l.v);updateBar();list();render()}
+function saveLayout(r){if(!canEdit())return;const n=(r.layouts||[]).length;const name=prompt('Name for this layout of "'+r.name+'":','Layout '+(n+1));if(name==null||!name.trim())return;
+ const l={id:'l'+Date.now().toString(36),name:name.trim(),v:viewNow()};r.layouts=(r.layouts||[]).concat([l]);setActive(r.id,l.id);saveEdits();list();layBar()}
+let layT=0;const queueLay=()=>{clearTimeout(layT);layT=setTimeout(layBar,60)};
+function layBar(){const bar=$('layBar'),r=activeR&&(E.ranges||[]).find(x=>x.id===activeR.rid);bar.innerHTML='';bar.classList.toggle('hide',!r);if(!r)return;
+ const L=activeR.lid&&(r.layouts||[]).find(x=>x.id===activeR.lid);
+ const moved=Math.round(W.a)!==r.a||Math.round(W.b)!==r.b,changed=!!L&&canon(layCmp(viewNow(),L.v))!==canon(layCmp(L.v,L.v));
+ const t=document.createElement('span');t.className='wl';t.textContent='⟷';const nb=document.createElement('b');nb.textContent=r.name;nb.title='Active saved range (Moments → Saved ranges)';
+ const lw=document.createElement('span');lw.className='wl';lw.textContent='Layouts:';bar.append(t,nb,lw);
+ (r.layouts||[]).forEach(l=>{const b=btn(l.name,()=>useLayout(r,l),'laychip'+(L===l?' on':''));b.title=layDesc(l.v)+(L===l&&changed?' — changed since it was saved':'');bar.appendChild(b)});
+ if(!(r.layouts||[]).length)bar.appendChild(Object.assign(document.createElement('span'),{className:'sub',textContent:'none yet'}));
+ if(moved||changed){const b=btn('↺ Reset',()=>L?useLayout(r,L):setWin(r.a,r.b),'');b.title='Go back to the saved range'+(L?' and the layout "'+L.name+'"':'')+' (undo the changes since)';bar.appendChild(b)}
+ if(changed){const b=btn('Update "'+L.name+'"',()=>{if(!canEdit())return;L.v=viewNow();saveEdits();list();layBar()},'redit');b.title='Save what is on screen now as the layout "'+L.name+'"';bar.appendChild(b)}
+ {const b=btn('＋ Save layout',()=>saveLayout(r),'redit');b.title='Save the panels, tests and medications shown now as a new layout of this range';bar.appendChild(b)}
+ const x=btn('×',()=>{setActive(null);layBar();list()},'');x.title='Leave this range (the view stays as it is)';x.style.marginLeft='auto';bar.appendChild(x)}
 
 /* hovering a lab/vital reading: a small box with the reading and "★ Make moment" (or "★ Link to …" while a moment
    is open). Clicking a reading pins the box so the mouse can move onto the button; ×, Esc or clicking elsewhere closes it. */
@@ -569,6 +613,7 @@ function importEdits(file){const rd=new FileReader();rd.onload=()=>{try{const j=
   if(nEdits()&&!confirm('Replace the '+nEdits()+' changes'+(SHARED?' (for everyone)':' in this browser')+' with the file?'))return;
   E=Object.assign(EMPTY_EDITS(),j);delete E.rev;if(SHARED){saveEdits();list();render();return}store.set('txedits',E);txDirty=false;store.set('txdirty',false);txStatus();list();render()}catch(e){alert('Could not read the file: '+e.message)}};rd.readAsText(file)}
 function txInit(){initTxSel();
+ {const s0=store.set;store.set=(k,v)=>{s0.call(store,k,v);queueLay()}}
  $('mAdd').onclick=()=>openMoment(null);
  $('mLines').onclick=()=>{mLines=!mLines;store.set('mlines',mLines);render()};
  $('hlOn').onclick=()=>{hlOn=!hlOn;store.set('hlon',hlOn);render()};

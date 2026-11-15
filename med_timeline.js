@@ -148,7 +148,10 @@ function medSection(el,q){const groups=medGroups().map(g=>({cls:g.cls,drugs:g.dr
    const tg=document.createElement('span');tg.className='tag';tg.textContent=d.settings.map(x=>x==='home'?'home':'hosp').sort().join(' · ');
    tg.title=d.settings.map(x=>x==='home'?'taken at home':'given at hospital/clinic').join(', ');
    const c=document.createElement('span');c.className='n';c.textContent=d.n||'';c.title='records: doses, fills and prescriptions';
-   row.append(cb,nm,tg);
+   const go=document.createElement('button');go.type='button';go.className='mini goto';go.textContent='⌖';
+   go.title='Find '+drugLabel(d.drug,d.brands)+' on the timeline: step through its doses and orders';go.setAttribute('aria-label',go.title);
+   go.onclick=e=>{e.preventDefault();e.stopPropagation();startFind(d.drug,drugLabel(d.drug,d.brands))};
+   row.append(cb,nm,go,tg);
    if(d.hasDose){const dz=document.createElement('span');dz.className='dosetog';const dc=document.createElement('input');dc.type='checkbox';dc.checked=txDose.includes(d.drug);
     dc.setAttribute('aria-label','Show a dose chart for '+d.drug);dc.onclick=e=>{e.stopPropagation();setDoseChart(d.drug,dc.checked)};
     const dl=document.createElement('span');dl.textContent='dose';dz.title='Show the dose over time as a chart';dz.onclick=e=>{e.preventDefault();e.stopPropagation();if(e.target!==dc){dc.checked=!dc.checked;setDoseChart(d.drug,dc.checked)}};
@@ -177,8 +180,35 @@ let soloMed=store.get('solomed',null);if(soloMed&&!soloMed.key)soloMed=null;
 function onlyMed(key,drugs,label){if(soloMed&&soloMed.key===key){endSoloMed();return}
  soloMed={key,ids:drugs,label,prev:soloMed?soloMed.prev:txSel.slice()};store.set('solomed',soloMed);txSel=drugs.slice();store.set('txsel',txSel);list();render();if(drugs.length===1)setHlDrug(drugs[0])}
 function endSoloMed(){if(!soloMed)return;txSel=soloBack(soloMed.prev,txSel,soloMed.ids);soloMed=null;store.set('solomed',null);store.set('txsel',txSel);list();render()}
+/* ---- Find bar: step through one medication's doses and orders (⌖ in the Library) ----
+   Each step ticks the drug if needed, moves the window to the event (keeping its length, or 3 months when it is
+   longer than 6), highlights the drug's rows, puts the Hover line on the event and scrolls its row into view. */
+let FIND=null;
+function findEvents(drug){const out=[];
+ effRows(TX,E).filter(r=>r.drug===drug).forEach(r=>{
+  r.ev.forEach(e=>out.push({t:evT(e),when:evWhen(e),what:(SHORT[e.k]||e.k)+(r.setting==='home'?' (home)':''),dose:e.dose||'',src:e.src||''}));
+  r.segs.forEach(g=>{if(!/joined/.test(g.note||''))out.push({t:dms(g.a),when:g.a,what:(g.user?'entered by you':'ordered')+' '+g.a+' to '+g.b,dose:g.dose||'',src:g.src||''})})});
+ return out.sort((a,b)=>a.t-b.t)}
+function startFind(drug,label){const evs=findEvents(drug);if(!evs.length)return;FIND={drug,label,evs,i:0};
+ const j=evs.findIndex(e=>e.t>=W.a&&e.t<=W.b);findGo(j>=0?j:0)}
+function findGo(i){const F=FIND;if(!F)return;F.i=i=Math.max(0,Math.min(F.evs.length-1,i));const ev=F.evs[i];let redo=false;
+ if(!txSel.includes(F.drug)){txSel.push(F.drug);store.set('txsel',txSel);redo=true}
+ if(txHidden){txHidden=false;store.set('txhidden',false);redo=true}
+ let len=W.b-W.a;if(len>180*DAYMS)len=90*DAYMS;const a=Math.max(X0,Math.min(ev.t-len/2,X1-len));
+ if(redo){W={a,b:a+len};store.set('window',W);syncWin();list();render()}else setWin(a,a+len);
+ hlDrug=null;setHlDrug(F.drug);findBar();setTimeout(()=>{setHover(pos(ev.t));findScroll()},40)}
+function findScroll(){const c=charts.get('tx'),r=FIND&&txShown.find(r=>r.drug===FIND.drug);if(!c||!r)return;
+ const y=c.canvas.getBoundingClientRect().top+c.scales.y.getPixelForValue(r._u0),top=document.querySelector('.navpin').getBoundingClientRect().bottom+10;
+ if(y<top||y>innerHeight-80)scrollBy({top:y-top-40,behavior:'smooth'})}
+function findBar(){const bar=$('findBar');bar.innerHTML='';bar.classList.toggle('hide',!FIND);if(!FIND)return;const F=FIND,ev=F.evs[F.i],n=F.evs.length;
+ const t=document.createElement('span');t.className='wl';t.textContent='⌖';const nb=document.createElement('b');nb.textContent=F.label;
+ const k=document.createElement('span');k.className='sub';k.textContent=(F.i+1)+' of '+n;
+ const d=document.createElement('span');d.textContent=ev.when+' · '+ev.what+(ev.dose?' · '+ev.dose:'')+(ev.src&&ev.src!=='you'?' · '+ev.src:'');
+ const b=(txt,tip,i,off)=>{const x=btn(txt,()=>findGo(i),'');x.title=tip;x.disabled=off;return x};
+ bar.append(t,nb,k,b('⏮','First',0,F.i===0),b('◀','Previous',F.i-1,F.i===0),b('▶','Next',F.i+1,F.i===n-1),b('⏭','Last',n-1,F.i===n-1),d);
+ const x=btn('×',()=>{FIND=null;hlDrug=null;setHlDrug(null);findBar()},'');x.title='Close the Find bar';x.style.marginLeft='auto';bar.appendChild(x)}
 /* hovering a drug in the list tints its band rows and outlines its dose chart */
-function setHlDrug(drug){if(drug===hlDrug)return;hlDrug=drug;const c=charts.get('tx');if(c)c.draw();
+function setHlDrug(drug){drug=drug||(FIND&&FIND.drug)||null;if(drug===hlDrug)return;hlDrug=drug;const c=charts.get('tx');if(c)c.draw();
  document.querySelectorAll('#txDoses .dosebox').forEach(b=>b.classList.toggle('hl',b.dataset.drug===drug))}
 /* ---- Moments: your own notes on the timeline ----
    E.moments: [{id,title,group,date,time,end,note,color,line,on,links:[{test,name,t,text,src}]}]

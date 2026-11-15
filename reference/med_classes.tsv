@@ -50,6 +50,7 @@ name	sennosides|senna	senna	GI/bowel
 name	^lidocaine 1% .*tumescent	lidocaine tumescent solution	anesthesia/procedure	
 name	heparin	heparin	blood/clotting	includes line flushes
 name	sodium chloride	sodium chloride	fluids/electrolytes	saline, often flushes or IV carrier
+name	^\s*ns\s*$|normal saline	sodium chloride	fluids/electrolytes	normal saline written as "NS"
 name	lactated ringer	lactated ringer's	fluids/electrolytes	
 name	^generic external medication$|^miscellaneous medication$|^non-formulary request$	(placeholder)	other	no drug name in the record; see name_placeholder column
 name	sulfamethoxazole-trimethoprim	sulfamethoxazole-trimethoprim	antibiotic/antifungal	antibiotic; merges DOUBLE strength spelling
@@ -126,3 +127,4 @@ name	oxycontin	oxycodone (extended-release)	pain	OxyContin; kept apart from imme
 name	strata xrt	strata xrt gel	other	radiation skin gel
 name	simethicone	simethicone	GI/bowel	
 name	glucagon	glucagon	other	blood-sugar rescue or bowel relaxant for imaging
+name	tropicamide	tropicamide ophthalmic	other	eye drops to widen the pupils for an eye exam

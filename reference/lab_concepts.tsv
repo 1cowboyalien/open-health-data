@@ -46,3 +46,9 @@ loinc	30341-2	ESR		Erythrocyte sedimentation rate (method not stated / Westergre
 loinc	82477-1	ESR		Erythrocyte sedimentation rate, automated (designed to agree with Westergren)
 loinc	5803-2	Urine pH		pH of urine
 loinc	50560-2	Urine pH		pH of urine by test strip
+loinc	2514-8	Ketones (urine)	mg/dL	Urine ketones, dipstick (amount); same test as 5797-6 / 50557-8 at other labs
+loinc	5797-6	Ketones (urine)		Urine ketones, dipstick (present / absent)
+loinc	50557-8	Ketones (urine)		Urine ketones, dipstick
+loinc	43396-1	Non-HDL cholesterol		Total cholesterol minus HDL (calculated)
+loinc	2094-1	Non-HDL cholesterol		Labelled 'Non-HDL,Chol,Calc' at one lab: total minus HDL, mg/dL
+loinc	58413-6	nRBC %		Nucleated RBCs per 100 WBC (reported as % or /100 WBC)

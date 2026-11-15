@@ -195,3 +195,5 @@ token	HPF		high-power field
 token	POC		point-of-care
 token	WBC		white blood cells
 token	RBC		red blood cells
+name	LDL Direct	LDL (direct)	LDL cholesterol, measured directly (other labs calculate it; kept apart)
+name	Non-HDL cholesterol	Non-HDL	Non-HDL cholesterol (total cholesterol minus HDL)

@@ -1,0 +1,197 @@
+match_type	match	abbr	full_name
+name	% Saturation	TSAT	Transferrin saturation (iron saturation)
+name	A-1-AT-Mayo	A1AT	Alpha-1 antitrypsin
+name	Alpha-1-Antitrypsin	A1AT	Alpha-1 antitrypsin
+name	ALT	ALT	Alanine aminotransferase
+name	Aspartate Aminotransferase	AST	Aspartate aminotransferase
+name	AMA Ab Screen-Mayo	AMA	Anti-mitochondrial antibody
+name	Absolute Baso Count	Baso #	Basophils, absolute count
+name	Absolute Eos Count	Eos #	Eosinophils, absolute count
+name	Absolute Lymphocyte Count	Lymph #	Lymphocytes, absolute count
+name	Absolute Mono Count	Mono #	Monocytes, absolute count
+name	Absolute Neut Count	ANC	Absolute neutrophil count
+name	Absolute Nucleated RBC Count	nRBC #	Nucleated red blood cells, absolute count
+name	Absolute Retic #	Retic #	Reticulocytes, absolute count
+name	Activated PTT	aPTT	Activated partial thromboplastin time
+name	Albumin	Alb	Albumin
+name	Alkaline Phosphatase	ALP	Alkaline phosphatase
+name	Bone	Bone ALP	Alkaline phosphatase, bone isoenzyme
+name	Bone Percent	Bone ALP %	Alkaline phosphatase, bone isoenzyme (percent)
+name	Liver	Liver ALP	Alkaline phosphatase, liver isoenzyme
+name	Liver Percent	Liver ALP %	Alkaline phosphatase, liver isoenzyme (percent)
+name	Intestine	Intestinal ALP	Alkaline phosphatase, intestinal isoenzyme
+name	Intestine Percent	Intestinal ALP %	Alkaline phosphatase, intestinal isoenzyme (percent)
+name	Anion Gap	AG	Anion gap
+name	Basophil #	Baso #	Basophils, absolute count
+name	Basophil %	Baso %	Basophils (percent of white cells)
+name	Beta HCG-Pregnancy	β-hCG	Beta human chorionic gonadotropin (pregnancy test)
+name	Bilirubin Direct	D-Bili	Direct (conjugated) bilirubin
+name	Bilirubin Indirect	I-Bili	Indirect (unconjugated) bilirubin
+name	Bilirubin,Conjugated	Conj Bili	Conjugated bilirubin
+name	Bilirubin,Total	T-Bili	Total bilirubin
+name	CA 15-3	CA 15-3	Cancer antigen 15-3
+name	CA 27.29	CA 27.29	Cancer antigen 27.29
+name	CTX Beta Crosslaps	CTX	C-terminal telopeptide of type I collagen (beta-CrossLaps)
+name	Calcium	Ca	Calcium
+name	Carcinoembryonic Antigen	CEA	Carcinoembryonic antigen
+name	Ceruloplasmin	Cp	Ceruloplasmin
+name	Chloride	Cl	Chloride
+name	Cholesterol	TC	Total cholesterol
+name	Cholesterol, HDL	HDL-C	High-density lipoprotein cholesterol
+name	Cholesterol,LDL,Calc	LDL-C	Low-density lipoprotein cholesterol (calculated)
+name	Non-HDL,Chol,Calc	Non-HDL-C	Non-HDL cholesterol (calculated)
+name	Creatinine	Cr	Creatinine
+name	POC Creatinine	POC Cr	Creatinine, point-of-care
+name	Eosinophil #	Eos #	Eosinophils, absolute count
+name	Eosinophil %	Eos %	Eosinophils (percent of white cells)
+name	Estradiol	E2	Estradiol
+name	Ferritin	Ferritin	Ferritin
+name	Fibrinogen	Fbg	Fibrinogen
+name	Folate,Serum	Folate	Folate (folic acid), serum
+name	Follicle Stimulating Hormone	FSH	Follicle-stimulating hormone
+name	Luteinizing Hormone	LH	Luteinizing hormone
+name	GFR Estimate for African American	eGFR	Estimated glomerular filtration rate (race-based formula)
+name	GFR Estimate for Non-African American	eGFR	Estimated glomerular filtration rate (race-based formula)
+name	eGFR (CKD-EPI 2021)	eGFR	Estimated glomerular filtration rate (CKD-EPI 2021)
+name	eGFR (CKD-EPI)	eGFR	Estimated glomerular filtration rate (CKD-EPI)
+name	eGFR (MDRD)	eGFR	Estimated glomerular filtration rate (MDRD)
+name	POC eGFR	eGFR	Estimated glomerular filtration rate, point-of-care
+name	GLUCOSE	Glu	Glucose
+name	Glucose	Glu	Glucose
+name	Glucose CSF	CSF Glu	Glucose, cerebrospinal fluid
+name	Gamma Glutamyl Transferase	GGT	Gamma-glutamyl transferase
+name	Gliadin (Deamidated) IgA	DGP IgA	Deamidated gliadin peptide antibody, IgA
+name	Gliadin (Deamidated) IgG	DGP IgG	Deamidated gliadin peptide antibody, IgG
+name	HBs Ab Quant	Anti-HBs	Hepatitis B surface antibody, quantitative
+name	Hematocrit	Hct	Hematocrit
+name	Hemoglobin	Hgb	Hemoglobin
+name	Hgb A1c	HbA1c	Hemoglobin A1c (glycated hemoglobin)
+name	IG#	IG #	Immature granulocytes, absolute count
+name	IG%	IG %	Immature granulocytes (percent of white cells)
+name	IgA	IgA	Immunoglobulin A
+name	IgA,Serum	IgA	Immunoglobulin A, serum
+name	IgG	IgG	Immunoglobulin G
+name	IgG,Serum	IgG	Immunoglobulin G, serum
+name	IgG Subclass 1	IgG1	Immunoglobulin G subclass 1
+name	IgG Subclass 2	IgG2	Immunoglobulin G subclass 2
+name	IgG Subclass 3	IgG3	Immunoglobulin G subclass 3
+name	IgG Subclass 4	IgG4	Immunoglobulin G subclass 4
+name	IgM	IgM	Immunoglobulin M
+name	IgM,Serum	IgM	Immunoglobulin M, serum
+name	Immature Retic Fraction	IRF	Immature reticulocyte fraction
+name	International Normalization Ratio	INR	International normalized ratio
+name	Iron	Fe	Iron, serum
+name	Iron Binding Capacity	TIBC	Total iron-binding capacity
+name	Liv/Kid Micro 1-Mayo	Anti-LKM-1	Liver/kidney microsome type 1 antibody
+name	Lymphocyte #	Lymph #	Lymphocytes, absolute count
+name	Lymphocyte %	Lymph %	Lymphocytes (percent of white cells)
+name	MCH	MCH	Mean corpuscular hemoglobin
+name	MCHC	MCHC	Mean corpuscular hemoglobin concentration
+name	MCV	MCV	Mean corpuscular volume
+name	MPV	MPV	Mean platelet volume
+name	Magnesium	Mg	Magnesium
+name	Manual Basophil %	Baso % (manual)	Basophils, manual differential (percent)
+name	Manual Basophil Abs	Baso # (manual)	Basophils, manual differential (absolute)
+name	Manual Eosinophil %	Eos % (manual)	Eosinophils, manual differential (percent)
+name	Manual Eosinophil Abs	Eos # (manual)	Eosinophils, manual differential (absolute)
+name	Manual Lymphocyte %	Lymph % (manual)	Lymphocytes, manual differential (percent)
+name	Manual Lymphocyte Abs	Lymph # (manual)	Lymphocytes, manual differential (absolute)
+name	Manual Monocyte %	Mono % (manual)	Monocytes, manual differential (percent)
+name	Manual Monocyte Abs	Mono # (manual)	Monocytes, manual differential (absolute)
+name	Manual Neutrophil %	Neut % (manual)	Neutrophils, manual differential (percent)
+name	Manual Neutrophil Abs	ANC (manual)	Neutrophils, manual differential (absolute)
+name	Neutrophils, Abs Manual Diff	ANC (manual)	Neutrophils, manual differential (absolute)
+name	Neutrophils, %	Neut %	Neutrophils (percent of white cells)
+name	Metamyelocyte %	Meta %	Metamyelocytes (percent of white cells)
+name	Monocyte #	Mono #	Monocytes, absolute count
+name	Monocyte %	Mono %	Monocytes (percent of white cells)
+name	Neutrophil #	ANC	Absolute neutrophil count
+name	Neutrophil %	Neut %	Neutrophils (percent of white cells)
+name	Nucleated RBC%, automated	nRBC %	Nucleated red blood cells (percent), automated
+name	nRBC Percent	nRBC %	Nucleated red blood cells (percent)
+name	Phosphorus Level	Phos	Phosphorus (phosphate)
+name	Platelets	PLT	Platelet count
+name	Potassium	K	Potassium
+name	Procalcitonin	PCT	Procalcitonin
+name	Prothrombin Time	PT	Prothrombin time
+name	RBC	RBC	Red blood cell count
+name	RED BLOOD CELLS	RBC	Red blood cells
+name	RDW-CV	RDW-CV	Red cell distribution width (coefficient of variation)
+name	RDW-SD	RDW-SD	Red cell distribution width (standard deviation)
+name	Retic Hemoglobin Content	Ret-He	Reticulocyte hemoglobin content
+name	Reticulocyte Count, Auto	Retic	Reticulocyte count, automated
+name	SIGNATERA MTM READOUT	ctDNA	Signatera circulating tumor DNA (mean tumor molecules per mL)
+name	SSA Antibody	Anti-SSA	Anti-SSA (Ro) antibody
+name	SSB Antibody	Anti-SSB	Anti-SSB (La) antibody
+name	Sedimentation rate, Erythrocyte	ESR	Erythrocyte sedimentation rate
+name	Sodium	Na	Sodium
+name	Specific Gravity	SG	Specific gravity
+name	Urine Specific Gravity	SG	Urine specific gravity
+name	T4 (Thyroxine) Free	FT4	Free thyroxine (T4)
+name	TSH	TSH	Thyroid-stimulating hormone
+name	TSI-Mayo	TSI	Thyroid-stimulating immunoglobulin
+name	TTG IgA	tTG IgA	Tissue transglutaminase antibody, IgA
+name	TTG IgG-Mayo	tTG IgG	Tissue transglutaminase antibody, IgG
+name	Thyro Recpt Ab-Mayo	TRAb	Thyrotropin receptor antibody
+name	Thyroid Peroxidase AB	TPO Ab	Thyroid peroxidase antibody
+name	Total CO2	CO2	Total carbon dioxide (bicarbonate)
+name	Total Protein	TP	Total protein
+name	Transferrin	Tf	Transferrin
+name	Triglycerides	TG	Triglycerides
+name	Triiodothyronine	T3	Triiodothyronine
+name	Urea Nitrogen	BUN	Blood urea nitrogen
+name	Venous Lactate	Lactate	Lactate, venous
+name	Vitamin B12	B12	Vitamin B12 (cobalamin)
+name	Vitamin D 25 OH	25(OH)D	25-hydroxyvitamin D
+name	WBC	WBC	White blood cell count
+name	Zinc, Plasma	Zn	Zinc, plasma
+name	Left Ventricular Ejection Fraction	LVEF	Left ventricular ejection fraction
+name	Teichholz EF	LVEF (Teichholz)	Left ventricular ejection fraction, Teichholz method
+name	BP EF	LVEF (biplane)	Left ventricular ejection fraction, biplane method
+name	QTcB	QTcB	QT interval corrected for heart rate (Bazett)
+name	QTcF	QTcF	QT interval corrected for heart rate (Fridericia)
+name	QRSD Interval	QRSd	QRS duration
+name	FS	FS	Fractional shortening (echo)
+name	BSA	BSA	Body surface area
+name	E/A ratio	E/A	Mitral inflow E to A wave velocity ratio
+name	nRBC #	nRBC #	Nucleated red blood cells, absolute count
+name	nRBC %	nRBC %	Nucleated red blood cells (per 100 white cells)
+name	ESR	ESR	Erythrocyte sedimentation rate
+name	Urine pH	Urine pH	pH of urine
+name	eGFR, race-based (African American)	eGFR	Estimated glomerular filtration rate (race-based formula)
+name	AST	AST	Aspartate aminotransferase
+name	BP systolic	SBP	Systolic blood pressure
+name	BP diastolic	DBP	Diastolic blood pressure
+name	Pulse	HR	Heart rate (pulse)
+name	Pulse (oximeter)	HR (SpO2 probe)	Heart rate measured by the pulse oximeter
+name	SpO2	SpO2	Oxygen saturation (pulse oximetry)
+name	Respirations	RR	Respiratory rate
+name	Temperature	Temp	Body temperature
+name	BMI	BMI	Body mass index
+name	Blood pressure	BP	Blood pressure (systolic / diastolic)
+token	LVOT		Left ventricular outflow tract
+token	LVIDD		Left ventricular internal diameter, diastole
+token	LVIDS		Left ventricular internal diameter, systole
+token	LVPWd		Left ventricular posterior wall thickness, diastole
+token	IVS		Interventricular septum thickness
+token	IVC		Inferior vena cava
+token	LV		Left ventricle
+token	RV		Right ventricle
+token	LA		Left atrium
+token	RA		Right atrium
+token	AV		Aortic valve
+token	MV		Mitral valve
+token	PV		Pulmonic valve
+token	Ao		Aorta
+token	AVA		Aortic valve area
+token	VTI		velocity time integral
+token	Vmax		peak velocity
+token	Diam		diameter
+token	MOD		method of disks
+token	2C		two-chamber
+token	4C		four-chamber
+token	CSF		cerebrospinal fluid
+token	HPF		high-power field
+token	POC		point-of-care
+token	WBC		white blood cells
+token	RBC		red blood cells

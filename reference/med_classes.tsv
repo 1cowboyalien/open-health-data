@@ -21,16 +21,16 @@ name	droperidol	droperidol	supportive/antiemetic
 name	scopolamine	scopolamine	supportive/antiemetic	
 name	loperamide	loperamide	supportive/antiemetic	anti-diarrheal
 name	diphenoxylate	diphenoxylate-atropine	supportive/antiemetic	anti-diarrheal
-name	ciprofloxacin-dexamethasone	ciprofloxacin-dexamethasone otic	other	ear drops; before dexamethasone
+name	ciprofloxacin-dexamethasone	ciprofloxacin-dexamethasone otic	antibiotic/antifungal	ear drops; before dexamethasone
 name	dexamethasone|decadron	dexamethasone	steroid	
-name	hydrocortisone-pramoxine	hydrocortisone-pramoxine	other	topical; before hydrocortisone
+name	hydrocortisone-pramoxine	hydrocortisone-pramoxine	GI/bowel	topical; before hydrocortisone
 name	hydrocortisone	hydrocortisone	steroid	
 name	triamcinolone	triamcinolone	steroid	topical cream
 name	gadobutrol|gadopiclenol|gadobenate|gadoterate		contrast/imaging	MRI contrast; drug = written name
 name	iohexol|iopamidol|barium		contrast/imaging	CT/X-ray contrast
 name	fdg|fludeoxyglucose	fludeoxyglucose F-18	contrast/imaging	PET tracer
 name	tc99m|technetium		contrast/imaging	nuclear medicine tracer
-name	acetaminophen(?!.*codone)	acetaminophen	pain	
+name	^(?!.*codone).*acetaminophen	acetaminophen	pain	not hydrocodone-acetaminophen
 name	hydrocodone	hydrocodone-acetaminophen	pain	
 name	oxycodone	oxycodone	pain	
 name	hydromorphone	hydromorphone	pain	
@@ -39,18 +39,90 @@ name	fentanyl	fentanyl	pain
 name	tramadol	tramadol	pain	
 name	meperidine	meperidine	pain	
 name	ibuprofen	ibuprofen	pain	
-name	guaifenesin-codeine	guaifenesin-codeine	other	cough syrup
+name	guaifenesin-codeine	guaifenesin-codeine	respiratory/allergy	cough syrup
 name	levetiracetam|keppra	levetiracetam	anticonvulsant	
 name	nayzilam	midazolam nasal	anticonvulsant	seizure rescue spray; before midazolam
 name	clonazepam	clonazepam	anticonvulsant	
-name	gabapentin	gabapentin	other	used for nerve pain and seizures; left as other
-name	nuvaring|etonogestrel	etonogestrel-ethinyl estradiol ring	other	brand NuvaRing
-name	clearlax|polyethylene glycol	polyethylene glycol	other	
-name	dextroamphetamine|amphetamine	amphetamine-dextroamphetamine	other	
-name	sennosides|senna	senna	other	
-name	^lidocaine 1% .*tumescent	lidocaine tumescent solution	other	
-name	heparin	heparin	other	includes line flushes
-name	sodium chloride	sodium chloride	other	saline, often flushes or IV carrier
-name	lactated ringer	lactated ringer's	other	
+name	gabapentin	gabapentin	neuro	used for nerve pain and seizures; left as other
+name	clearlax|polyethylene glycol	polyethylene glycol	GI/bowel	
+name	dextroamphetamine|amphetamine	amphetamine-dextroamphetamine	neuro	
+name	sennosides|senna	senna	GI/bowel	
+name	^lidocaine 1% .*tumescent	lidocaine tumescent solution	anesthesia/procedure	
+name	heparin	heparin	blood/clotting	includes line flushes
+name	sodium chloride	sodium chloride	fluids/electrolytes	saline, often flushes or IV carrier
+name	lactated ringer	lactated ringer's	fluids/electrolytes	
 name	^generic external medication$|^miscellaneous medication$|^non-formulary request$	(placeholder)	other	no drug name in the record; see name_placeholder column
-name	sulfamethoxazole-trimethoprim	sulfamethoxazole-trimethoprim	other	antibiotic; merges DOUBLE strength spelling
+name	sulfamethoxazole-trimethoprim	sulfamethoxazole-trimethoprim	antibiotic/antifungal	antibiotic; merges DOUBLE strength spelling
+name	pantoprazole	pantoprazole	GI/bowel	
+name	atovaquone	atovaquone	antibiotic/antifungal	
+name	amoxicillin-clavulanate|augmentin	amoxicillin-clavulanate	antibiotic/antifungal	before amoxicillin
+name	^amoxicillin	amoxicillin	antibiotic/antifungal	
+name	azithromycin	azithromycin	antibiotic/antifungal	
+name	cefazolin|ancef	cefazolin	antibiotic/antifungal	
+name	cefepime|maxipime	cefepime	antibiotic/antifungal	
+name	ceftriaxone|rocephin	ceftriaxone	antibiotic/antifungal	includes a diluent order mixed with ceftriaxone
+name	cephalexin|keflex	cephalexin	antibiotic/antifungal	
+name	gentamicin	gentamicin	antibiotic/antifungal	
+name	vancomycin	vancomycin	antibiotic/antifungal	includes 'vancomycin per pharmacy' dosing orders
+name	metronidazole	metronidazole	antibiotic/antifungal	
+name	fluconazole	fluconazole	antibiotic/antifungal	
+name	econazole	econazole	antibiotic/antifungal	
+name	ketoconazole	ketoconazole	antibiotic/antifungal	
+name	enoxaparin|lovenox	enoxaparin	blood/clotting	
+name	alteplase|cathflo	alteplase	blood/clotting	catheter clearance
+name	aspirin	aspirin	blood/clotting	
+name	tranexamic	tranexamic acid	blood/clotting	
+name	^dextrose	dextrose	fluids/electrolytes	
+name	balanced electrolytes|plasmalyte|normosol	balanced electrolytes	fluids/electrolytes	
+name	calcium gluconate	calcium gluconate	fluids/electrolytes	
+name	magnesium sulfate	magnesium sulfate	fluids/electrolytes	
+name	^albumin	albumin	fluids/electrolytes	
+name	propofol	propofol	anesthesia/procedure	
+name	ketamine	ketamine	anesthesia/procedure	
+name	midazolam	midazolam	anesthesia/procedure	after Nayzilam (seizure rescue)
+name	rocuronium	rocuronium	anesthesia/procedure	
+name	cisatracurium	cisatracurium	anesthesia/procedure	
+name	sugammadex	sugammadex	anesthesia/procedure	
+name	glycopyrrolate	glycopyrrolate	anesthesia/procedure	
+name	^atropine	atropine	anesthesia/procedure	
+name	bupivacaine	bupivacaine	anesthesia/procedure	
+name	ropivacaine	ropivacaine	anesthesia/procedure	
+name	lidocaine-prilocaine	lidocaine-prilocaine	anesthesia/procedure	numbing cream
+name	^lidocaine	lidocaine	anesthesia/procedure	
+name	benzocaine	benzocaine	anesthesia/procedure	with or without menthol
+name	dermabond	dermabond	anesthesia/procedure	skin glue
+name	^phenol	phenol	anesthesia/procedure	
+name	naloxone	naloxone	anesthesia/procedure	opioid reversal
+name	bisacodyl	bisacodyl	GI/bowel	
+name	docusate	docusate	GI/bowel	
+name	lactulose	lactulose	GI/bowel	
+name	aluminum.*magnesium|magnesium hydroxide	aluminum-magnesium hydroxide-simethicone	GI/bowel	antacid; before simethicone
+name	calcium carbonate	calcium carbonate	GI/bowel	antacid
+name	famotidine|pepcid	famotidine	GI/bowel	
+name	metoclopramide	metoclopramide	supportive/antiemetic	
+name	witch hazel	witch hazel-glycerin	GI/bowel	
+name	^pramoxine	pramoxine	GI/bowel	
+name	lorazepam|ativan	lorazepam	sleep/anxiety	
+name	zolpidem	zolpidem	sleep/anxiety	
+name	trazodone	trazodone	sleep/anxiety	
+name	melatonin	melatonin	sleep/anxiety	
+name	amlodipine|norvasc	amlodipine	heart/blood pressure	
+name	olmesartan	olmesartan	heart/blood pressure	
+name	labetalol	labetalol	heart/blood pressure	
+name	hydralazine	hydralazine	heart/blood pressure	
+name	furosemide	furosemide	heart/blood pressure	
+name	albuterol	albuterol	respiratory/allergy	
+name	ipratropium	ipratropium	respiratory/allergy	
+name	fluticasone	fluticasone	respiratory/allergy	
+name	diphenhydramine	diphenhydramine	respiratory/allergy	antihistamine; often an infusion premedication
+name	ergocalciferol	ergocalciferol	vitamins/supplements	vitamin D2
+name	folic acid	folic acid	vitamins/supplements	
+name	iron	iron	vitamins/supplements	
+name	memantine	memantine	neuro	
+name	influenza	influenza vaccine	vaccine	
+name	measles	measles-mumps-rubella vaccine	vaccine	
+name	tetanus|tdap	tetanus-diphtheria-pertussis vaccine	vaccine	
+name	oxycontin	oxycodone (extended-release)	pain	OxyContin; kept apart from immediate-release oxycodone
+name	strata xrt	strata xrt gel	other	radiation skin gel
+name	simethicone	simethicone	GI/bowel	
+name	glucagon	glucagon	other	blood-sugar rescue or bowel relaxant for imaging

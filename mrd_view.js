@@ -29,12 +29,14 @@ const MRD = (() => {
 .hm td.c{width:62px;height:24px;border-radius:4px;font-variant-numeric:tabular-nums;font-size:11px}
 .hm td.z{background:var(--bg);color:var(--muted)}
 .hm tr.cnt td{font-weight:600;font-size:12px;padding-top:4px}
+.hm .hov{box-shadow:inset 0 0 0 2px var(--muted)}.hm th.hov{box-shadow:none;color:var(--ink);text-decoration:underline}
+.hm [data-d]{cursor:crosshair}
 .mscale{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);margin-top:10px;flex-wrap:wrap}
 .mscale i{display:inline-block;width:22px;height:12px;border-radius:3px}
 .tt{display:inline-block;font-size:10px;font-weight:600;line-height:14px;padding:0 4px;border-radius:4px;border:1px solid var(--line);color:var(--ink2);margin-left:3px;vertical-align:1px}
 .tt.ts{border-color:var(--ink2)}.tt.tv{border-style:dashed}
 .bld{font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:4px}
-.vcard{border:1px solid var(--line);border-left:0;border-right:0;padding:6px 16px 2px;margin:0 -17px;margin-top:-1px}.vcard:first-child{margin-top:6px}
+.vcard{border:1px solid var(--line);border-left:0;border-right:0;padding:6px 16px 2px;margin:0 -16px;margin-top:-1px}.vcard:first-child{margin-top:6px}
 .vhead{display:flex;align-items:baseline;gap:8px;font-size:13px;flex-wrap:wrap}.vhead b{font-weight:600}.vhead .sub{font-size:12px}
 .vhead .pk{margin-left:auto;font-size:12px;color:var(--ink2)}
 .vbox{position:relative;height:96px}.vbox.last{height:118px}`;
@@ -172,8 +174,8 @@ const MRD = (() => {
 
   /* ---------- Tumor variants: Grid / Timeline / Lines / Charts ---------- */
   const DESC = {
-    grid: 'Each row is one of the tumor\'s mutations Natera follows; each column a draw with an allele file (inside the time window). A cell shows the allele ratio: the share of that position\'s DNA in the blood carrying the mutation (%). Natera calls a draw positive only when at least two variants are found.',
-    dots: 'The same data on the time axis. Dot area = allele ratio; a small grey ring = tested, not found. The top row marks draws Natera sent no allele file for. This chart\'s labels need a wider left margin, so its dates sit a little right of the other panels.',
+    grid: 'Each row is one of the tumor\'s mutations Natera follows; each column a draw with an allele file (inside the time window). A cell shows the allele ratio: the share of that position\'s DNA in the blood carrying the mutation (%). Natera calls a draw positive only when at least two variants are found. The columns are draws, not a time scale: the column nearest the date cursor is outlined, and hovering a column puts the cursor on that draw in every panel.',
+    dots: 'The same data on the time axis, lined up with every other panel. Dot area = allele ratio; a small grey ring = tested, not found. The top row marks draws Natera sent no allele file for.',
     lines: 'One line per variant on a log scale, so small values stay visible. A line dropping to the floor means that variant was not found in that draw; lines break where draws without an allele file come in between. Hover a line to pick it out.',
     stack: 'One small chart per variant, like the lab charts: a point at every Signatera draw, joined by a line. Hover anywhere to line up a date across all charts.'};
   function gridHtml() {
@@ -185,30 +187,33 @@ const MRD = (() => {
     const byDraw = Object.fromEntries(ROWS.map(r => [r.draw_date, r]));
     const cell = (t, d) => ALLELES.find(a => a.target_id === t && a.draw_date === d);
     if (!cols.length) return ['<tr><td class="ndt">No draws with allele files in this time window.</td></tr>', ''];
-    let h = '<tr><th></th>' + cols.map(d => `<th>${fd(d).replace(/, (\d{4})/, '<br>$1')}</th>`).join('') + '</tr>';
-    h += '<tr><th></th>' + cols.map(d => { const r = byDraw[d] || {}; return `<th class="call ${r.result === 'DETECTED' ? 'pos' : 'ndt'}">${r.result === 'DETECTED' ? r.value + ' MTM' : 'Negative'}</th>`; }).join('') + '</tr>';
+    let h = '<tr><th></th>' + cols.map(d => `<th data-d="${d}">${fd(d).replace(/, (\d{4})/, '<br>$1')}</th>`).join('') + '</tr>';
+    h += '<tr><th></th>' + cols.map(d => { const r = byDraw[d] || {}; return `<th data-d="${d}" class="call ${r.result === 'DETECTED' ? 'pos' : 'ndt'}">${r.result === 'DETECTED' ? r.value + ' MTM' : 'Negative'}</th>`; }).join('') + '</tr>';
     for (const t of shownT()) {
       const v = V(t);
       h += `<tr><td class="lab" title="Variant ${vnum(t)} · ${esc(geneTxt(t))} · ${v.change_type || ''} · ${esc(effTxt(t))} · ${locTxt(t)}"><b>V${vnum(t)}</b> · ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt}${tsTag(t)}</td>` + cols.map(d => {
         const a = cell(t, d), x = a ? +a.allele_ratio : 0;
-        return x > 0 ? `<td class="c" style="background:color-mix(in srgb, ${hi} ${Math.round(alpha(x) * 100)}%, transparent);color:${alpha(x) > 0.55 ? '#fff' : 'var(--ink)'}" title="${fd(d)} · ${v.ref}>${v.alt} · ${locTxt(t)} · ${pct(x)}%">${pct(x)}</td>`
-                     : `<td class="c z" title="${fd(d)} · not detected">·</td>`; }).join('') + '</tr>';
+        return x > 0 ? `<td data-d="${d}" class="c" style="background:color-mix(in srgb, ${hi} ${Math.round(alpha(x) * 100)}%, transparent);color:${alpha(x) > 0.55 ? '#fff' : 'var(--ink)'}" title="${fd(d)} · ${v.ref}>${v.alt} · ${locTxt(t)} · ${pct(x)}%">${pct(x)}</td>`
+                     : `<td data-d="${d}" class="c z" title="${fd(d)} · not detected">·</td>`; }).join('') + '</tr>';
     }
-    h += '<tr class="cnt"><td class="lab"><b>Variants found</b></td>' + cols.map(d => `<td>${posCount(d)}</td>`).join('') + '</tr>';
+    h += '<tr class="cnt"><td class="lab"><b>Variants found</b></td>' + cols.map(d => `<td data-d="${d}">${posCount(d)}</td>`).join('') + '</tr>';
     const ex = [Math.min(...vals), 0.0005, Math.max(...vals)];
     return [h, 'Allele ratio (%): <i style="background:var(--bg)"></i> not found ' + ex.map(v => `<i style="background:color-mix(in srgb, ${hi} ${Math.round(alpha(v) * 100)}%, transparent)"></i> ${pct(v)}`).join(' ')];
   }
-  // Timeline row labels: bold "V1" + italic gene + change + Ts/Tv, drawn in the wide left margin
+  // Timeline row labels, drawn inside the standard axis width so the plot lines up with every other panel:
+  // bold "V1" on top, the gene (italic, "~" = next to it) underneath. The change and Ts/Tv are in the tooltip and the Grid.
   const rowLabels = {id: 'mrdRows', afterDraw(c) {
-    const g = c.ctx, y = c.scales.y, x = c.chartArea.left - 8, fam = getComputedStyle(document.body).fontFamily;
-    g.save(); g.textBaseline = 'middle'; g.textAlign = 'right';
+    const g = c.ctx, y = c.scales.y, x = c.chartArea.left - 6, fam = getComputedStyle(document.body).fontFamily, maxW = c.chartArea.left - 10;
+    g.save(); g.textAlign = 'right';
     for (const tk of y.ticks) {
       const r = tk.value, py = y.getPixelForValue(r);
-      if (r === 0) { g.font = `12px ${fam}`; g.fillStyle = css('--ink2'); g.fillText('No allele file', x, py); continue; }
+      if (r === 0) { g.textBaseline = 'middle'; g.font = `10.5px ${fam}`; g.fillStyle = css('--ink2'); g.fillText('no file', x, py); continue; }
       const tid = shownT()[r - 1], v = V(tid); if (!tid) continue;
-      const segs = [['V' + vnum(tid), `600 12px ${fam}`, css('--ink')], [v.gene ? (v.near ? ' · near ' : ' · ') : '', `12px ${fam}`, css('--ink2')],
-        [v.gene || '', `italic 12px ${fam}`, css('--ink2')], [` · ${v.ref}>${v.alt} `, `12px ${fam}`, css('--ink2')], [tsShort(tid), `600 10px ${fam}`, css('--muted')]];
-      let xr = x; for (const [s, f, col] of segs.reverse()) { g.font = f; g.fillStyle = col; g.fillText(s, xr, py); xr -= g.measureText(s).width; }
+      g.textBaseline = 'alphabetic'; g.font = `600 11px ${fam}`; g.fillStyle = css('--ink'); g.fillText('V' + vnum(tid), x, py - 1);
+      let gene = v.gene ? (v.near ? '~' : '') + v.gene : '';
+      g.font = `italic 9.5px ${fam}`; g.fillStyle = css('--ink2');
+      while (gene.length > 3 && g.measureText(gene).width > maxW) gene = gene.slice(0, -2) + '…';
+      g.textBaseline = 'top'; g.fillText(gene, x, py + 1);
     }
     g.restore(); }};
   // Timeline column headers, like the Grid: date + Natera result for each draw with a file; crowded labels are grouped and
@@ -260,11 +265,21 @@ const MRD = (() => {
       R(box, 'vnote').textContent = `Natera sent allele files for ${ADATES.length} of ${done.length} draws. For the others, per-variant results are unknown.`;
       R(box, 'grid').classList.toggle('hide', view !== 'grid'); R(box, 'stack').classList.toggle('hide', view !== 'stack');
       R(box, 'vchart').classList.toggle('hide', view === 'grid' || view === 'stack'); R(box, 'vleg').classList.toggle('hide', view === 'grid' || view === 'stack');
-      if (view === 'grid') { const [h, sc] = gridHtml(); R(box, 'hm').innerHTML = h; R(box, 'scale').innerHTML = sc; return; }
+      if (view === 'grid') {
+        const [h, sc] = gridHtml(), hm = R(box, 'hm'); hm.innerHTML = h; R(box, 'scale').innerHTML = sc;
+        // the date cursor: outline the draw column nearest the cursor (within 3 weeks); hovering a column moves the cursor there
+        const mark = () => { let best = null;
+          if (hoverX != null) { const tc = unpos(hoverX); let bd = 21 * DAY; ADATES.filter(inW).forEach(d => { const dd = Math.abs(ms(d) - tc); if (dd <= bd) { bd = dd; best = d; } }); }
+          hm.querySelectorAll('[data-d]').forEach(e => e.classList.toggle('hov', e.dataset.d === best)); };
+        charts.set(key + '#g', {draw: mark, destroy() {}});
+        hm.onmouseover = e => { const c = e.target.closest('[data-d]'); if (c) setHover(pos(ms(c.dataset.d))); };
+        hm.onmouseleave = () => setHover(null);
+        mark(); return;
+      }
       if (view === 'stack') return stack();
       const hi = css('--hi'), nd = css('--nd'), gridc = css('--line');
-      R(box, 'vchart').style.height = view === 'dots' ? (90 + 26 * (shownT().length + 1)) + 'px' : hOf(key, 440) + 'px';
-      const tip = c => { const a = c.raw.a; return a ? [`V${vnum(a.target_id)} · ${geneTxt(a.target_id)} ${a.ref}>${a.alt} (${(V(a.target_id).change_type || '').toLowerCase()}) · ${fd(a.draw_date)}: ` + (+a.allele_ratio > 0 ? pctS(+a.allele_ratio) : 'not found'), locTxt(a.target_id)] : `${fd(c.raw.d)}: ${c.raw.v} MTM/mL, no allele file`; };
+      R(box, 'vchart').style.height = view === 'dots' ? (90 + 30 * (shownT().length + 1)) + 'px' : hOf(key, 440) + 'px';
+      const tip = c => { const a = c.raw.a; return a ? [`V${vnum(a.target_id)} · ${geneTxt(a.target_id)} · ${V(a.target_id).chrom} ${a.ref}>${a.alt} (${(V(a.target_id).change_type || '').toLowerCase()}) · ${fd(a.draw_date)}: ` + (+a.allele_ratio > 0 ? pctS(+a.allele_ratio) : 'not found'), locTxt(a.target_id)] : `${fd(c.raw.d)}: ${c.raw.v} MTM/mL, no allele file`; };
       let cfg;
       if (view === 'dots') {
         const maxV = Math.max(...ALLELES.map(a => +a.allele_ratio)), rad = v => 3 + 13 * Math.sqrt(v / maxV);
@@ -274,13 +289,13 @@ const MRD = (() => {
           {data: found.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: rad(+a.allele_ratio), a})), backgroundColor: hi + 'cc', borderColor: hi, borderWidth: 1},
           {data: miss.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: 2.5, a})), backgroundColor: 'transparent', borderColor: nd, borderWidth: 1},
           {data: nofile.map(r => ({x: X(r.draw_date), y: 0, r: 2.5, d: r.draw_date, v: r.value})), backgroundColor: nd, borderColor: nd, pointStyle: 'line', borderWidth: 2, rotation: 90}]},
-          options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: {padding: {top: 62, right: 8}}, clip: false,
+          options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: {autoPadding: false, padding: {top: 62, right: 8}}, clip: false,   // no extra room for big bubbles, so the plot keeps the shared edges
             plugins: {legend: {display: false}, tooltip: {callbacks: {label: tip}}},
-            scales: {x: xAxis(), y: {...yw(180), reverse: true, min: -0.6, max: shownT().length + 0.6, grid: {color: c => c.tick.value === 0 ? 'transparent' : gridc},
+            scales: {x: xAxis(), y: {...yw(YW), reverse: true, min: -0.6, max: shownT().length + 0.6, grid: {color: c => c.tick.value === 0 ? 'transparent' : gridc},
               afterBuildTicks: a => { a.ticks = [0, ...shownT().map(rowOf)].map(v => ({value: v})); }, ticks: {autoSkip: false, callback: () => ''}}}}};
         cfg.data.datasets.forEach(d => d.data = d.data.filter(p => p.x >= -0.5 && p.x <= 100.5));   // only dots inside the window
         R(box, 'vleg').innerHTML = 'Allele ratio: ' + [0.0001, 0.001, maxV].map(v => { const d = 2 * rad(v); return `<span><span class="dot" style="width:${d}px;height:${d}px;background:${hi}cc"></span>${pctS(v)}</span>`; }).join('') +
-          `<span><span class="dot" style="border:1px solid ${nd};width:6px;height:6px"></span>not found</span><span style="color:${nd}">| draw with no allele file</span><span>Ts = transition · Tv = transversion</span>`;
+          `<span><span class="dot" style="border:1px solid ${nd};width:6px;height:6px"></span>not found</span><span style="color:${nd}">| draw with no allele file</span><span>~gene = next to that gene · hover a dot for the change and position</span>`;
       } else {
         const FLOOR = 0.003;
         const ds = shownT().map(t => {

@@ -20,6 +20,8 @@ const ROWPX=30,BARY=0.17,DAYMS=864e5;
 const EMPTY_EDITS=()=>({version:1,ts:0,seg:{},dose:{},added:[],moments:[],ranges:[]});
 const isoD=t=>new Date(t).toISOString().slice(0,10);
 /* when a dose was given: date and local time from the record ("at", UTC), else just the date */
+/* when a dose was given, in ms: the recorded time if there is one, else the start of its date */
+const evT=e=>e.at?Date.parse(e.at):dms(e.d);
 const evWhen=e=>e&&e.at?localStamp(Date.parse(e.at)):e?e.d:'';
 const dms=s=>Date.parse(s+'T12:00:00Z');
 
@@ -95,7 +97,7 @@ function parseDose(t){const m=/^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z\u00b5%][\w/%\u00b5
    doses from records (given / order / fill / user) and each prescribed period's start and end */
 function dosePoints(rows){const cnt={};rows.forEach(r=>[...r.ev,...r.segs].forEach(x=>{if(x.dv!=null&&x.du)cnt[x.du]=(cnt[x.du]||0)+1}));
  const u=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];if(!u)return{u:'',pts:[]};const pts=[];
- rows.forEach(r=>{r.ev.forEach(e=>{if(e.dv!=null&&e.du===u)pts.push({t:dms(e.d),v:e.dv,k:e.k,src:e.src,r,e})});
+ rows.forEach(r=>{r.ev.forEach(e=>{if(e.dv!=null&&e.du===u)pts.push({t:evT(e),v:e.dv,k:e.k,src:e.src,r,e})});
   r.segs.forEach(g=>{if(g.dv!=null&&g.du===u){pts.push({t:dms(g.a),v:g.dv,k:'rx',src:g.src,r,g});pts.push({t:dms(g.b),v:g.dv,k:'rxend',src:g.src,r,g})}})});
  pts.sort((a,b)=>a.t-b.t||(a.k==='rxend')-(b.k==='rxend'));return{u,pts}}
 /* dose in effect at time t: the last dose point at or before t (or the first one) */
@@ -402,7 +404,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
  rows.forEach(r=>r._dp=dosePoints([r]));
  const pts={moment:[],given:[],order:[],fill:[],assumed:[],user:[],skipped:[]};
  rows.forEach((r,i)=>{if(r.moments)return;const taken=new Set();
-  r.ev.forEach(e=>{const t=dms(e.d);if(e.k==='user')taken.add(e.d);if(t>=W.a&&t<=W.b)pts[e.k].push({x:pos(t),y:r._yb,r,e})});
+  r.ev.forEach(e=>{const t=evT(e);if(e.k==='user')taken.add(e.d);if(t>=W.a&&t<=W.b)pts[e.k].push({x:pos(t),y:r._yb,r,e})});
   if(r.setting==='home')r.segs.forEach(g=>assumedDays(g,W.a,W.b).forEach(t=>{const d=isoD(t),st=E.dose[r.key+'|'+d];if(taken.has(d))return;
    pts[st==='skipped'?'skipped':'assumed'].push({x:pos(t),y:r._yb,r,e:{d,k:st==='skipped'?'skipped':'assumed',src:g.src,dose:g.dose,freq:g.freq,text:g.text,perDay:g.sch.perDay,doseKey:r.key+'|'+d}})}))});
  const bars={id:'bars',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x,y}}=c;ctx.save();ctx.beginPath();ctx.rect(A.left,A.top-2,A.right-A.left,A.bottom-A.top+4);ctx.clip();
@@ -432,7 +434,9 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
    ctx.fillStyle=css('--ink2');ctx.font='11px system-ui';const lab=rowLabel(r);ctx.fillText(lab,A.left+4,top+11);
    /* half-life curve under the bar: estimated amount in the body, low/high half-life shaded */
    if(r._hl){const hl=HLD[r.drug],c0=y.getPixelForValue(r._u0+1)+2,c1=y.getPixelForValue(r._u0+r._span)-3,hpx=c1-c0,step=2,xs=[],H=[],L=[];
-    for(let px=A.left;px<=A.right;px+=step){const t=unpos(x.getValueForPixel(px));xs.push(px);H.push(hlAmount(r._hl.doses,t,hl.hi));L.push(hlAmount(r._hl.doses,t,hl.lo))}
+    const smp=[];for(let px=A.left;px<=A.right;px+=step)smp.push([px,unpos(x.getValueForPixel(px))]);
+    r._hl.doses.forEach(d=>{if(d.t<W.a||d.t>W.b)return;const px=x.getPixelForValue(pos(d.t));smp.push([px-.01,d.t-1],[px,d.t])});
+    smp.sort((p,q)=>p[0]-q[0]).forEach(([px,t])=>{xs.push(px);H.push(hlAmount(r._hl.doses,t,hl.hi,true));L.push(hlAmount(r._hl.doses,t,hl.lo,false))});
     const mx=Math.max(...H,1e-9),Y=v=>c1-hpx*v/mx;ctx.save();
         /* label half-life: blue; unofficial best estimate: grey with a dotted line */
     const est=hl.basis==='estimate',fillA=est?'rgba(138,137,132,.28)':'rgba(57,135,229,.30)',fillB=est?'rgba(138,137,132,.14)':'rgba(57,135,229,.15)';
@@ -440,7 +444,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
     ctx.beginPath();xs.forEach((px,k)=>ctx.lineTo(px,Y(H[k])));for(let k=xs.length-1;k>=0;k--)ctx.lineTo(xs[k],Y(L[k]));ctx.closePath();ctx.fillStyle=fillB;ctx.fill();
     ctx.beginPath();xs.forEach((px,k)=>k?ctx.lineTo(px,Y(H[k])):ctx.moveTo(px,Y(H[k])));ctx.strokeStyle=est?css('--muted'):css('--accent');ctx.lineWidth=1.2;
     ctx.setLineDash(est?[1.5,2.5]:r._hl.assumed?[4,3]:[]);ctx.stroke();ctx.setLineDash([]);
-    if(hpx>=22){ctx.font='9.5px system-ui';ctx.fillStyle=css('--muted');ctx.fillText((hl.basis==='estimate'?'unofficial estimate, not from a drug label · ':'')+hlText(hl)+' · estimated amount in body (max '+amt(mx)+' '+r._hl.u+')'+(r._hl.assumed?' · assumes taken as prescribed'+(r._hl.fromText?' (dose read from the prescription text)':''):''),A.left+4,c0+9)}
+    if(hpx>=22){ctx.font='9.5px system-ui';ctx.fillStyle=css('--muted');ctx.fillText((hl.basis==='estimate'?'unofficial estimate, not from a drug label · ':'')+hlText(hl)+' · estimated amount in body (max '+amt(mx)+' '+r._hl.u+')'+(r._hl.ranged?' · some doses only as a range in the record (shaded low to high)':'')+(r._hl.assumed?' · assumes taken as prescribed'+(r._hl.fromText?' (dose read from the prescription text)':''):''),A.left+4,c0+9)}
     ctx.restore()}
    /* dose labels where the dose changes ("5 mg", then "→ 10 mg"), on the name line, never over the name */
    const nameEnd=A.left+4+ctx.measureText(lab).width+8;let lastEnd=-1e9,skipped=[];ctx.font='10px system-ui';ctx.fillStyle=css('--ink');
@@ -461,6 +465,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
    onClick:(ev,els,c)=>txClick(rows,els,c,ev),
    plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
     label:c=>{const e=c.raw.e;if(e.k==='moment')return [e.m.title,...(e.m.note?(e.m.note.match(/.{1,70}(\s|$)/g)||[e.m.note]).slice(0,4).map(x=>x.trim()):[]),'Click to edit'];const L=[KIND[e.k].label,[e.dose,e.route,e.k==='assumed'&&e.perDay>1?e.perDay+' doses/day':e.freq,e.qty].filter(Boolean).join(' · ')+(e.src?'  · '+e.src:'')];
+     if(e.rlo!=null)L.push('amount given not in the record (only the range '+e.dose+')');
      if(e.k==='assumed'||e.k==='skipped'||e.doseKey)L.push(pxPerDay(c.chart)<4?'Click to edit; zoom in to click single doses':'Click to change: taken / skipped / assumed');return L}}}},
    layout:{padding:{right:8}},
    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
@@ -484,19 +489,26 @@ let hlOn=store.get('hlon',true),hlH=Math.max(16,Math.min(200,store.get('hlh',28)
 function hlText(hl){const h=hl.hi<=4,f=x=>h?fmt(Math.round(x*24*10)/10):fmt(Math.round(x*10)/10);return 't½ '+f(hl.lo)+(f(hl.hi)!==f(hl.lo)?'–'+f(hl.hi):'')+(h?' h':' d')}
 /* amounts: whole numbers from 10 up, two decimals below (0.25 mg stays 0.25) */
 const amt=v=>fmt(v>=10?Math.round(v):Math.round(v*100)/100);
-function hlAmount(doses,t,h){let s=0;for(const d of doses){const dt=(t-d.t)/DAYMS;if(dt>=0)s+=d.v*Math.pow(.5,dt/h)}return s}
+/* hiDose: use the high end of range doses ("2-4 mg" → 4); otherwise the low end (2) */
+function hlAmount(doses,t,h,hiDose){let s=0;for(const d of doses){const dt=(t-d.t)/DAYMS;if(dt>=0)s+=(hiDose&&d.vh!=null?d.vh:d.v)*Math.pow(.5,dt/h)}return s}
+/* "3.1" or "1.2–3.1": low dose with the short half-life to high dose with the long one */
+function rangeAmt(doses,t,hl){const a=amt(hlAmount(doses,t,hl.lo,false)),b=amt(hlAmount(doses,t,hl.hi,true));return a===b?b:a+'–'+b}
 /* doses for the half-life curve: recorded doses (given / completed orders / entered by you), plus for
    home prescriptions the doses the schedule implies (doses/day, every N days, days on/off), minus days
    you marked skipped; "taken" marks use the dose of the prescription on that date. assumed = true
    when any dose comes from a schedule rather than a record. */
-function hlDoses(rows){const dp=dosePoints(rows),u=dp.u;let assumed=false,fromText=false;
+function hlDoses(rows){const dp=dosePoints(rows);let assumed=false,fromText=false,ranged=false;
+ /* doses recorded only as a range ("2-4 mg", e.g. "as needed" orders): counted from low to high */
+ const rng=rows.flatMap(r=>r.ev.filter(e=>e.dv==null&&e.rlo!=null&&(e.k==='given'||e.k==='order')));
+ const u=dp.u||Object.entries(rng.reduce((c,e)=>(c[e.ru]=(c[e.ru]||0)+1,c),{})).sort((a,b)=>b[1]-a[1]).map(x=>x[0])[0]||'';
  const doses=dp.pts.filter(p=>p.k==='given'||p.k==='order'||p.k==='user').map(p=>({t:p.t,v:p.v}));
+ rng.forEach(e=>{if(e.ru===u){doses.push({t:evT(e),v:e.rlo,vh:e.rhi});ranged=true}});
  rows.forEach(r=>{if(r.setting!=='home')return;const taken=new Set(r.ev.filter(e=>e.k==='user').map(e=>e.d));
   r.segs.forEach(g=>{if(g.dv==null||g.du!==u||!g.sch||g.sch.prn)return;const per=Math.max(1,g.sch.perDay||1);
    assumedDays(g,-Infinity,Infinity).forEach(t=>{const d=isoD(t);if(E.dose[r.key+'|'+d]==='skipped'||taken.has(d))return;
     assumed=true;if(g.dose_from_text)fromText=true;for(let k=0;k<per;k++)doses.push({t:t+(k-(per-1)/2)*DAYMS/per,v:g.dv})})});
   r.ev.forEach(e=>{if(e.k==='user'&&e.dv==null){const g=segAt(r,dms(e.d));if(g&&g.dv!=null&&g.du===u)doses.push({t:dms(e.d),v:g.dv})}})});
- doses.sort((a,b)=>a.t-b.t);return{u,doses,assumed,fromText}}
+ doses.sort((a,b)=>a.t-b.t);return{u,doses,assumed,fromText,ranged}}
 function hlControls(){$('hlOn').textContent='Half-life: '+(hlOn?'on':'off');$('hlOn').className=hlOn?'on':'';$('hlSmall').disabled=$('hlBig').disabled=!hlOn;
  $('hlCtl').classList.toggle('hide',!Object.keys(HLD).length)}
 /* ---- dose charts: one per drug ticked "dose" in the sidebar, same axis/window/hover as the labs ---- */
@@ -543,7 +555,7 @@ function rowAt(rows,u){return rows.findIndex(r=>u>=r._u0&&u<r._u0+r._span)}
 function segAt(r,t){return r&&r.segs.find(g=>t>=dms(g.a)-DAYMS/2&&t<=dms(g.b)+DAYMS)}
 function txInfo(rows,i,xv,u){const r=rows[i];if(!r||xv==null){$('txInfo').textContent='';return}
  if(r._hl&&u!=null&&u>=r._u0+1){const t=unpos(xv),hl=HLD[r.drug];
-  $('txInfo').textContent=drugLabel(r.drug,r.brands)+' on '+iso(t)+': about '+amt(hlAmount(r._hl.doses,t,hl.hi))+' '+r._hl.u+' estimated in the body ('+hlText({lo:hl.hi,hi:hl.hi})+(hl.lo!==hl.hi?'; '+amt(hlAmount(r._hl.doses,t,hl.lo))+' with '+hlText({lo:hl.lo,hi:hl.lo}):'')+') — '+(hl.basis==='estimate'?'based on an UNOFFICIAL half-life estimate, not from a drug label':'based on the half-life in the drug label')+(r._hl.assumed?', assuming it was taken as prescribed':'')+', not a measured level';return}
+  $('txInfo').textContent=drugLabel(r.drug,r.brands)+' on '+iso(t)+': about '+rangeAmt(r._hl.doses,t,hl)+' '+r._hl.u+' estimated in the body ('+hlText(hl)+(r._hl.ranged?'; some doses are only a range in the record, so counted low to high':'')+') — '+(hl.basis==='estimate'?'based on an UNOFFICIAL half-life estimate, not from a drug label':'based on the half-life in the drug label')+(r._hl.assumed?', assuming it was taken as prescribed':'')+', not a measured level';return}
  const g=segAt(r,unpos(xv));
  $('txInfo').textContent=(g?rowLabel(r)+': '+(g.user?'entered by you ':'ordered ')+g.a+' to '+g.b+(g.src&&g.src!=='you'?' · '+g.src:'')+(g.dose?' · '+g.dose:'')+(g.freq?' · '+g.freq:g.sch&&g.sch.perDay>1?' · '+g.sch.perDay+'×/day':'')
   +(g.sch&&g.sch.on?' · '+g.sch.on+' days on / '+g.sch.off+' off':'')+(g.sch&&g.sch.prn?' · as needed (no assumed doses drawn)':'')+(g.note?' · '+g.note:'')+(g.edited?' · changed by you':''):rowLabel(r))+'  — click to edit'+(r.setting==='home'?' or mark doses (zoom to 3 months to click single doses)':'')}

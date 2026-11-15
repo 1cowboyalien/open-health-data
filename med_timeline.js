@@ -605,7 +605,7 @@ function inp(type,val,attrs){const i=document.createElement(type==='select'||typ
  Object.assign(i,attrs||{});if(type==='checkbox')i.checked=!!val;else if(val!=null&&type!=='select')i.value=val;return i}
 function selBox(opts,val){const s=inp('select');opts.forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];s.appendChild(op)});s.value=val;return s}
 function btn(text,fn,cls){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=fn;if(cls)b.className=cls;return b}
-function panel(title,sub){const p=$('txEdit');p.innerHTML='';p.classList.remove('hide');placeEdit();const h=document.createElement('div');h.className='txh';
+function panel(title,sub){const p=$('txEdit');p.innerHTML='';p.classList.remove('hide');$('mtip').classList.add('hide');placeEdit();const h=document.createElement('div');h.className='txh';
  const b=document.createElement('b');b.textContent=title;h.appendChild(b);h.appendChild(Object.assign(document.createElement('span'),{className:'ctl'}));
  h.lastChild.appendChild(btn('Close',()=>{p.classList.add('hide')}));p.appendChild(h);
  if(sub){const s=document.createElement('div');s.className='sub';s.textContent=sub;p.appendChild(s)}
@@ -616,10 +616,17 @@ function schedFields(g,sch){const f={perDay:inp('number',sch.perDay,{min:0,max:1
  g.append(field('Doses per day',f.perDay),field('Every N days',f.every),field('Days on (cycle)',f.on),field('Days off (cycle)',f.off),field('As needed (no assumed doses)',f.prn));return f}
 const readSched=f=>({perDay:num(f.perDay.value,1),every:Math.max(1,num(f.every.value,1)),on:num(f.on.value,0),off:num(f.off.value,0),prn:f.prn.checked});
 
+/* in the Drug editor: why it was given and who ordered it, read-only, as the record states it */
+function mergeWhy(ws){const o={};ws.forEach(w=>Object.entries(w||{}).forEach(([k,v])=>v.split(' | ').forEach(x=>{o[k]=o[k]||[];if(x&&!o[k].includes(x))o[k].push(x)})));
+ return Object.fromEntries(Object.entries(o).map(([k,v])=>[k,v.join(k==='by'?', ':' | ')]))}
+function whyBlock(box,w){const L=whyLines(w,400);if(!L.length)return;const d=document.createElement('div');d.className='whybox';
+ const h=document.createElement('b');h.textContent='Why it was given, from the record';d.appendChild(h);
+ L.forEach(t=>{const x=document.createElement('div');x.textContent=t;d.appendChild(x)});box.parentNode.insertBefore(d,box)}
 /* edit one bar from the records (or a row without a bar: add doses) */
 function openSeg(r,g,clickDate){if(!canEdit())return;
  const g0=g&&TX.find(x=>x.key===r.key),orig=g0&&g0.segs.find(x=>segId(g0,x)===g.sid);
  const box=panel('Edit: '+rowLabel(r),g?'From the record: '+(orig?orig.a+' to '+orig.b+(orig.src?' · '+orig.src:'')+(orig.text?' · '+orig.text:''):'')+'. Your changes are kept separately; the record itself is not changed.':'No ordered period here. You can add a dose you took on a date.');
+ whyBlock(box,g&&g.why&&Object.keys(g.why).length?g.why:mergeWhy(r.ev.filter(e=>e.d===clickDate).map(e=>e.why)));
  if(g){const a=inp('date',g.a),b=inp('date',g.b),dose=inp('text',g.dose||''),note=inp('text',g.note||'',{size:40}),hide=inp('checkbox',false);
   box.append(field('Start',a),field('End',b),field('Dose',dose));
   const f=r.setting==='home'?schedFields(box,Object.assign({perDay:1,every:1,on:0,off:0,prn:false},g.sch||{})):null;

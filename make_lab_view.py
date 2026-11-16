@@ -8,6 +8,7 @@ Usage:
 If local/meds_all.tsv exists (python3 flatten_meds.py), a Treatment panel is drawn above the
 lab charts on the same time axis (rows: med_timeline.py; drawing and editing: med_timeline.js).
 Changes made in the viewer can be exported to local/med_edits.json; it is built back in here.
+If local/procedures/procedures.json exists, a Procedures section is added (procedures_view.js).
 
 The same test from different hospitals is combined by LOINC code (by name when there's
 no LOINC) and unit; each point keeps its source hospital.
@@ -628,6 +629,7 @@ const sl=$('srcLegend');D.sources.forEach(s=>{const e=document.createElement('sp
  const sw=document.createElement('span');sw.className='sw';sw.style.background=SC[s];const tx=document.createElement('span');tx.textContent=s;e.append(sw,tx);sl.appendChild(e)});
 syncWin();updateBar();list();render();
 __IMGJS__
+__PROCJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
@@ -638,8 +640,16 @@ imgjs = ""
 if os.path.exists(img_json):
     imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "imaging_view.js")).read())
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs))
+# Procedures (Library → Procedures): only if local/procedures/procedures.json exists. It is made outside this repo
+# (procedures, devices, hospital stays, visits, radiation fractions, with their sources); drawn by procedures_view.js.
+proc_json = os.path.join(os.path.dirname(out), "procedures", "procedures.json")
+procjs = ""
+if os.path.exists(proc_json):
+    procjs = ("const PROC_DATA=" + open(proc_json).read().strip().replace("</", "<\\/") + ";\n"
+              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "procedures_view.js")).read())
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
-      + ("; imaging: local/imaging/imaging.json" if imgjs else ""))
+      + ("; imaging: local/imaging/imaging.json" if imgjs else "")
+      + ("; procedures: local/procedures/procedures.json" if procjs else ""))

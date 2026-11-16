@@ -513,6 +513,15 @@
   /* outline rule switch: new = edge 1/3 of the way to each lesion's own peak (default since 2026-11-16, corrects most of the
      1.5T/3T difference); old = edge at 1.45 x median brain. Both sets are in the data so the difference can be shown. */
   const OLD = () => L.rule === 'old' && LS.measured_old && LS.measured_old.length;
+  /* Lines height: fixed from EVERY size of the shown lesions (reports, our measurements on 1.5T and 3T, new and old rule),
+     so the scanner and outline-rule switches only hide or change points and the axis never jumps (user's request 2026-11-16) */
+  function linesMax(S) {
+    const ids = new Set(S.map(l => l.id)), vals = [];
+    LS.reports.forEach(r => { if (ids.has(r.lesion) && r.mm != null) vals.push(r.mm); });
+    [LS.measured, LS.measured_old || []].forEach(arr => arr.forEach(m => { if (ids.has(m.lesion) && !m.none) vals.push(m.axial_mm); }));
+    const top = Math.max(10, ...vals) * 1.08;
+    return Math.ceil(top / 5) * 5;
+  }
   const MEAS = () => OLD() ? LS.measured_old : LS.measured;
   const measShape = m => is3T(m) ? 'triangle' : 'rectRot';
   const fieldOf = raw => raw ? (raw.meas ? raw.meas.field : raw.r ? raw.r.field : '') : '';
@@ -626,7 +635,7 @@
                 pointBackgroundColor: p => !p.raw ? LCOL[l.id] : p.raw.meas ? (p.raw.meas.none ? 'rgba(0,0,0,0)' : LCOL[l.id]) : p.raw.r.ambiguous ? 'rgba(0,0,0,0)' : LCOL[l.id], spanGaps: true, showLine: true};
       });
       cfg = {type: 'line', plugins: [guide, momentPlugin, txPlugin(null)], data: {datasets: ds},
-        options: Object.assign({}, common, {scales: {x: xAxis(), y: {min: 0, suggestedMax: 22, afterFit: s => { s.width = YW; },
+        options: Object.assign({}, common, {scales: {x: xAxis(), y: {min: 0, max: linesMax(S), afterFit: s => { s.width = YW; },
           title: {display: true, text: 'mm', color: css('--muted')}, ticks: {color: css('--muted')}, grid: {color: css('--line')}}}})};
     }
     charts.set(id, new Chart(cv, cfg));

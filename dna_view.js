@@ -14,7 +14,7 @@
    It plugs into the same hooks as the MRD, imaging, procedure and pathology panels (MRD.isId/title/unit/h0/panel/refresh/section).
    Data: DNA_DATA = {sample:{label,date,source,analysis}, groups:[{key,title}], n_genes_measured, status_labels:{status:text}, footnote,
      genes:[{gene,group,chrom,start,end,ratio,state,bins,tumor_reads,normal_reads,region,note,mutation:{name,reads,effect}|null,
-             drugs:[{drug,cls,status,note,given:{first,last,orders}|null}]}], regions:[{chrom,start,end,kb,ratio,state,genes}],
+             drugs:[{drug,cls,status,note,checked,labels:[{name,link,date}],given:{first,last,orders}|null}]}], regions:[{chrom,start,end,kb,ratio,state,genes}],
      flags:[{date,by,title,text,source}],
      mito:{title,intro,sample_names:[a,b],variants:[{pos,change,a_alt,a_depth,a_pct,b_alt,b_depth,call,note,flag}],notes:[text],source,
            pileup:{pos,start,ref,caption,samples:[{label,summary,rows:[{s,e,d:{pos:letter}}]}]}|null}|null,
@@ -75,7 +75,7 @@
       (g.note ? '<div>' + esc(g.note) + '</div>' : '') +
       (g.mutation ? '<div style="margin-top:4px"><b>Mutation:</b> ' + esc(g.mutation.name) + ' · ' + esc(g.mutation.reads) + '<br>' + esc(g.mutation.effect) + '</div>' : '') +
       (g.drugs.length ? '<div style="margin-top:6px"><b>Drugs that target it</b><ul>' + g.drugs.map(d => '<li><b>' + esc(d.drug) + '</b> · ' + esc(d.cls) + ' · ' + STAT[d.status] +
-        (d.given ? ' · <b>given</b> ' + fd(d.given.first) + ' to ' + fd(d.given.last) + ' (medication records)' : ' · not in the medication records') + (d.note ? '<br><span class="dna-sub">' + esc(d.note) + '</span>' : '') + '</li>').join('') + '</ul></div>'
+        (d.given ? ' · <b>given</b> ' + fd(d.given.first) + ' to ' + fd(d.given.last) + ' (medication records)' : ' · not in the medication records') + (d.note ? '<br><span class="dna-sub">' + esc(d.note) + '</span>' : '') + ((d.labels || []).length ? '<br><span class="dna-sub">' + (d.checked ? 'Label checked ' + esc(d.checked) + ': ' : '') + d.labels.map(l => l.link ? '<a href="' + esc(l.link) + '" target="_blank" rel="noopener" style="color:var(--accent)">' + esc(l.name) + ' label ↗</a>' : esc(l.name) + ' (no US label)').join(' · ') + '</span>' : '') + '</li>').join('') + '</ul></div>'
         : '<div class="dna-none" style="margin-top:6px">No drug targets this gene.</div>') +
       '<div class="dna-sub" style="margin-top:6px">Source: ' + esc(D.sample.source) + ' · ' + esc(D.sample.analysis) + '</div></div>'; }
 

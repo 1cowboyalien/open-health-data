@@ -627,10 +627,19 @@ $('meta').textContent=LT.length+' numeric tests · '+LT.reduce((a,t)=>a+t.n,0)+'
 const sl=$('srcLegend');D.sources.forEach(s=>{const e=document.createElement('span');e.style.cssText='display:flex;align-items:center;gap:5px';
  const sw=document.createElement('span');sw.className='sw';sw.style.background=SC[s];const tx=document.createElement('span');tx.textContent=s;e.append(sw,tx);sl.appendChild(e)});
 syncWin();updateBar();list();render();
+__IMGJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data))
+# Imaging (Library → Imaging → Brain MRI): only if local/imaging/imaging.json exists. It is made outside this repo
+# (scan dates, slice viewer files, lesion outlines, estimated dose); the viewer server serves its files from local/imaging/.
+img_json = os.path.join(os.path.dirname(out), "imaging", "imaging.json")
+imgjs = ""
+if os.path.exists(img_json):
+    imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "imaging_view.js")).read())
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
-      + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else ""))
+      + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
+      + ("; imaging: local/imaging/imaging.json" if imgjs else ""))

@@ -19,7 +19,7 @@ function msInit(){const row=$('msRow');if(!row)return;row.classList.remove('hide
  {const q=new URLSearchParams(location.search),lo=+q.get('msLo'),hi=+q.get('msHi');if(lo>=1&&hi<=10&&lo<=hi)store.set('msrange',{lo,hi})}
  const LO=$('msLo'),HI=$('msHi'),r=msRange();LO.value=r.lo;HI.value=r.hi;
  const upd=e=>{if(+LO.value>+HI.value){if(e&&e.target===LO)LO.value=HI.value;else HI.value=LO.value}
-  store.set('msrange',{lo:+LO.value,hi:+HI.value});renderConcern()};
+  store.set('msrange',{lo:+LO.value,hi:+HI.value});renderMomentTrack();renderConcern()};   // the Keyframes track's concern row follows the range too
  LO.oninput=upd;HI.oninput=upd;
  $('msList').onclick=()=>{const r=msRange();window.open(MS_PAGE+'?lo='+r.lo+'&hi='+r.hi+(momCur?'#'+momCur:''),'_blank')}}
 function msControls(){const{lo,hi}=msRange(),p=v=>(v-1)/9*100,F=$('msFill');F.style.left=p(lo)+'%';F.style.width=(p(hi)-p(lo))+'%';

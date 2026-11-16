@@ -769,7 +769,7 @@
     if (DOSE) row(IDD, 'Radiation dose by lesion', 'estimated', 'Estimated radiation dose each lesion received, split by course (stacked bars)');
   };
 
-  syncMoments();
+  syncMoments(); (window.momentSyncers = window.momentSyncers || []).push(syncMoments);   // again after the shared edits load
   const saved = store.get('selected', []);
   if (saved.some(mine)) { sel = saved.filter(id => BYID[id] || MRD.isId(id)); }
   updateBar(); list(); render();

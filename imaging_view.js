@@ -660,6 +660,16 @@
   const o = {isId: MRD.isId, title: MRD.title, unit: MRD.unit, h0: MRD.h0, panel: MRD.panel, refresh: MRD.refresh, section: MRD.section};
   const mine = id => typeof id === 'string' && id.startsWith('img:');
   MRD.isId = id => mine(id) || o.isId(id);
+  const og = MRD.getSettings || (() => ({})), os = MRD.setSettings || (() => {});
+  MRD.getSettings = () => Object.assign(og(), {img: {disp: Object.assign({}, V.disp), dose: Object.assign({}, V.dose), radio: V.radio, noseLeft: V.noseLeft}});
+  MRD.setSettings = s => { os(s); const m = s && s.img; if (!m) return;
+    if (m.disp) { V.disp = Object.assign({}, DDEF, m.disp); store.set('img.disp', V.disp); }
+    if (m.dose) { V.dose = Object.assign({}, V.dose, m.dose); saveDose(); }
+    if ('radio' in m) { V.radio = !!m.radio; store.set('img.radio', V.radio); } if ('noseLeft' in m) { V.noseLeft = !!m.noseLeft; store.set('img.noseLeft', V.noseLeft); }
+    if (!V.el || !V.nv) return;   // the viewer reads them when it opens
+    V.el.querySelectorAll('[data-o]').forEach(c => { const k = c.dataset.o; if (c.type === 'checkbox') c.checked = !!V.disp[k]; else c.value = String(V.disp[k]); });
+    if (DOSE) { V.R('dose').value = V.dose.key; V.R('dop').value = V.dose.op; V.R('dlines').checked = V.dose.lines; V.R('dblend').value = V.dose.blend; }
+    try { applyDisplay(); applyOrient(); applyDose(); } catch (e) { console.warn('imaging settings', e); } };
   MRD.title = id => mine(id) ? PANELS[id].title : o.title(id);
   MRD.unit = id => mine(id) ? (id === IDV && V.scan ? fd(V.scan.date) : PANELS[id].unit) : o.unit(id);
   MRD.h0 = id => mine(id) ? PANELS[id].h0 : o.h0(id);

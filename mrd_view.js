@@ -490,5 +490,11 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
 
   function render() { LIVE.forEach((f, k) => { if (k.endsWith('@page')) LIVE.delete(k); }); page(); }
   function close() { if (on) { on = false; store.set('mrd.on', false); } }
-  return {has: true, isId: id => !!PANELS[id], active, section, render, close, panel, refresh, title: id => (PANELS[id] || {}).title || id, unit: id => (PANELS[id] || {}).unit || '', h0: id => H0[id] || 160};
+  /* display settings, saved in Panel presets (med_timeline.js viewNow/applyView) */
+  function getSettings() { return {mrd: {view, measure, log: logMode, hideNever}}; }
+  function setSettings(o) { const m = o && o.mrd; if (!m) return;
+    if (m.view) { view = m.view; store.set('mrd.view', view); } if (m.measure) { measure = m.measure; store.set('mrd.measure', measure); }
+    if ('log' in m) { logMode = !!m.log; store.set('mrd.log', logMode); } if ('hideNever' in m) { hideNever = !!m.hideNever; store.set('mrd.hideNever', hideNever); }
+    refreshAll(); }
+  return {has: true, isId: id => !!PANELS[id], active, section, getSettings, setSettings, render, close, panel, refresh, title: id => (PANELS[id] || {}).title || id, unit: id => (PANELS[id] || {}).unit || '', h0: id => H0[id] || 160};
 })();

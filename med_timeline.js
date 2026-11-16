@@ -418,14 +418,17 @@ function panelGroup(S,q){const ps=(E.panels||[]).filter(l=>!q||l.name.toLowerCas
    if(!confirm('Delete the Panel preset "'+l.name+'"?'+(used?'\n'+used+' macro(s) use it and will keep only their timeline and keyframes.':'')))return;
    E.panels=E.panels.filter(y=>y.id!==l.id);if(activeR.p===l.id)setActive(undefined,null);saveEdits();list()});
   row.append(nm,d,x);row.onclick=()=>usePanel(l);G.appendChild(row)})}
-function viewNow(){return{mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice()}}
+const modSettings=()=>typeof MRD!=='undefined'&&MRD.getSettings?JSON.parse(JSON.stringify(MRD.getSettings())):null;   // MRD + Brain MRI display settings
+function viewNow(){const v={mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice()};
+ const ms=modSettings();if(ms)v.mods=ms;return v}
 const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,k)=>(o[k]=x[k],o),{}):x);
-function panelChanged(l){const v=viewNow(),ref=l.v;if(!ref.txOrder)delete v.txOrder;return canon(v)!==canon(Object.assign({},ref,{mon:undefined}))}
+function panelChanged(l){const v=viewNow(),ref=l.v;if(!ref.txOrder)delete v.txOrder;if(!ref.mods)delete v.mods;/* presets saved before these existed */return canon(v)!==canon(Object.assign({},ref,{mon:undefined}))}
 function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')}
 const panelId=id=>BYID[id]||(typeof MRD!=='undefined'&&MRD.isId?MRD.isId(id):D.mrd&&/^mrd:(ot|var)$/.test(id));
 function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(panelId);txPos=v.txPos||0;
  txSel=(v.txSel||[]).slice();txDose=(v.txDose||[]).slice();txHidden=!!v.txHidden;hlOn=v.hlOn!==false;hlH=v.hlH||28;heights=Object.assign({},v.heights||{});soloLab=null;soloMed=null;
  if(v.txOrder)txOrder=v.txOrder.slice();
+ if(v.mods&&typeof MRD!=='undefined'&&MRD.setSettings)MRD.setSettings(v.mods);
  [['txorder',txOrder],['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
 function usePanel(l){setActive(undefined,l.id);applyView(l.v);updateBar();list();render()}
 function savePanel(){if(!canEdit())return;const name=prompt('Name for this Panel preset:','Panels '+((E.panels||[]).length+1));if(name==null||!name.trim())return;

@@ -8,6 +8,7 @@ Usage:
 
 - Serves only local/labs.html (no folder listing, no other files), plus the imaging viewer's files:
   GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
+- Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg.
 - GET  /api/edits  -> {"rev": n, "edits": {...}}  from local/med_edits.json (the same file the
   build scripts read, so moments, medication changes and saved ranges survive reloads/rebuilds).
 - POST /api/edits  {"rev": n, "edits": {...}} saves them. If someone saved in between (rev differs)
@@ -59,12 +60,12 @@ def write_edits(rev, edits):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def send(self, code, body, ctype="application/json"):
+    def send(self, code, body, ctype="application/json", cache=False):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "private, max-age=86400" if cache else "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -80,6 +81,13 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.realpath(os.path.join(base, rel))
             if (f.startswith(base + os.sep) and f.endswith(IMG_TYPES) and os.path.isfile(f)):
                 return self.send(200, open(f, "rb").read(), "application/octet-stream")
+            return self.send(404, {"error": "not found"})
+        if path.startswith("/pathology/"):   # pathology slide photos: inside local/pathology/, .jpg only
+            rel = urllib.parse.unquote(path[len("/pathology/"):])
+            base = os.path.realpath(os.path.join(LOCAL, "pathology"))
+            f = os.path.realpath(os.path.join(base, rel))
+            if f.startswith(base + os.sep) and f.lower().endswith(".jpg") and os.path.isfile(f):
+                return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True)
             return self.send(404, {"error": "not found"})
         if path == "/api/edits":
             with lock:

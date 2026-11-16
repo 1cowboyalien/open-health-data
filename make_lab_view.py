@@ -653,6 +653,7 @@ syncWin();updateBar();list();render();
 __IMGJS__
 __MSJS__
 __PROCJS__
+__PATHJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
@@ -670,11 +671,19 @@ procjs = ""
 if os.path.exists(proc_json):
     procjs = ("const PROC_DATA=" + open(proc_json).read().strip().replace("</", "<\\/") + ";\n"
               + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "procedures_view.js")).read())
+# Pathology (Library → Pathology): only if local/pathology/pathology.json exists. It is made outside this repo
+# (cases, stains, results, slide photo file names); the viewer server serves the photos from local/pathology/.
+path_json = os.path.join(os.path.dirname(out), "pathology", "pathology.json")
+pathjs = ""
+if os.path.exists(path_json):
+    pathjs = ("const PATH_DATA=" + open(path_json).read().strip().replace("</", "<\\/") + ";\n"
+              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pathology_view.js")).read())
 # Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
 msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs))
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
       + ("; imaging: local/imaging/imaging.json" if imgjs else "")
-      + ("; procedures: local/procedures/procedures.json" if procjs else ""))
+      + ("; procedures: local/procedures/procedures.json" if procjs else "")
+      + ("; pathology: local/pathology/pathology.json" if pathjs else ""))

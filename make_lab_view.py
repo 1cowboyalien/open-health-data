@@ -592,11 +592,19 @@ function openCal(which,anchor){const P=$('calPop');P.innerHTML='';P.classList.re
  const lbl={a:'Start (From)',m:'Middle: keeps the window length',b:'End (To)'}[which];
  const h=document.createElement('b');h.textContent=lbl;const i=document.createElement('input');i.type='datetime-local';i.min=toInput(X0);i.max=toInput(X1);
  const cur=()=>which==='a'?W.a:which==='b'?W.b:(W.a+W.b)/2;i.value=toInput(cur());
+ /* Middle can only move the window if it is shorter than the whole record; otherwise say so. */
+ const note=document.createElement('div');note.className='sub';note.style.cssText='margin-top:6px;max-width:230px';
+ const full=()=>W.b-W.a>=X1-X0-DAY;
+ const hint=()=>{note.textContent=which==='m'&&full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':''};
  const apply=()=>{const t=new Date(i.value).getTime();if(!isFinite(t))return;const len=W.b-W.a;
-  if(which==='a')setWin(t,Math.max(W.b,t+MINW));else if(which==='b')setWin(Math.min(W.a,t-MINW),t);else{const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len)}};
- i.onchange=apply;i.onkeydown=e=>{if(e.key==='Enter'){apply();closeCal()}};
- const bar=document.createElement('div');bar.className='bar';const done=document.createElement('button');done.type='button';done.textContent='Done';done.className='on';done.onclick=closeCal;bar.append(done);
- P.append(h,i,bar);const r=anchor.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';
+  if(which==='a')setWin(t,Math.max(W.b,t+MINW));else if(which==='b')setWin(Math.min(W.a,t-MINW),t);else{const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len)}
+  if(which==='m'&&Math.abs(cur()-t)>DAY)note.textContent=full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':'The window reaches the edge of the record, so the middle stopped at '+localStamp(cur()).slice(0,10)+'.';
+  else hint()};
+ /* the calendar fires a change for every digit or arrow step: wait until the picking pauses */
+ let tmr=0;i.onchange=()=>{clearTimeout(tmr);tmr=setTimeout(apply,350)};
+ i.onkeydown=e=>{if(e.key==='Enter'){clearTimeout(tmr);apply();closeCal()}};
+ const bar=document.createElement('div');bar.className='bar';const done=document.createElement('button');done.type='button';done.textContent='Done';done.className='on';done.onclick=()=>{clearTimeout(tmr);apply();closeCal()};bar.append(done);
+ hint();P.append(h,i,note,bar);const r=anchor.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';
  i.focus();try{i.showPicker()}catch(e){}}
 function closeCal(){$('calPop').classList.add('hide')}
 document.addEventListener('mousedown',e=>{if(!$('calPop').classList.contains('hide')&&!e.target.closest('#calPop')&&!e.target.closest('.datebtn'))closeCal()});

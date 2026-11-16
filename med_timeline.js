@@ -9,7 +9,7 @@
 const TX=D.tx||[];
 const CLS_ORDER=['HER2/targeted','chemo','steroid','supportive/antiemetic','anticonvulsant','pain','blood/clotting','antibiotic/antifungal','heart/blood pressure','sleep/anxiety','neuro','GI/bowel','respiratory/allergy','fluids/electrolytes','vitamins/supplements','vaccine',"women's health",'anesthesia/procedure','contrast/imaging','other'];
 let txHidden=store.get('txhidden',false);
-const KIND={moment:{style:'star',fill:true,r:7,label:'Moment you added (your own note, not from the medical record)'},
+const KIND={moment:{style:'star',fill:true,r:7,label:'Keyframe you added (your own note, not from the medical record)'},
  given:{style:'circle',fill:true,r:4.5,label:'Given: confirmed by a hospital dispense record'},
  order:{style:'rectRot',fill:true,r:5,label:'One-time order marked completed (no dispense record)'},
  fill:{style:'rect',fill:true,r:4,label:'Pharmacy fill'},
@@ -17,7 +17,7 @@ const KIND={moment:{style:'star',fill:true,r:7,label:'Moment you added (your own
  user:{style:'triangle',fill:true,r:5.5,label:'Taken: confirmed or entered by you'},
  skipped:{style:'crossRot',fill:false,r:5,label:'Skipped: marked by you'}};
 const ROWPX=30,BARY=0.17,DAYMS=864e5;
-const EMPTY_EDITS=()=>({version:1,ts:0,seg:{},dose:{},added:[],moments:[],ranges:[]});
+const EMPTY_EDITS=()=>({version:1,ts:0,seg:{},dose:{},added:[],moments:[],ranges:[],panels:[],macros:[]});
 const isoD=t=>new Date(t).toISOString().slice(0,10);
 /* when a dose was given: date and local time from the record ("at", UTC), else just the date */
 /* why it was given, only as the record says it (flatten_meds.py): the diagnosis on the order, the order's
@@ -47,7 +47,7 @@ const canEdit=()=>role==='edit';
 function setRole(r){role=r;store.set('role',r);applyRole();if(!canEdit()){$('txEdit').classList.add('hide');if(editingMoment)$('mEdit').classList.add('hide');editingMoment=null}list();render()}
 function applyRole(){document.body.classList.toggle('viewonly',!canEdit());const b=$('roleBtn');if(!b)return;
  b.textContent=canEdit()?'✎ Editing':'👁 View only';b.classList.toggle('on',canEdit());
- b.title=canEdit()?'You can change moments, medications and saved ranges. Click to switch to View only.':'Changes are switched off. Click to edit (no login: anyone with the page can).'}
+ b.title=canEdit()?'You can change keyframes, presets and medications. Click to switch to View only.':'Changes are switched off. Click to edit (no login: anyone with the page can).'}
 function saveEdits(){E.ts=Date.now();
  if(SHARED){if(canEdit())pushEdits();txStatus();return}
  if(!canEdit()){txStatus();return}
@@ -56,7 +56,7 @@ function pushEdits(){shareMsg='saving…';txStatus();
  saveQ=saveQ.then(async()=>{try{
    const r=await fetch('/api/edits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev:REV,edits:E})});const j=await r.json();
    if(r.status===409){REV=j.rev;E=Object.assign(EMPTY_EDITS(),j.edits||{});delete E.rev;shareMsg='';txStatus();list();render();
-    alert('Someone else saved a change just before you, so the newest version is now loaded.\nPlease make your last change again.');return}
+    uiNote('Someone else saved a change just before you, so the newest version is now loaded.\nPlease make your last change again.');return}
    if(!r.ok)throw new Error(j.error||r.status);REV=j.rev;shareMsg='saved for everyone'}
   catch(e){shareMsg='NOT saved: the viewer server is not reachable';store.set('txedits',E)}
   txStatus()})}
@@ -123,7 +123,7 @@ function txRows(){const vis=t=>t>=W.a-DAYMS&&t<=W.b+DAYMS;
   .sort((p,q)=>ordRank(p.drug)-ordRank(q.drug)||CLS_ORDER.indexOf(p.cls)-CLS_ORDER.indexOf(q.cls)||p.first.localeCompare(q.first)||p.drug.localeCompare(q.drug)||p.setting.localeCompare(q.setting))}
 /* "generic (Brand)" - brands only as the records name them (med_timeline.py) */
 const drugLabel=(drug,brands)=>drug+(brands&&brands.length?' ('+brands.join(', ')+')':'');
-const rowLabel=r=>r.moments?'Moments — your own notes (click the row to add one)':drugLabel(r.drug,r.brands)+(r.setting==='home'?' · taken at home':' · given at hospital/clinic');
+const rowLabel=r=>r.moments?'Keyframes — your own notes (click the row to add one)':drugLabel(r.drug,r.brands)+(r.setting==='home'?' · taken at home':' · given at hospital/clinic');
 /* drugs grouped by class for the sidebar: [{cls, drugs:[{drug, settings, n}]}] (pure; tested with osascript) */
 function medGroupsOf(rows){const by={};rows.forEach(r=>{const d=by[r.drug]=by[r.drug]||{drug:r.drug,cls:r.cls,settings:[],brands:[],n:0,first:r.first};
   (r.brands||[]).forEach(b=>{if(!d.brands.includes(b))d.brands.push(b)});
@@ -165,7 +165,7 @@ function medSection(el,q){const groups=medGroups().map(g=>({cls:g.cls,drugs:g.dr
    row.appendChild(onlyBtn('Show only '+d.drug+' (deselect the other medications)',()=>onlyMed('id:'+d.drug,[d.drug],drugLabel(d.drug,d.brands)),soloMed&&soloMed.key==='id:'+d.drug));
    row.appendChild(c);row.onmouseenter=()=>setHlDrug(d.drug);row.onmouseleave=()=>setHlDrug(null);G.appendChild(row)})})}
 /* compact legend: one line of small symbols with a word or two each; the full meaning is in each item's tooltip */
-const SHORT={moment:'moment',given:'given',order:'completed order',fill:'fill',assumed:'assumed',user:'yours',skipped:'skipped'};
+const SHORT={moment:'keyframe',given:'given',order:'completed order',fill:'fill',assumed:'assumed',user:'yours',skipped:'skipped'};
 function txLegend(){const el=$('txLegend');el.innerHTML='';
  const svg={circle:f=>`<circle cx="6" cy="6" r="3.8" fill="${f?'currentColor':'none'}" stroke="currentColor" stroke-width="1.4"/>`,
   rectRot:()=>'<rect x="3" y="3" width="6" height="6" transform="rotate(45 6 6)" fill="currentColor"/>',rect:()=>'<rect x="2.5" y="2.5" width="7" height="7" fill="currentColor"/>',
@@ -271,9 +271,9 @@ function momNav(){const el=$('mNav');if(!el)return;el.innerHTML='';const L=momLi
  let prev=i>=0?i-1:-1,next=i>=0?i+1:n;if(i<0){for(let k=0;k<n;k++){if(momentT(L[k])<mid)prev=k;else{next=k;break}}}
  const b=(t,tip,j)=>{const x=btn(t,()=>goMoment(L[j]),'');x.title=tip;x.disabled=j<0||j>=n||j===i;return x};
  const lab=document.createElement('span');lab.className='mnavl';
- if(i>=0){const m=L[i];lab.textContent=(i+1)+' of '+n+' · '+(m.title.length>28?m.title.slice(0,27)+'…':m.title)+' · '+m.date;lab.title='Open this moment';lab.onclick=()=>openMoment(m)}
- else lab.textContent=n+' moment'+(n>1?'s':'');
- el.append(b('⏮','First moment',0),b('◀','Previous moment',prev),lab,b('▶','Next moment',next),b('⏭','Last moment',n-1))}
+ if(i>=0){const m=L[i];lab.textContent=(i+1)+' of '+n+' · '+(m.title.length>28?m.title.slice(0,27)+'…':m.title)+' · '+m.date;lab.title='Open this keyframe';lab.onclick=()=>openMoment(m)}
+ else lab.textContent=n+' keyframe'+(n>1?'s':'');
+ el.append(b('⏮','First keyframe',0),b('◀','Previous keyframe',prev),lab,b('▶','Next keyframe',next),b('⏭','Last keyframe',n-1))}
 function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':'';momNav();
  const k=$('mKinds');if(k&&!k.childNodes.length)Object.values(MKIND).forEach(v=>{const e=document.createElement('span');e.append(shapeSvg(v.shape,css('--muted'),10),v.label.split(' /')[0].toLowerCase());k.appendChild(e)})}
 function setMomentsOn(ids,on){(E.moments||[]).forEach(m=>{if(ids.includes(m.id))m.on=on});saveEdits();list();render()}
@@ -334,7 +334,7 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
    shown.forEach(m=>{const px=x.getPixelForValue(pos(Math.max(momentT(m),W.a))),sh=mShape(m);
     if(m.id===momCur){ctx.beginPath();ctx.arc(px,cy,13,0,7);ctx.lineWidth=2;ctx.strokeStyle=MCOL[m.color]||MCOL.red;ctx.stroke()}
     drawShape(ctx,sh,px,cy,sh==='star'?10:8);ctx.fillStyle=MCOL[m.color]||MCOL.red;ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke()});ctx.font='10px system-ui';
-   if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown moments in this window':'click here or “+ Moment” to add one; or click a reading on a chart and choose ★ Make moment',A.left+4,A.top+12)}
+   if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown keyframes in this window':'click here or “+ Keyframe” to add one; or click a reading on a chart and choose ★ Make keyframe',A.left+4,A.top+12)}
    ctx.restore()}};
  charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:0,m})),
    pointStyle:shown.map(mShape),pointRadius:shown.map(m=>mShape(m)==='star'?10:8),pointHoverRadius:shown.map(m=>mShape(m)==='star'?12:10),
@@ -352,85 +352,166 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
  cv.parentNode.onmouseleave=()=>setHover(null)}
 
 /* sidebar: Moments section (groups you name; tick to show; click a name to jump there) */
-function momentSection(el,q){const all=(E.moments||[]).filter(m=>!q||(m.title+' '+(m.group||'')+' '+(m.note||'')).toLowerCase().includes(q)||'moments'.includes(q));
- const k0=all.filter(momentOn).length;const S=section(el,'moments','Moments',(E.moments||[]).length?k0+'/'+all.length:'none yet',true,'sec',q),ss=S.firstChild,ids=all.map(m=>m.id);
- {const ma=miniBtn('+ Add','Add a moment',()=>openMoment(null));ma.classList.add('madd');ss.insertBefore(ma,ss.lastChild)}
- if(all.length){ss.insertBefore(miniBtn('All','Show every moment',()=>setMomentsOn(ids,true)),ss.lastChild);ss.insertBefore(miniBtn('None','Hide every moment',()=>setMomentsOn(ids,false)),ss.lastChild)}
+/* Presets (2026-11-16): one Library section with sub-sections Timeline (saved time windows) and Keyframes (the
+   user's own dated notes, formerly "Moments"). Panel presets sit between them and Macros (one click sets all three) come last. Data keys are unchanged
+   (E.ranges, E.moments) so saved edits keep working. */
+function momentSection(el,q){migratePresets();const P=section(el,'presets','Presets',((E.ranges||[]).length+(E.panels||[]).length+(E.moments||[]).length+(E.macros||[]).length)||'none yet',true,'sec',q);
+ rangeGroup(P,q);keyframeGroup(P,q);macroGroup(P,q)}
+function keyframeGroup(P,q){const all=(E.moments||[]).filter(m=>!q||(m.title+' '+(m.group||'')+' '+(m.note||'')).toLowerCase().includes(q)||'keyframes moments presets'.includes(q));
+ const k0=all.filter(momentOn).length;const S=section(P,'moments','Keyframes',(E.moments||[]).length?k0+'/'+all.length:'none yet',true,'grp',q),ss=S.firstChild,ids=all.map(m=>m.id);
+ {const ma=miniBtn('+ Add','Add a keyframe',()=>openMoment(null));ma.classList.add('madd');ss.insertBefore(ma,ss.lastChild)}
+ if(all.length){ss.insertBefore(miniBtn('All','Show every keyframe',()=>setMomentsOn(ids,true)),ss.lastChild);ss.insertBefore(miniBtn('None','Hide every keyframe',()=>setMomentsOn(ids,false)),ss.lastChild)}
  const groups={};all.forEach(m=>(groups[m.group||'Ungrouped']=groups[m.group||'Ungrouped']||[]).push(m));
  Object.keys(groups).sort((a,b)=>a==='Ungrouped'?1:b==='Ungrouped'?-1:a.localeCompare(b)).forEach(g=>{const ms_=groups[g].sort((a,b)=>(momentT(a)??9e15)-(momentT(b)??9e15)),gid=ms_.map(m=>m.id),k=ms_.filter(momentOn).length;
   const G=section(S,'mom:'+g,g,k+'/'+ms_.length,true,'grp',q),gs=G.firstChild;
   const cb=document.createElement('input');cb.type='checkbox';cb.checked=k===ms_.length;cb.indeterminate=k>0&&k<ms_.length;cb.title='Show or hide the whole group';
   cb.onclick=e=>{e.stopPropagation();setMomentsOn(gid,cb.checked)};gs.insertBefore(cb,gs.firstChild);
-  gs.insertBefore(miniBtn('All','Show all moments in '+g,()=>setMomentsOn(gid,true)),gs.lastChild);gs.insertBefore(miniBtn('None','Hide all moments in '+g,()=>setMomentsOn(gid,false)),gs.lastChild);
+  gs.insertBefore(miniBtn('All','Show all keyframes in '+g,()=>setMomentsOn(gid,true)),gs.lastChild);gs.insertBefore(miniBtn('None','Hide all keyframes in '+g,()=>setMomentsOn(gid,false)),gs.lastChild);
   gs.insertBefore(miniBtn('Only','Show only this group',()=>{(E.moments||[]).forEach(m=>m.on=gid.includes(m.id));saveEdits();list();render()}),gs.lastChild);
   ms_.forEach(m=>{const row=document.createElement('div');row.className='t';
    const c=document.createElement('input');c.type='checkbox';c.checked=momentOn(m);c.setAttribute('aria-label','Show '+m.title);c.onclick=e=>{e.stopPropagation();setMomentsOn([m.id],c.checked)};
    const dot=shapeSvg(mShape(m),MCOL[m.color]||MCOL.red,11);dot.title=(MKIND[m.kind]||MKIND.event).label;
-   const nm=document.createElement('span');nm.className='nm';nm.textContent=m.title;nm.title='Click to jump to this moment'+(m.note?' — '+m.note:'');
+   const nm=document.createElement('span');nm.className='nm';nm.textContent=m.title;nm.title='Click to jump to this keyframe'+(m.note?' — '+m.note:'');
    const ln=document.createElement('span');ln.className='tag';ln.textContent=(m.links||[]).length?'🔗'+m.links.length:'';
    const d=document.createElement('span');d.className='n';d.textContent=m.date?m.date.slice(2)+(m.time?' '+m.time:''):'no date';
-   row.append(c,dot,nm,ln,d);row.onclick=()=>jumpMoment(m);G.appendChild(row)})});
- rangeGroup(S,q)}
-/* saved time ranges (shared with the other edits): click to show that range again */
-function saveRange(){if(!canEdit())return;const dl=t=>localStamp(t).slice(0,10);
- const name=prompt('Name for this time range:',dl(W.a)+' to '+dl(W.b));if(name==null||!name.trim())return;
- const r={id:'r'+Date.now().toString(36),name:name.trim(),a:Math.round(W.a),b:Math.round(W.b),layouts:[]};
- E.ranges=(E.ranges||[]).concat([r]);setActive(r.id,null);saveEdits();list()}
-function rangeGroup(S,q){queueLay();const rs=(E.ranges||[]).filter(r=>!q||r.name.toLowerCase().includes(q)||'saved ranges'.includes(q)).sort((x,y)=>x.a-y.a);if(!rs.length)return;
- const G=section(S,'mom:__ranges','Saved ranges',rs.length,true,'grp',q);
+   row.append(c,dot,nm,ln,d);row.onclick=()=>jumpMoment(m);G.appendChild(row)})})}
+/* ---- Presets: Timeline (E.ranges: {id,name,a,b}) and Panel presets (E.panels: {id,name,v}) ----
+   A Timeline preset is a saved time window (In = a, Out = b, Middle = their mean). A Panel preset is a snapshot of
+   what the Library shows (lab/MRD/imaging charts, medications, dose charts, Treatment panel, chart heights and
+   order); it has no time window and no keyframe visibility, so it works with any Timeline preset. Both are shared
+   like the other edits. The bar under the Navigator (#layBar) shows the active one of each, with ↺ Reset (go back
+   to the saved preset) and Update (overwrite it with what is on screen now).
+   Before 2026-11-16 a "layout" belonged to a saved range (E.ranges[].layouts[] = {id,name,v}, v incl. which
+   moments were shown). migratePresets() turns each into a Panel preset with the same id and name, plus a Macro
+   (E.macros: {id,name,tl,panel,mon}) that remembers the range and the keyframes, for step 3. */
+function migratePresets(){let n=0;(E.ranges||[]).forEach(r=>{(r.layouts||[]).forEach(l=>{const v=Object.assign({},l.v);const mon=v.mon;delete v.mon;
+   if(!(E.panels||[]).some(x=>x.id===l.id))E.panels=(E.panels||[]).concat([{id:l.id,name:l.name,v}]);
+   if(!(E.macros||[]).some(x=>x.panel===l.id&&x.tl===r.id))E.macros=(E.macros||[]).concat([{id:'m'+l.id,name:l.name,tl:r.id,panel:l.id,mon:mon||null}]);n++});
+  if(r.layouts)delete r.layouts});
+ if(n&&canEdit())setTimeout(saveEdits,0);return n}
+/* in-page questions: browser pop-ups (confirm/prompt) are cancelled at once in some embedded browsers (seen in the
+   Claude app's browser pane 2026-11-16), which made every Presets × and + Save do nothing. uiAsk(msg) → true/false;
+   uiAsk(msg, default, okLabel) → the typed text or null. Enter = OK, Esc = Cancel. */
+function uiAsk(msg,def,okLabel,noCancel){return new Promise(res=>{const old=$('pdlg');if(old)old.remove();
+ const P=document.createElement('div');P.id='pdlg';P.className='calpop pdlg';const m=document.createElement('div');m.className='pdmsg';m.textContent=msg;P.appendChild(m);
+ let inp=null;if(def!==undefined){inp=document.createElement('input');inp.type='text';inp.value=def;P.appendChild(inp)}
+ const bar=document.createElement('div');bar.className='bar';
+ const done=v=>{P.remove();document.removeEventListener('keydown',kd,true);res(v)};
+ const ok=btn(okLabel||(inp?'Save':'Delete'),()=>done(inp?inp.value:true),'on'),no=btn('Cancel',()=>done(inp?null:false),'');bar.append(ok);if(!noCancel)bar.append(no);P.appendChild(bar);
+ const kd=e=>{if(e.key==='Escape'){e.stopPropagation();done(inp?null:false)}else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();ok.click()}};
+ document.addEventListener('keydown',kd,true);document.body.appendChild(P);(inp||ok).focus();if(inp)inp.select()})}
+const uiNote=msg=>uiAsk(msg,undefined,'OK',true);
+let activeR=store.get('activepreset',null)||(o=>o?{t:o.rid,p:o.lid}:{t:null,p:null})(store.get('activerange',null));
+function setActive(t,p,m){activeR={t:t===undefined?activeR.t:t,p:p===undefined?activeR.p:p,m:m===undefined?activeR.m:m};store.set('activepreset',activeR)}
+const actM=()=>activeR.m&&(E.macros||[]).find(x=>x.id===activeR.m),actT=()=>activeR.t&&(E.ranges||[]).find(x=>x.id===activeR.t),actP=()=>activeR.p&&(E.panels||[]).find(x=>x.id===activeR.p);
+const winLen=len=>len>=60?Math.round(len/30.44)+' mo':len>=2?Math.round(len)+' d':Math.round(len*24)+' h';
+function useTimeline(r){setActive(r.id);setWin(r.a,r.b);list()}
+async function saveRange(){if(!canEdit())return;const dl=t=>localStamp(t).slice(0,10);
+ const name=await uiAsk('Name for this Timeline preset:',dl(W.a)+' to '+dl(W.b));if(name==null||!name.trim())return;
+ const r={id:'r'+Date.now().toString(36),name:name.trim(),a:Math.round(W.a),b:Math.round(W.b)};
+ E.ranges=(E.ranges||[]).concat([r]);setActive(r.id);saveEdits();list()}
+function delBtn(title,fn){const x=document.createElement('button');x.type='button';x.className='mini redit';x.textContent='×';x.title=title;x.onclick=e=>{e.stopPropagation();fn()};return x}
+function rangeGroup(S,q){migratePresets();queueLay();const rs=(E.ranges||[]).filter(r=>!q||r.name.toLowerCase().includes(q)||'timeline presets saved ranges'.includes(q)).sort((x,y)=>x.a-y.a);
+ const G=section(S,'presets:timeline','Timeline',rs.length||'none yet',true,'grp',q),gs=G.firstChild;
+ {const b=miniBtn('+ Save','Save the time window shown now (In, Out and Middle) as a Timeline preset',saveRange);b.classList.add('redit');gs.insertBefore(b,gs.lastChild)}
  rs.forEach(r=>{const row=document.createElement('div');row.className='t';const len=(r.b-r.a)/DAYMS;
-  const nm=document.createElement('span');nm.className='nm';nm.textContent='⟷ '+r.name;nm.title='Click to show this range';
-  const d=document.createElement('span');d.className='n';d.textContent=localStamp(r.a).slice(2,10)+(len<2?' '+localStamp(r.a).slice(11):'')+' · '+(len>=60?Math.round(len/30.44)+' mo':len>=2?Math.round(len)+' d':Math.round(len*24)+' h');
-  const x=document.createElement('button');x.type='button';x.className='mini redit';x.textContent='×';x.title='Delete this saved range';
-  x.onclick=e=>{e.stopPropagation();if(!confirm('Delete the saved range "'+r.name+'"'+((r.layouts||[]).length?' and its '+r.layouts.length+' layout(s)':'')+'?'))return;
-   E.ranges=E.ranges.filter(y=>y.id!==r.id);if(activeR&&activeR.rid===r.id)setActive(null);saveEdits();list()};
-  if(activeR&&activeR.rid===r.id)row.classList.add('ract');
-  row.append(nm,d,x);row.onclick=()=>{setActive(r.id,null);setWin(r.a,r.b);list()};G.appendChild(row);
-  (r.layouts||[]).forEach(l=>{const lr=document.createElement('div');lr.className='t layrow'+(activeR&&activeR.lid===l.id?' layon':'');
-   const ln=document.createElement('span');ln.className='nm';ln.textContent='▸ '+l.name;ln.title='Show this range with this layout ('+layDesc(l.v)+')';
-   const lx=document.createElement('button');lx.type='button';lx.className='mini redit';lx.textContent='×';lx.title='Delete this layout';
-   lx.onclick=e=>{e.stopPropagation();if(!confirm('Delete the layout "'+l.name+'" of "'+r.name+'"?'))return;r.layouts=r.layouts.filter(y=>y.id!==l.id);
-    if(activeR&&activeR.lid===l.id)setActive(r.id,null);saveEdits();list()};
-   lr.append(ln,lx);lr.onclick=()=>useLayout(r,l);G.appendChild(lr)})})}
-
-/* ---- layouts of a saved range: which panels, tests and medications are shown, in which order ----
-   A layout is a snapshot of the view (not the time window: that belongs to the range). One range can
-   have several layouts to show different relationships (e.g. chemo + liver tests; all medications + vitals).
-   The bar under the Navigator shows the active range's layouts; Reset goes back to the saved one,
-   Update overwrites it with what is on screen now. Layouts are shared like the other edits. */
-let activeR=store.get('activerange',null);
-function setActive(rid,lid){activeR=rid?{rid,lid:lid||null}:null;store.set('activerange',activeR)}
-function viewNow(){return{mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice(),
-  mon:Object.fromEntries((E.moments||[]).map(m=>[m.id,momentOn(m)]))}}   // which moments are shown
-/* for "changed?": compare only moments that the saved layout knows and that still exist (new moments don't count) */
-function layCmp(v,ref){const c=Object.assign({},v);if(!ref.txOrder)delete c.txOrder;   // layouts saved before the drug order existed
- if(!ref.mon){delete c.mon;return c}const ids=new Set((E.moments||[]).map(m=>m.id));
- c.mon=Object.fromEntries(Object.keys(ref.mon).filter(id=>ids.has(id)).map(id=>[id,!!(v.mon||{})[id]]));return c}
+  const nm=document.createElement('span');nm.className='nm';nm.textContent='⟷ '+r.name;const st=t=>localStamp(t).slice(0,len<2?16:10);nm.title='Click to show this time window\nIn: '+st(r.a)+'\nOut: '+st(r.b)+'\nMiddle: '+st((r.a+r.b)/2);
+  const d=document.createElement('span');d.className='n';d.textContent=localStamp(r.a).slice(2,10)+(len<2?' '+localStamp(r.a).slice(11):'')+' · '+winLen(len);
+  const x=delBtn('Delete this Timeline preset',async()=>{if(!await uiAsk('Delete the Timeline preset "'+r.name+'"?'+((E.macros||[]).some(m=>m.tl===r.id)?'\n'+(E.macros||[]).filter(m=>m.tl===r.id).length+' macro(s) use it and will keep only their panels and keyframes.':'')))return;
+   E.ranges=E.ranges.filter(y=>y.id!==r.id);if(activeR.t===r.id)setActive(null);saveEdits();list()});
+  if(activeR.t===r.id)row.classList.add('ract');
+  row.append(nm,d,x);row.onclick=()=>useTimeline(r);G.appendChild(row)});
+ panelGroup(S,q)}
+function panelGroup(S,q){const ps=(E.panels||[]).filter(l=>!q||l.name.toLowerCase().includes(q)||'panel presets layouts'.includes(q)).sort((x,y)=>x.name.localeCompare(y.name));
+ const G=section(S,'presets:panels','Panel presets',ps.length||'none yet',true,'grp',q),gs=G.firstChild;
+ {const b=miniBtn('+ Save','Save what the Library shows now (charts, medications, sizes and order) as a Panel preset',savePanel);b.classList.add('redit');gs.insertBefore(b,gs.lastChild)}
+ ps.forEach(l=>{const row=document.createElement('div');row.className='t'+(activeR.p===l.id?' ract':'');
+  const nm=document.createElement('span');nm.className='nm';nm.textContent='▦ '+l.name;nm.title='Click to show these panels ('+layDesc(l.v)+')';
+  const d=document.createElement('span');d.className='n';d.textContent=(l.v.mode==='compare'?(l.v.sel||[]).length:1)+' ch · '+(l.v.txHidden?0:(l.v.txSel||[]).length)+' med';
+  const x=delBtn('Delete this Panel preset',async()=>{const used=(E.macros||[]).filter(m=>m.panel===l.id).length;
+   if(!await uiAsk('Delete the Panel preset "'+l.name+'"?'+(used?'\n'+used+' macro(s) use it and will keep only their timeline and keyframes.':'')))return;
+   E.panels=E.panels.filter(y=>y.id!==l.id);if(activeR.p===l.id)setActive(undefined,null);saveEdits();list()});
+  row.append(nm,d,x);row.onclick=()=>usePanel(l);G.appendChild(row)})}
+const modSettings=()=>typeof MRD!=='undefined'&&MRD.getSettings?JSON.parse(JSON.stringify(MRD.getSettings())):null;   // MRD + Brain MRI display settings
+function viewNow(){const v={mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice()};
+ const ms=modSettings();if(ms)v.mods=ms;return v}
 const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,k)=>(o[k]=x[k],o),{}):x);
-function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' lab chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')+(v.mon?', '+Object.values(v.mon).filter(Boolean).length+' moment(s) shown':'')}
-function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var)$/.test(id)));txPos=v.txPos||0;
+function panelChanged(l){const v=viewNow(),ref=l.v;if(!ref.txOrder)delete v.txOrder;if(!ref.mods)delete v.mods;/* presets saved before these existed */return canon(v)!==canon(Object.assign({},ref,{mon:undefined}))}
+function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')}
+const panelId=id=>BYID[id]||(typeof MRD!=='undefined'&&MRD.isId?MRD.isId(id):D.mrd&&/^mrd:(ot|var)$/.test(id));
+function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(panelId);txPos=v.txPos||0;
  txSel=(v.txSel||[]).slice();txDose=(v.txDose||[]).slice();txHidden=!!v.txHidden;hlOn=v.hlOn!==false;hlH=v.hlH||28;heights=Object.assign({},v.heights||{});soloLab=null;soloMed=null;
- if(v.mon){let ch=false;(E.moments||[]).forEach(m=>{if(m.id in v.mon&&momentOn(m)!==v.mon[m.id]){m.on=v.mon[m.id];ch=true}});
-  if(ch&&canEdit())saveEdits()}   // moment visibility is shared: saved only while Editing (View only changes this screen)
  if(v.txOrder)txOrder=v.txOrder.slice();
+ if(v.mods&&typeof MRD!=='undefined'&&MRD.setSettings)MRD.setSettings(v.mods);
  [['txorder',txOrder],['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
-function useLayout(r,l){setActive(r.id,l.id);W={a:r.a,b:r.b};store.set('window',W);syncWin();applyView(l.v);updateBar();list();render()}
-function saveLayout(r){if(!canEdit())return;const n=(r.layouts||[]).length;const name=prompt('Name for this layout of "'+r.name+'":','Layout '+(n+1));if(name==null||!name.trim())return;
- const l={id:'l'+Date.now().toString(36),name:name.trim(),v:viewNow()};r.layouts=(r.layouts||[]).concat([l]);setActive(r.id,l.id);saveEdits();list();layBar()}
+function usePanel(l){setActive(undefined,l.id);applyView(l.v);updateBar();list();render()}
+async function savePanel(){if(!canEdit())return;const name=await uiAsk('Name for this Panel preset:','Panels '+((E.panels||[]).length+1));if(name==null||!name.trim())return;
+ const l={id:'l'+Date.now().toString(36),name:name.trim(),v:viewNow()};E.panels=(E.panels||[]).concat([l]);setActive(undefined,l.id);saveEdits();list();layBar()}
+/* ---- Macros (E.macros: {id,name,tl,panel,mon}): one click sets a Timeline preset (tl = its id), a Panel preset
+   (panel = its id) and which keyframes are shown (mon = {keyframe id: shown}). Timeline and panels are linked by id,
+   so editing those presets changes every macro that uses them; any layer may be empty (null) and is then left alone.
+   Keyframes added after the macro was saved are not in mon and keep their current visibility. */
+const kfNow=()=>Object.fromEntries((E.moments||[]).map(m=>[m.id,momentOn(m)]));
+function kfDiffers(mon){return !!mon&&(E.moments||[]).some(m=>m.id in mon&&momentOn(m)!==!!mon[m.id])}
+function applyKf(mon){if(!mon)return;let ch=false;(E.moments||[]).forEach(m=>{if(m.id in mon&&momentOn(m)!==!!mon[m.id]){m.on=!!mon[m.id];ch=true}});
+ if(ch&&canEdit())saveEdits()}   // keyframe visibility is shared: saved only while Editing (View only changes this screen)
+function useMacro(M){const r=M.tl&&(E.ranges||[]).find(x=>x.id===M.tl),l=M.panel&&(E.panels||[]).find(x=>x.id===M.panel);
+ setActive(r?r.id:activeR.t,l?l.id:activeR.p,M.id);if(l)applyView(l.v);applyKf(M.mon);if(r){W={a:r.a,b:r.b};store.set('window',W);syncWin()}
+ updateBar();list();render()}
+function macroChanged(M){return (M.tl||null)!==(activeR.t||null)||(M.panel||null)!==(activeR.p||null)||kfDiffers(M.mon)||(!!actP()&&panelChanged(actP()))||(!!actT()&&(Math.round(W.a)!==actT().a||Math.round(W.b)!==actT().b))}
+async function saveMacro(){if(!canEdit())return;const r=actT(),l=actP();
+ const name=await uiAsk('Name for this Macro.\nIt will set: '+(r?'Timeline "'+r.name+'"':'no timeline')+', '+(l?'Panels "'+l.name+'"':'no panels')+', and the keyframes shown now.\n(Pick a Timeline and a Panel preset first to include them.)',[r&&r.name,l&&l.name].filter(Boolean).join(' + ')||'Macro '+((E.macros||[]).length+1));
+ if(name==null||!name.trim())return;const M={id:'m'+Date.now().toString(36),name:name.trim(),tl:r?r.id:null,panel:l?l.id:null,mon:kfNow()};
+ E.macros=(E.macros||[]).concat([M]);setActive(undefined,undefined,M.id);saveEdits();list();layBar()}
+function updateMacro(M){if(!canEdit())return;M.tl=activeR.t||null;M.panel=activeR.p||null;M.mon=kfNow();saveEdits();list();layBar()}
+function macroGroup(S,q){const nm_=M=>[M.name,((E.ranges||[]).find(x=>x.id===M.tl)||{}).name,((E.panels||[]).find(x=>x.id===M.panel)||{}).name].join(' ').toLowerCase();
+ const ms=(E.macros||[]).filter(M=>!q||nm_(M).includes(q)||'macros presets'.includes(q));   // kept in your own order (↑ ↓ while Editing); keys 1-9 apply the first nine
+ const G=section(S,'presets:macros','Macros',ms.length||'none yet',true,'grp',q),gs=G.firstChild;
+ {const b=miniBtn('+ Save','Save the active Timeline preset, the active Panel preset and the keyframes shown now as a Macro',saveMacro);b.classList.add('redit');gs.insertBefore(b,gs.lastChild)}
+ ms.forEach(M=>{const r=M.tl&&(E.ranges||[]).find(x=>x.id===M.tl),l=M.panel&&(E.panels||[]).find(x=>x.id===M.panel);
+  const row=document.createElement('div');row.className='t'+(activeR.m===M.id?' ract':'');
+  const nm=document.createElement('span');nm.className='nm';nm.textContent='◆ '+M.name;nm.title='Click to set the timeline, panels and keyframes of this macro';
+  const nk=M.mon?Object.keys(M.mon).filter(id=>M.mon[id]&&(E.moments||[]).some(m=>m.id===id)).length:null;
+  const i=E.macros.indexOf(M),d=document.createElement('span');d.className='n';d.textContent=(i<9?'key '+(i+1)+' · ':'')+[r&&'⟷',l&&'▦',M.mon&&'★'].filter(Boolean).join(' ');
+  const mv=(k,lbl,tip)=>{const b=document.createElement('button');b.type='button';b.className='mini redit';b.textContent=lbl;b.title=tip;b.disabled=i+k<0||i+k>=E.macros.length;
+   b.onclick=e=>{e.stopPropagation();const A=E.macros;[A[i],A[i+k]]=[A[i+k],A[i]];saveEdits();list()};return b};
+  const x=delBtn('Delete this Macro (its presets stay)',async()=>{if(!await uiAsk('Delete the Macro "'+M.name+'"?\nIts Timeline and Panel presets stay.'))return;
+   E.macros=E.macros.filter(y=>y.id!==M.id);if(activeR.m===M.id)setActive(undefined,undefined,null);saveEdits();list()});
+  row.append(nm,d,mv(-1,'↑','Move up (also changes its number key)'),mv(1,'↓','Move down (also changes its number key)'),x);row.onclick=()=>useMacro(M);G.appendChild(row);
+  /* its layers: click one to apply only that layer */
+  const layer=(icon,txt,tip,fn,missing)=>{const lr=document.createElement('div');lr.className='t layrow';const s_=document.createElement('span');s_.className='nm';
+   s_.textContent=icon+' '+txt;s_.title=tip;if(missing)s_.style.opacity=.5;lr.appendChild(s_);if(fn)lr.onclick=e=>{e.stopPropagation();fn()};G.appendChild(lr)};
+  layer('⟷',r?r.name:M.tl?'(deleted timeline)':'no timeline',r?'Timeline layer: click to apply only this time window':'This macro leaves the time window alone',r?()=>useTimeline(r):null,!r);
+  layer('▦',l?l.name:M.panel?'(deleted panels)':'no panels',l?'Panel layer: click to apply only these panels':'This macro leaves the panels alone',l?()=>usePanel(l):null,!l);
+  layer('★',M.mon?nk+' keyframe'+(nk===1?'':'s')+' shown':'keyframes left alone',M.mon?'Keyframe layer: click to show only these keyframes':'This macro leaves the keyframes alone',M.mon?()=>{applyKf(M.mon);list();render()}:null,!M.mon)})}
+/* keys 1-9 apply the first nine macros (not while typing, and not with Ctrl/Alt/Cmd) */
+document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||!/^[1-9]$/.test(e.key))return;
+ const t=e.target;if(t&&t.closest&&(t.closest('input,textarea,select,[contenteditable],canvas')||t.isContentEditable))return;
+ const M=(E.macros||[])[+e.key-1];if(M){e.preventDefault();useMacro(M)}});
 let layT=0;const queueLay=()=>{clearTimeout(layT);layT=setTimeout(layBar,60)};
-function layBar(){const bar=$('layBar'),r=activeR&&(E.ranges||[]).find(x=>x.id===activeR.rid);bar.innerHTML='';bar.classList.toggle('hide',!r);if(!r)return;
- const L=activeR.lid&&(r.layouts||[]).find(x=>x.id===activeR.lid);
- const moved=Math.round(W.a)!==r.a||Math.round(W.b)!==r.b,changed=!!L&&canon(layCmp(viewNow(),L.v))!==canon(layCmp(L.v,L.v));
- const t=document.createElement('span');t.className='wl';t.textContent='⟷';const nb=document.createElement('b');nb.textContent=r.name;nb.title='Active saved range (Moments → Saved ranges)';
- const lw=document.createElement('span');lw.className='wl';lw.textContent='Layouts:';bar.append(t,nb,lw);
- (r.layouts||[]).forEach(l=>{const b=btn(l.name,()=>useLayout(r,l),'laychip'+(L===l?' on':''));b.title=layDesc(l.v)+(L===l&&changed?' — changed since it was saved':'');bar.appendChild(b)});
- if(!(r.layouts||[]).length)bar.appendChild(Object.assign(document.createElement('span'),{className:'sub',textContent:'none yet'}));
- if(moved||changed){const b=btn('↺ Reset',()=>L?useLayout(r,L):setWin(r.a,r.b),'');b.title='Go back to the saved range'+(L?' and the layout "'+L.name+'"':'')+' (undo the changes since)';bar.appendChild(b)}
- if(changed){const b=btn('Update "'+L.name+'"',()=>{if(!canEdit())return;L.v=viewNow();saveEdits();list();layBar()},'redit');b.title='Save what is on screen now as the layout "'+L.name+'"';bar.appendChild(b)}
- {const b=btn('＋ Save layout',()=>saveLayout(r),'redit');b.title='Save the panels, tests and medications shown now as a new layout of this range';bar.appendChild(b)}
- const x=btn('×',()=>{setActive(null);layBar();list()},'');x.title='Leave this range (the view stays as it is)';x.style.marginLeft='auto';bar.appendChild(x)}
+function layBar(){const bar=$('layBar'),r=actT(),L=actP(),M=actM();bar.innerHTML='';bar.classList.toggle('hide',!r&&!L&&!M);if(!r&&!L&&!M)return;
+ const lab=(icon,txt,tip)=>{const t=document.createElement('span');t.className='wl';t.textContent=icon+' '+txt;t.title=tip;return t};
+ if(M){const changed=macroChanged(M);const nb=document.createElement('b');nb.textContent=M.name;nb.title=changed?'Changed since this macro was applied or saved':'Active Macro';
+  bar.append(lab('◆','Macro:','Active Macro (Presets → Macros)'),nb);
+  if(changed){const b=btn('↺',()=>useMacro(M),'');b.title='Apply "'+M.name+'" again (undo the changes since)';bar.appendChild(b);
+   const u=btn('Update',()=>updateMacro(M),'redit');u.title='Make "'+M.name+'" use the active Timeline and Panel presets and the keyframes shown now';bar.appendChild(u)}
+  const x=btn('×',()=>{setActive(undefined,undefined,null);layBar();list()},'');x.title='Leave this Macro (the view stays as it is)';bar.appendChild(x);
+  const sep=document.createElement('span');sep.className='wl';sep.textContent='|';bar.appendChild(sep)}
+ if(r){const moved=Math.round(W.a)!==r.a||Math.round(W.b)!==r.b;const nb=document.createElement('b');nb.textContent=r.name;
+  bar.append(lab('⟷','Timeline:','Active Timeline preset (Presets → Timeline)'),nb);
+  if(moved){const b=btn('↺',()=>setWin(r.a,r.b),'');b.title='Go back to the saved time window of "'+r.name+'"';bar.appendChild(b);
+   const u=btn('Update',()=>{if(!canEdit())return;r.a=Math.round(W.a);r.b=Math.round(W.b);saveEdits();list();layBar()},'redit');u.title='Save the time window shown now as "'+r.name+'"';bar.appendChild(u)}
+  const x=btn('×',()=>{setActive(null);layBar();list()},'');x.title='Leave this Timeline preset (the window stays as it is)';bar.appendChild(x)}
+ if(L){const changed=panelChanged(L);const nb=document.createElement('b');nb.textContent=L.name;nb.title=layDesc(L.v)+(changed?' — changed since it was saved':'');
+  const sep=document.createElement('span');sep.className='wl';sep.textContent=r?'·':'';bar.append(sep,lab('▦','Panels:','Active Panel preset (Presets → Panel presets)'),nb);
+  if(changed){const b=btn('↺',()=>usePanel(L),'');b.title='Go back to the saved panels of "'+L.name+'"';bar.appendChild(b);
+   const u=btn('Update',()=>{if(!canEdit())return;L.v=viewNow();saveEdits();list();layBar()},'redit');u.title='Save the panels shown now as "'+L.name+'"';bar.appendChild(u)}
+  const x=btn('×',()=>{setActive(undefined,null);layBar();list()},'');x.title='Leave this Panel preset (the panels stay as they are)';bar.appendChild(x)}
+ const sp=document.createElement('span');sp.style.marginLeft='auto';bar.appendChild(sp);
+ {const b=btn('＋ Panel preset',savePanel,'redit');b.title='Save the panels shown now as a new Panel preset';bar.appendChild(b)}
+ {const b=btn('＋ Macro',saveMacro,'redit');b.title='Save the active Timeline and Panel presets and the keyframes shown now as a Macro';bar.appendChild(b)}}
 
-/* hovering a lab/vital reading: a small box with the reading and "★ Make moment" (or "★ Link to …" while a moment
+/* hovering a lab/vital reading: a small box with the reading and "★ Make keyframe" (or "★ Link to …" while a moment
    is open). Clicking a reading pins the box so the mouse can move onto the button; ×, Esc or clicking elsewhere closes it. */
 let popTimer=0,popPinned=false;
 function hidePop(){popPinned=false;$('ptpop').classList.add('hide')}
@@ -441,7 +522,7 @@ function pointPop(e,els,c,test,pv,tm,pin){const pop=$('ptpop');clearTimeout(popT
  if(!els.length||!pv[els[0].index]){if(pin){hidePop();return}popTimer=setTimeout(()=>{if(!pop.matches(':hover'))pop.classList.add('hide')},350);return}
  const x=pv[els[0].index],t=tm(x),link={test:test.id,name:labLabel(test),t,text:valText(x)+(test.unit?' '+test.unit:''),src:x.src};
  pop.innerHTML='';const h=document.createElement('div');h.textContent=(x.ts!=null?localStamp(t):x.date)+' · '+link.name;const v=document.createElement('div');v.innerHTML='<b></b>';v.firstChild.textContent=link.text+' · '+x.src;
- const b=document.createElement('button');b.type='button';b.textContent=editingMoment?'★ Link to “'+(editingMoment.title||'this moment').slice(0,24)+'”':'★ Make moment';
+ const b=document.createElement('button');b.type='button';b.textContent=editingMoment?'★ Link to “'+(editingMoment.title||'this moment').slice(0,24)+'”':'★ Make keyframe';
  b.onclick=()=>{hidePop();if(editingMoment){editingMoment.links=editingMoment.links||[];if(!editingMoment.links.some(l=>l.test===link.test&&l.t===link.t))editingMoment.links.push(link);drawLinks();charts.forEach(c=>c.draw())}
   else openMoment(null,{date:localStamp(t).slice(0,10),time:x.ts!=null?localStamp(t).slice(11):'',links:[link]})};
  pop.append(h,v,b);
@@ -473,7 +554,7 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
  if(isNew&&!pre)m.date=localStamp(Math.min(Date.now(),(W.a+W.b)/2)).slice(0,10);
  const draft=Object.assign({},m,{links:[...(m.links||[])]});editingMoment=draft;
  const P=$('mEdit');P.innerHTML='';P.classList.remove('hide');
- const h=document.createElement('div');h.className='txh';const b=document.createElement('b');b.textContent=isNew?'New moment':'Moment';const sp=document.createElement('span');sp.className='sub';
+ const h=document.createElement('div');h.className='txh';const b=document.createElement('b');b.textContent=isNew?'New keyframe':'Keyframe';const sp=document.createElement('span');sp.className='sub';
  sp.textContent='your own note, not from the record · private';h.append(b,sp);P.appendChild(h);
  const groups=[...new Set((E.moments||[]).map(x=>x.group).filter(Boolean))];
  const F={title:inp('text',m.title,{placeholder:'e.g. noticed symptoms'}),group:inp('text',m.group||'',{placeholder:'e.g. Delivery – Oct 2021'}),date:inp('date',m.date||''),time:inp('time',m.time||''),
@@ -492,19 +573,19 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
    S.append(i?' · ':'',a);(x.pdfs||[]).forEach(p=>{const b=document.createElement('a');b.href=pv+'?key='+encodeURIComponent(p.key)+'&page='+p.page+'&site='+encodeURIComponent(p.site||'');b.target='_blank';b.textContent=' 📄 p. '+p.page;b.title='Original PDF from '+(p.site||p.key)+', page '+p.page;S.append(b)})});
   P.appendChild(S)}
  const lh=document.createElement('div');lh.className='sub mlinkh';lh.style.marginTop='6px';const lt=document.createElement('span');lt.id='mLinkN';lh.appendChild(lt);
- const pk=btn('',()=>setPick(!pickMode),'mpick');pk.id='mPick';pk.title='While on, every reading you click on any chart is added to this moment (click it again to remove it)';lh.appendChild(pk);
+ const pk=btn('',()=>setPick(!pickMode),'mpick');pk.id='mPick';pk.title='While on, every reading you click on any chart is added to this keyframe (click it again to remove it)';lh.appendChild(pk);
  const L=document.createElement('div');L.id='mLinks';P.append(lh,L);setPick(false);drawLinks();
  const act=document.createElement('div');act.className='bar';act.style.marginTop='8px';
  const close=()=>{setPick(false);editingMoment=null;P.classList.add('hide');charts.forEach(c=>c.draw())};
- act.append(btn('Save',()=>{const title=F.title.value.trim();if(!title){alert('Enter a title.');return}
-   if(F.end.value&&F.date.value&&F.end.value<F.date.value){alert('End date is before the date.');return}
+ act.append(btn('Save',()=>{const title=F.title.value.trim();if(!title){uiNote('Enter a title.');return}
+   if(F.end.value&&F.date.value&&F.end.value<F.date.value){uiNote('End date is before the date.');return}
    const cv=F.concern.value.trim(),cn=cv===''?null:Math.min(10,Math.max(1,Math.round(+cv*2)/2));
-   if(cv!==''&&!isFinite(+cv)){alert('Concern must be a number from 1 to 10.');return}
+   if(cv!==''&&!isFinite(+cv)){uiNote('Concern must be a number from 1 to 10.');return}
    const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,kind:F.kind.value,line:F.line.checked,links:draft.links,on:m.on!==false,why:F.why.value.trim(),good:F.good.checked});
    if(cn==null){delete rec.concern;delete rec.rated_by}else{if(cn!==m.concern)rec.rated_by='family';rec.concern=cn}   // a rating you set or change counts as the family's
    if(!rec.why)delete rec.why;if(!rec.good)delete rec.good;
    E.moments=(E.moments||[]).filter(x=>x.id!==rec.id).concat([rec]);saveEdits();close();list();setTimeout(render,0)},'on'));
- if(!isNew)act.appendChild(btn('Delete',()=>{if(!confirm('Delete the moment "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
+ if(!isNew)act.appendChild(btn('Delete',async()=>{if(!await uiAsk('Delete the keyframe "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
  act.appendChild(btn('Close',close));P.appendChild(act);
  if(!canEdit()){P.querySelectorAll('input,select,textarea').forEach(i=>i.disabled=true);[...act.children].forEach(x=>{if(x.textContent!=='Close')x.remove()});sp.textContent='view only · switch to Edit in the top bar to change it';editingMoment=null}
  else F.title.focus()}
@@ -581,7 +662,7 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
     const xv=c.scales.x.getValueForPixel(ev.x);setHover(xv>=0&&xv<=100?xv:null);const u=c.scales.y.getValueForPixel(ev.y);txInfo(rows,rowAt(rows,u),xv,u);barPop(ev,els,rows[rowAt(rows,u)],xv,u);
     c.canvas.style.cursor='grab'},
    onClick:(ev,els,c)=>txClick(rows,els,c,ev),
-   plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Moment · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
+   plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const p=c[0].raw;return p.e.k==='moment'?'Keyframe · '+p.e.d+(p.e.m.end?' → '+p.e.m.end:''):rowLabel(p.r)+' · '+evWhen(p.e)},
     label:c=>{const e=c.raw.e;if(e.k==='moment')return [e.m.title,...(e.m.note?(e.m.note.match(/.{1,70}(\s|$)/g)||[e.m.note]).slice(0,4).map(x=>x.trim()):[]),'Click to edit'];const L=[KIND[e.k].label,[e.dose,e.route,e.k==='assumed'&&e.perDay>1?e.perDay+' doses/day':e.freq,e.qty].filter(Boolean).join(' · ')+(e.src?'  · '+e.src:'')];
      if(e.rlo!=null)L.push('amount given not in the record (only the range '+e.dose+')');
      L.push(...whyLines(e.why));
@@ -753,7 +834,7 @@ function openSeg(r,g,clickDate){if(!canEdit())return;
   const f=r.setting==='home'?schedFields(box,Object.assign({perDay:1,every:1,on:0,off:0,prn:false},g.sch||{})):null;
   box.append(field('Note',note),field('Hide this bar',hide));
   const act=document.createElement('div');act.className='bar';act.style.marginTop='10px';
-  act.append(btn('Save',()=>{if(b.value<a.value){alert('End is before start.');return}
+  act.append(btn('Save',()=>{if(b.value<a.value){uiNote('End is before start.');return}
     const ov={a:a.value,b:b.value,dose:dose.value,note:note.value,hidden:hide.checked};if(f)Object.assign(ov,readSched(f));
     E.seg[g.sid]=ov;saveEdits();$('txEdit').classList.add('hide');render()},'on'),
    btn('Reset to record',()=>{delete E.seg[g.sid];saveEdits();$('txEdit').classList.add('hide');render()}));
@@ -785,27 +866,27 @@ function openAdd(m){if(!canEdit())return;const isNew=!m;m=m||{id:'m'+Date.now().
   field('Start',F.a),field('End (blank = one day)',F.b),field('Status',F.status));
  const S=schedFields(box,m);box.append(field('Note',F.note),field('Dates taken or given',F.given));
  const act=document.createElement('div');act.className='bar';act.style.marginTop='10px';
- act.append(btn('Save',()=>{const drug=F.drug.value.trim();if(!drug){alert('Enter a drug name.');return}if(!F.a.value){alert('Enter a start date.');return}
-   if(F.b.value&&F.b.value<F.a.value){alert('End is before start.');return}
+ act.append(btn('Save',()=>{const drug=F.drug.value.trim();if(!drug){uiNote('Enter a drug name.');return}if(!F.a.value){uiNote('Enter a start date.');return}
+   if(F.b.value&&F.b.value<F.a.value){uiNote('End is before start.');return}
    const given=F.given.value.split(/[\s,;]+/).filter(Boolean),bad=given.filter(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x)||isNaN(dms(x)));
-   if(bad.length){alert('Not a date (use YYYY-MM-DD): '+bad.join(', '));return}
+   if(bad.length){uiNote('Not a date (use YYYY-MM-DD): '+bad.join(', '));return}
    const rec=Object.assign({},m,{drug,cls:F.cls.value,setting:F.setting.value,dose:F.dose.value,route:F.route.value,freq:F.freq.value,a:F.a.value,b:F.b.value,
     status:F.status.value,note:F.note.value,given:[...new Set(given)].sort()},readSched(S));
    E.added=(E.added||[]).filter(x=>x.id!==rec.id).concat([rec]);const dk=rec.drug.toLowerCase();if(!txSel.includes(dk)){txSel.push(dk);store.set('txsel',txSel)}
    saveEdits();$('txEdit').classList.add('hide');list();render()},'on'));
- if(!isNew)act.appendChild(btn('Delete',()=>{if(!confirm('Delete '+m.drug+' (entered by you)?'))return;E.added=E.added.filter(x=>x.id!==m.id);saveEdits();$('txEdit').classList.add('hide');list();render()}));
+ if(!isNew)act.appendChild(btn('Delete',async()=>{if(!await uiAsk('Delete '+m.drug+' (entered by you)?'))return;E.added=E.added.filter(x=>x.id!==m.id);saveEdits();$('txEdit').classList.add('hide');list();render()}));
  $('txEdit').appendChild(act);F.drug.focus()}
 
 /* ---- export / import ---- */
-function nEdits(){return Object.keys(E.seg).length+Object.keys(E.dose).length+(E.added||[]).length+(E.moments||[]).length+(E.ranges||[]).length}
+function nEdits(){return Object.keys(E.seg).length+Object.keys(E.dose).length+(E.added||[]).length+(E.moments||[]).length+(E.ranges||[]).length+(E.panels||[]).length+(E.macros||[]).length}
 function txStatus(){const n=nEdits();$('txStatus').textContent=SHARED?(n?n+' change'+(n>1?'s':'')+' · ':'')+shareMsg:n?n+' change'+(n>1?'s':'')+(txDirty?' · not exported yet':' · exported'):''}
 function exportEdits(){const blob=new Blob([JSON.stringify(E,null,1)],{type:'application/json'});const a=document.createElement('a');
  a.href=URL.createObjectURL(blob);a.download='med_edits.json';document.body.appendChild(a);a.click();a.remove();
  txDirty=false;store.set('txdirty',false);txStatus();
- alert('Saved med_edits.json to your Downloads folder.\nMove it into the project\'s local/ folder, then rebuild:\n  python3 flatten_meds.py && python3 make_lab_view.py')}
-function importEdits(file){const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(rd.result);if(!j||j.version!==1)throw new Error('not a med_edits.json file');
-  if(nEdits()&&!confirm('Replace the '+nEdits()+' changes'+(SHARED?' (for everyone)':' in this browser')+' with the file?'))return;
-  E=Object.assign(EMPTY_EDITS(),j);delete E.rev;if(SHARED){saveEdits();list();render();return}store.set('txedits',E);txDirty=false;store.set('txdirty',false);txStatus();list();render()}catch(e){alert('Could not read the file: '+e.message)}};rd.readAsText(file)}
+ uiNote('Saved med_edits.json to your Downloads folder.\nMove it into the project\'s local/ folder, then rebuild:\n  python3 flatten_meds.py && python3 make_lab_view.py')}
+function importEdits(file){const rd=new FileReader();rd.onload=async()=>{try{const j=JSON.parse(rd.result);if(!j||j.version!==1)throw new Error('not a med_edits.json file');
+  if(nEdits()&&!await uiAsk('Replace the '+nEdits()+' changes'+(SHARED?' (for everyone)':' in this browser')+' with the file?',undefined,'Replace'))return;
+  E=Object.assign(EMPTY_EDITS(),j);delete E.rev;if(SHARED){saveEdits();list();render();return}store.set('txedits',E);txDirty=false;store.set('txdirty',false);txStatus();list();render()}catch(e){uiNote('Could not read the file: '+e.message)}};rd.readAsText(file)}
 function txInit(){initTxSel();
  {const s0=store.set;store.set=(k,v)=>{s0.call(store,k,v);queueLay()}}
  $('mAdd').onclick=()=>openMoment(null);

@@ -228,6 +228,7 @@ button:hover{border-color:var(--muted)}button.on{background:var(--accent);border
 .dethead{display:flex;align-items:flex-start;gap:8px}.dethead>div{flex:1}.dethead .pmove{margin-top:4px}
 .pmove{display:inline-flex;gap:2px}
 .nrow .datebtn{font-weight:600;padding:1px 7px;font-size:12px;min-width:78px}.nrow #wml{font-weight:400;color:var(--ink2);min-width:0}.nrow #saveRange{margin-left:2px}
+.pdlg{left:50%;top:28%;transform:translateX(-50%);z-index:70;font-size:13px;min-width:300px;max-width:440px}.pdlg .pdmsg{white-space:pre-line}.pdlg input{font-size:13px;padding:4px 6px}
 .calpop{position:fixed;z-index:45;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:12px;display:flex;flex-direction:column;gap:6px;min-width:230px}
 .calpop input{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}.calpop .bar{justify-content:flex-end}
 body.viewonly #saveRange,body.viewonly .redit{display:none!important}
@@ -297,15 +298,15 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <button id="roleBtn" style="margin-left:auto"></button><span id="soloBar" class="bar"></span><span class="sub hide" id="hint"></span></div>
 <div class="nrow win"><span class="wl">From</span><input type="range" id="wa" aria-label="Window start"><button id="wal" class="datebtn" title="Pick the start on a calendar"></button>
 <span class="wl">To</span><input type="range" id="wb" aria-label="Window end"><button id="wbl" class="datebtn" title="Pick the end on a calendar"></button>
-<button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Moments → Saved ranges)">☆ Save range</button>
+<button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Presets → Timeline)">☆ Save timeline</button>
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
-<div class="card mcard"><div class="mhead"><b>Moments</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a moment: your own note on the timeline">+ Moment</button><button id="mLines" title="Show or hide the moment lines across all charts">Lines: on</button></span></div>
-<div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Moments: your own notes on the timeline"></canvas></div>
-<div id="msRow" class="hide"><div class="mhead"><b>Concern</b><span class="sub">moments you rated 1–10</span>
+<div class="card mcard"><div class="mhead"><b>Keyframes</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a keyframe: your own note on the timeline">+ Keyframe</button><button id="mLines" title="Show or hide the keyframe lines across all charts">Lines: on</button></span></div>
+<div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Keyframes: your own notes on the timeline"></canvas></div>
+<div id="msRow" class="hide"><div class="mhead"><b>Concern</b><span class="sub">keyframes you rated 1–10</span>
 <span class="msrng"><span class="trk"></span><span class="fill" id="msFill"></span><input id="msLo" type="range" min="1" max="10" step="0.5" value="1" aria-label="Lowest concern shown" title="Lowest concern shown"><input id="msHi" type="range" min="1" max="10" step="0.5" value="10" aria-label="Highest concern shown" title="Highest concern shown"></span>
-<b id="msRv"></b><span class="sub" id="msCount"></span><span class="mtbtn"><button id="msList" title="Open the milestones list (record excerpts and original PDF pages; private page on this Mac) at the last moment you went to">List ↗</button></span></div>
+<b id="msRv"></b><span class="sub" id="msCount"></span><span class="mtbtn"><button id="msList" title="Open the milestones list (record excerpts and original PDF pages; private page on this Mac) at the last keyframe you went to">List ↗</button></span></div>
 <div class="mstrack"><canvas id="msc" role="img" aria-label="Concern rating of each milestone over time"></canvas></div></div></div>
 </div>
 <div id="ptpop" class="ptpop hide"></div><div id="calPop" class="calpop hide"></div><div id="mtip" class="ptpop mtip hide"></div><div id="mEdit" class="mpanel hide"></div>
@@ -467,8 +468,8 @@ function list(){const q=$('q').value.toLowerCase();const el=$('list');el.innerHT
  const nT=Object.values(groups).reduce((a,g)=>a+g.length,0);
  const L=nT?section(el,'labs','Lab results',nT+' tests',true,'sec',q):null;
  if(L){const all=Object.values(groups).flat().map(t=>t.id),ls=L.firstChild;
-  ls.insertBefore(miniBtn('All','Select every '+(q?'matching ':'')+'lab test for comparison',()=>{
-   if(all.length>30&&!confirm('Add all '+all.length+' tests to the comparison? That draws '+all.length+' charts.'))return;setLabSel(all,true)}),ls.lastChild);
+  ls.insertBefore(miniBtn('All','Select every '+(q?'matching ':'')+'lab test for comparison',async()=>{
+   if(all.length>30&&!await uiAsk('Add all '+all.length+' tests to the comparison? That draws '+all.length+' charts.',undefined,'Add all'))return;setLabSel(all,true)}),ls.lastChild);
   ls.insertBefore(miniBtn('None','Deselect every '+(q?'matching ':'')+'lab test',()=>setLabSel(all,false)),ls.lastChild)}
  Object.keys(groups).sort().forEach(g=>{const ids=groups[g].map(t=>t.id),k=ids.filter(id=>sel.includes(id)).length;
   const G=section(L,'lab:'+g,g,k?k+'/'+ids.length:ids.length,true,'grp',q),gs=G.firstChild;

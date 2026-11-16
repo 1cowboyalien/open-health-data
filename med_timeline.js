@@ -261,7 +261,9 @@ function momentRings(test,pv,tm){return{id:'mrings',afterDatasetsDraw(c){const e
    window to the moment (keeping its length, or 2 weeks when it is longer than 2 months) and puts the Hover line on it.
    Without a current moment, ◀ / ▶ go to the nearest one before / after the middle of the window. */
 let momCur=null;
-function momList(){const all=(E.moments||[]).filter(m=>m.date),on=all.filter(momentOn);return(on.length?on:all).sort((a,b)=>momentT(a)-momentT(b))}
+/* a moment with a concern rating lives on the Concern graph (milestones_view.js), not on this track or its ◀ ▶ stepping */
+function isRated(m){return typeof m.concern==='number'&&isFinite(m.concern)}
+function momList(){const all=(E.moments||[]).filter(m=>m.date&&!isRated(m)),on=all.filter(momentOn);return(on.length?on:all).sort((a,b)=>momentT(a)-momentT(b))}
 function goMoment(m){if(!m)return;momCur=m.id;const t=momentT(m);let len=W.b-W.a;if(len>60*DAYMS)len=14*DAYMS;
  const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len);setTimeout(()=>setHover(pos(t)),40)}
 function momNav(){const el=$('mNav');if(!el)return;el.innerHTML='';const L=momList(),n=L.length;if(!n)return;const mid=(W.a+W.b)/2;
@@ -315,7 +317,7 @@ const rulerPlugin={id:'ruler',afterDraw(c){const{ctx,chartArea:A,scales:{x}}=c,U
   ctx.fillStyle=css('--ink');ctx.beginPath();ctx.roundRect(bx,y0+5,w,17,8);ctx.fill();ctx.fillStyle=css('--bg');ctx.fillText(t,bx+w/2,y0+17)}
  ctx.restore()}};
 function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls();const TK=ticks();
- const shown=(E.moments||[]).filter(m=>momentOn(m)&&m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b);
+ const shown=(E.moments||[]).filter(m=>!isRated(m)&&momentOn(m)&&m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b);   // rated ones: Concern graph
  const titles={id:'mtitles',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c;ctx.save();
    let last=A.left;ctx.font='10px system-ui';
    const cy=(A.top+A.bottom)/2;
@@ -475,11 +477,20 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
  sp.textContent='your own note, not from the record · private';h.append(b,sp);P.appendChild(h);
  const groups=[...new Set((E.moments||[]).map(x=>x.group).filter(Boolean))];
  const F={title:inp('text',m.title,{placeholder:'e.g. noticed symptoms'}),group:inp('text',m.group||'',{placeholder:'e.g. Delivery – Oct 2021'}),date:inp('date',m.date||''),time:inp('time',m.time||''),
-  end:inp('date',m.end||''),color:selBox(Object.keys(MCOL).map(c=>[c,c]),m.color||'red'),kind:selBox(Object.entries(MKIND).map(([k,v])=>[k,v.label]),m.kind||'event'),line:inp('checkbox',m.line!==false),note:inp('textarea',m.note||'',{rows:2,placeholder:'what happened, who noticed, what was done'})};
+  end:inp('date',m.end||''),color:selBox(Object.keys(MCOL).map(c=>[c,c]),m.color||'red'),kind:selBox(Object.entries(MKIND).map(([k,v])=>[k,v.label]),m.kind||'event'),line:inp('checkbox',m.line!==false),note:inp('textarea',m.note||'',{rows:2,placeholder:'what happened, who noticed, what was done'}),
+  concern:inp('number',typeof m.concern==='number'?m.concern:'',{min:1,max:10,step:0.5,placeholder:'1–10'}),good:inp('checkbox',!!m.good),
+  why:inp('textarea',m.why||'',{rows:2,placeholder:'why this rating (shown on the Concern graph)'})};
  F.title.oninput=()=>{draft.title=F.title.value};   // so “★ Link to …” shows the title being typed
  const dl=document.createElement('datalist');dl.id='mgroups';groups.forEach(g=>{const o=document.createElement('option');o.value=g;dl.appendChild(o)});F.group.setAttribute('list','mgroups');
  const g=document.createElement('div');g.className='fgrid';g.append(field('Title',F.title),field('Group',F.group),field('Date (optional)',F.date),field('Time (optional)',F.time),
-  field('End date (for a period)',F.end),field('Kind (shape)',F.kind),field('Color',F.color),field('Line across all charts',F.line));P.append(g,dl,field('Note',F.note));
+  field('End date (for a period)',F.end),field('Kind (shape)',F.kind),field('Color',F.color),field('Line across all charts',F.line),
+  field('Concern 1–10 (optional)',F.concern),field('Good news',F.good));P.append(g,dl,field('Note',F.note),field('Why this rating',F.why));
+ /* record sources (from the milestones import): the text line and the original PDF pages, on the private milestones server */
+ if((m.sources||[]).length){const S=document.createElement('div');S.className='sub';S.style.marginTop='6px';S.textContent='Record sources: ';
+  const base='http://127.0.0.1:8771/',pv=base+'open-health-data-presets/local/pdfview.html';
+  m.sources.forEach((x,i)=>{const a=document.createElement('a');a.href=base+x.path.split('/').map(encodeURIComponent).join('/');a.target='_blank';a.textContent=x.label;a.title=x.path+(x.line?':'+x.line:'');
+   S.append(i?' · ':'',a);(x.pdfs||[]).forEach(p=>{const b=document.createElement('a');b.href=pv+'?key='+encodeURIComponent(p.key)+'&page='+p.page+'&site='+encodeURIComponent(p.site||'');b.target='_blank';b.textContent=' 📄 p. '+p.page;b.title='Original PDF from '+(p.site||p.key)+', page '+p.page;S.append(b)})});
+  P.appendChild(S)}
  const lh=document.createElement('div');lh.className='sub mlinkh';lh.style.marginTop='6px';const lt=document.createElement('span');lt.id='mLinkN';lh.appendChild(lt);
  const pk=btn('',()=>setPick(!pickMode),'mpick');pk.id='mPick';pk.title='While on, every reading you click on any chart is added to this moment (click it again to remove it)';lh.appendChild(pk);
  const L=document.createElement('div');L.id='mLinks';P.append(lh,L);setPick(false);drawLinks();
@@ -487,13 +498,18 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
  const close=()=>{setPick(false);editingMoment=null;P.classList.add('hide');charts.forEach(c=>c.draw())};
  act.append(btn('Save',()=>{const title=F.title.value.trim();if(!title){alert('Enter a title.');return}
    if(F.end.value&&F.date.value&&F.end.value<F.date.value){alert('End date is before the date.');return}
-   const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,kind:F.kind.value,line:F.line.checked,links:draft.links,on:m.on!==false});
+   const cv=F.concern.value.trim(),cn=cv===''?null:Math.min(10,Math.max(1,Math.round(+cv*2)/2));
+   if(cv!==''&&!isFinite(+cv)){alert('Concern must be a number from 1 to 10.');return}
+   const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,kind:F.kind.value,line:F.line.checked,links:draft.links,on:m.on!==false,why:F.why.value.trim(),good:F.good.checked});
+   if(cn==null){delete rec.concern;delete rec.rated_by}else{if(cn!==m.concern)rec.rated_by='family';rec.concern=cn}   // a rating you set or change counts as the family's
+   if(!rec.why)delete rec.why;if(!rec.good)delete rec.good;
    E.moments=(E.moments||[]).filter(x=>x.id!==rec.id).concat([rec]);saveEdits();close();list();setTimeout(render,0)},'on'));
  if(!isNew)act.appendChild(btn('Delete',()=>{if(!confirm('Delete the moment "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
  act.appendChild(btn('Close',close));P.appendChild(act);
  if(!canEdit()){P.querySelectorAll('input,select,textarea').forEach(i=>i.disabled=true);[...act.children].forEach(x=>{if(x.textContent!=='Close')x.remove()});sp.textContent='view only · switch to Edit in the top bar to change it';editingMoment=null}
  else F.title.focus()}
-function renderBand(){renderMomentTrack();hlControls();renderBandChart();renderDoses()}
+function renderBand(){renderMomentTrack();if(typeof renderConcern==='function')renderConcern();   // concern graph: milestones_view.js
+ hlControls();renderBandChart();renderDoses()}
 function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txBody').classList.toggle('hide',txHidden);if(txHidden||(!TX.length&&!E.added.length))return;
  const rows=txRows(),TK=ticks();txShown=rows;$('txEmpty').textContent=rows.length?'':txSel.length?'None of the ticked medications fall in this window.':'Tick medications in the list on the left to show them here.';
  $('txBox').querySelectorAll('.txx,.txmv').forEach(b=>b.remove());

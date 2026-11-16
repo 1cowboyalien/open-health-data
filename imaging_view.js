@@ -239,7 +239,7 @@
     const name = document.createElement('input'); name.type = 'text'; name.placeholder = 'name this view'; name.value = defaultName();
     name.style.cssText = 'width:150px'; name.setAttribute('aria-label', 'Name for the saved view');
     const add = document.createElement('button'); add.type = 'button'; add.textContent = '★ Save view';
-    add.title = 'Save the current scan, position, layout, zoom, 3D angle, contrast and outline settings under this name (also shown in Keyframes)';
+    add.title = 'Save the current scan, position, layout, zoom, 3D angle, contrast and outline settings under this name (also shown in Moments)';
     const save = () => { if (!V.nv || !V.scan) return; const nm = name.value.trim(); if (!nm) { name.focus(); return; }
       const list = views().filter(x => x.name !== nm); list.push(snapshot(nm)); store.set(VKEY, list); syncMoments(); viewsBar();
       V.R('status').textContent = 'Saved "' + nm + '"'; setTimeout(() => { if (V.R('status').textContent.startsWith('Saved')) V.R('status').textContent = ''; }, 2500); };
@@ -403,8 +403,9 @@
   }
   function lesionList(scan) {   // (not 'list': that name is the viewer's own Library function)
     const box = V.R('list'); const tot = scan.lesions.reduce((a, l) => a + l.enh, 0);
-    if (!scan.lesions.length) { box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${esc(scan.note || 'no lesions outlined')}</div>`; return; }
-    box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines)</div>` +
+    if (!scan.lesions.length) { box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)}${scan.field ? ' · ' + scan.field + ' scanner' : ''} · ${esc(scan.note || 'no lesions outlined')}</div>`; return; }
+    const fld = scan.field ? (scan.field === '3T' ? ` · <b style="color:#e0a020" title="3T shows enhancement more strongly than 1.5T; our edge rule corrects most of it, small lesions can still differ">3T scanner ▲</b>` : ' · 1.5T scanner ◆') : '';
+    box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines)${fld}</div>` +
       scan.lesions.map(l => `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · ${l.enh.toLocaleString()} mm³ · longest axial ${l.axial} mm. Click to go there.">
         <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(l.enh / 1000).toFixed(2)} cm³</span></div>`).join('');
     box.querySelectorAll('.nvles').forEach(e => e.onclick = () => jump(scan.lesions.find(l => l.id === e.dataset.id)));
@@ -519,7 +520,7 @@
     const chk = (label, key, prop) => { const lab = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = L[prop];
       cb.onchange = () => { L[prop] = cb.checked; store.set(key, cb.checked); drawLesions(id, body); }; lab.append(cb, ' ' + label); bar.append(lab); };
     chk('treatments', 'img.lesTx', 'showTx'); chk('our measurements', 'img.lesMeas', 'showMeas');
-    const fs = document.createElement('span'); fs.title = 'Our measurements by scanner strength. 3T shows enhancing tumour more strongly than 1.5T, so 3T volumes read larger: compare like with like.';
+    const fs = document.createElement('span'); fs.title = 'Our measurements by scanner strength. 3T shows enhancing tumour more strongly than 1.5T; our edge rule corrects most of it, but small lesions can still differ.';
     fs.append(Object.assign(document.createElement('span'), {className: 'sub', textContent: '· scanner:'}));
     [['all', 'all'], ['1.5T', '1.5T ◆'], ['3T', '3T ▲']].forEach(([v, lab]) => fs.append(lbtn(lab, '', L.field === v, () => { L.field = v; store.set('img.lesField', v); drawLesions(id, body); })));
     bar.append(fs);
@@ -538,11 +539,29 @@
       store.set('img.lesHidden', [...L.hidden]); drawLesions(id, body); });
     chips.append(all, act);
     body.append(bar, chips);
+    // mixed-scanner warning: hard to miss on purpose (the user asked to be made to notice it, 2026-11-16)
+    if (L.showMeas) {
+      const vis = LS.measured.filter(m => !m.none && !L.hidden.has(m.lesion));
+      const n3 = vis.filter(is3T).length, n15 = vis.filter(m => m.field === '1.5T').length;
+      const warn = document.createElement('div');
+      if (L.field === 'all' && n3 && n15) {
+        warn.style.cssText = 'margin:2px 0 8px;padding:6px 10px;border:2px solid #e0a020;border-radius:6px;background:color-mix(in srgb,#e0a020 14%,transparent);font-size:12px';
+        warn.innerHTML = `<b style="color:#e0a020">⚠ Mixed scanners.</b> ${n3} of our measurements are from <b>3T ▲</b> scanners and ${n15} from <b>1.5T ◆</b>. ` +
+          `3T shows tumour enhancement more strongly. Our outlining corrects most of this (edge set relative to each lesion's own brightness), but small lesions can still differ by scanner: a jump between ▲ and ◆ may be partly the scanner. Compare like with like: `;
+        [['1.5T', 'Show 1.5T only'], ['3T', 'Show 3T only']].forEach(([v, lab]) => warn.append(lbtn(lab, '', false, () => { L.field = v; store.set('img.lesField', v); drawLesions(id, body); }), ' '));
+      } else if (L.field !== 'all') {
+        const hid = vis.filter(m => m.field !== L.field).length;
+        warn.style.cssText = 'margin:2px 0 8px;padding:4px 10px;border:1px solid #e0a020;border-radius:6px;font-size:12px';
+        warn.innerHTML = `<b style="color:#e0a020">Showing ${L.field} measurements only</b> (${hid} from other scanners hidden).`;
+        warn.append(' ', lbtn('Show all', '', false, () => { L.field = 'all'; store.set('img.lesField', 'all'); drawLesions(id, body); }));
+      }
+      if (warn.innerHTML) body.append(warn);
+    }
   }
 
   function lesTooltip(p) {
     if (p.meas) return [`${p.lesion} ${LNAME[p.lesion]}`, p.meas.none ? 'Our check: nothing at this place (normal scan, before the lesion appeared)'
-      : `Our measurement: ${(p.meas.enh_mm3 / 1000).toFixed(2)} cm³ enhancing · longest axial ${p.meas.axial_mm} mm` + (p.meas.field ? ` · ${p.meas.field} scanner` + (is3T(p.meas) ? ' (reads larger than 1.5T)' : '') : '')];
+      : `Our measurement: ${(p.meas.enh_mm3 / 1000).toFixed(2)} cm³ enhancing · longest axial ${p.meas.axial_mm} mm` + (p.meas.field ? ` · ${p.meas.field} scanner` + (is3T(p.meas) ? ' (compare with care across 1.5T)' : '') : '')];
     const r = p.r, tr = TREND[r.trend || ''];
     return [`${r.lesion} ${LNAME[r.lesion]}`, (r.mm != null ? (r.kind === 'punctate' ? 'punctate (~2 mm)' : r.kind === 'resolved' ? 'resolved' : r.kind === 'nonenhancing' ? 'non-enhancing' : r.mm + ' mm') : 'no size given') + (tr.t ? ' · ' + tr.t : ''),
             ...r.text.split(' | ').map(t => t.length > 90 ? t.slice(0, 88) + '…' : t)].concat(r.ambiguous ? ['(report wording fits more than one of our lesions)'] : []);
@@ -600,9 +619,9 @@
     charts.set(id, new Chart(cv, cfg));
     const note = document.createElement('div'); note.className = 'sub'; note.style.marginTop = '4px';
     note.innerHTML = L.view === 'timeline'
-      ? 'Dot = a report mentioned the lesion; size = reported size (✕ resolved, ring only = no size or the wording fits two lesions). Ring colour: <b style="color:#e34948">grew</b> · <b style="color:#1baf7a">shrank</b> · <b style="color:#8a8984">stable</b>. ◆ = our own measurement on a 1.5T scanner, ▲ = on a 3T scanner (3T reads larger). Purple box = SRS on that lesion (dashed = unverified); orange band = whole-brain radiation.' +
+      ? 'Dot = a report mentioned the lesion; size = reported size (✕ resolved, ring only = no size or the wording fits two lesions). Ring colour: <b style="color:#e34948">grew</b> · <b style="color:#1baf7a">shrank</b> · <b style="color:#8a8984">stable</b>. ◆ = our own measurement on a 1.5T scanner, ▲ = on a 3T scanner (mostly corrected; small lesions can still differ). Purple box = SRS on that lesion (dashed = unverified); orange band = whole-brain radiation.' +
         (DOSE ? ` <span style="color:#e0a020">Dose (estimated, ${dunit()}): number after a treatment box = dose that course gave the lesion; strip under each row = dose so far (pale = little, dark red = most); right column = total.</span>` : '')
-      : 'Size, not volume: longest width in mm as each report gave it (different hospitals and readers: trends, not exact), joined with our own measurements (◆ = our longest axial width on a 1.5T scanner, ▲ = on 3T, which reads larger; a dotted stretch between the two strengths may be partly the scanner; hover it for our volume in cm³; hollow ◆ at 0 = our check found nothing there, 7/31/2023; the faint dotted stretch after it only means "appeared some time in between"). Dashed = report wording fits two lesions. Bands: orange = whole-brain radiation, purple = SRS.';
+      : 'Size, not volume: longest width in mm as each report gave it (different hospitals and readers: trends, not exact), joined with our own measurements (◆ = our longest axial width on a 1.5T scanner, ▲ = on 3T; a dotted stretch between the two strengths may be partly the scanner; hover it for our volume in cm³; hollow ◆ at 0 = our check found nothing there, 7/31/2023; the faint dotted stretch after it only means "appeared some time in between"). Dashed = report wording fits two lesions. Bands: orange = whole-brain radiation, purple = SRS.';
     body.appendChild(note);
   }
 
@@ -633,7 +652,7 @@
         h += `<td style="text-align:center;padding:2px 6px;border:1px solid var(--line);font-weight:600;color:#000;background:${tot != null ? heat(tot) : 'transparent'}" title="${rr.map(r => CLAB[r.course] + ': ' + Math.round(dval(r)) + ' ' + dunit()).join('\n')}">${tot != null ? Math.round(tot) : ''}</td>`; }
       h += '</tr>';
     });
-    h += '</table></div><div class="sub" style="margin-top:4px">Cells: longest size in mm as reported · "·" punctate · "ne" non-enhancing · "✕" resolved · "—" mentioned without a size · "?" wording fits two lesions. Colour: red grew, green shrank, grey stable. ◆ = our measured volume (cm³) on 1.5T, ▲ = on 3T (reads larger). Dimmed columns are outside the time window. Hover a cell for the report wording.</div>';
+    h += '</table></div><div class="sub" style="margin-top:4px">Cells: longest size in mm as reported · "·" punctate · "ne" non-enhancing · "✕" resolved · "—" mentioned without a size · "?" wording fits two lesions. Colour: red grew, green shrank, grey stable. ◆ = our measured volume (cm³) on 1.5T, ▲ = on 3T. Dimmed columns are outside the time window. Hover a cell for the report wording.</div>';
     const wrap = document.createElement('div'); wrap.innerHTML = h; body.appendChild(wrap);
   }
 
@@ -671,16 +690,6 @@
   const o = {isId: MRD.isId, title: MRD.title, unit: MRD.unit, h0: MRD.h0, panel: MRD.panel, refresh: MRD.refresh, section: MRD.section};
   const mine = id => typeof id === 'string' && id.startsWith('img:');
   MRD.isId = id => mine(id) || o.isId(id);
-  const og = MRD.getSettings || (() => ({})), os = MRD.setSettings || (() => {});
-  MRD.getSettings = () => Object.assign(og(), {img: {disp: Object.assign({}, V.disp), dose: Object.assign({}, V.dose), radio: V.radio, noseLeft: V.noseLeft}});
-  MRD.setSettings = s => { os(s); const m = s && s.img; if (!m) return;
-    if (m.disp) { V.disp = Object.assign({}, DDEF, m.disp); store.set('img.disp', V.disp); }
-    if (m.dose) { V.dose = Object.assign({}, V.dose, m.dose); saveDose(); }
-    if ('radio' in m) { V.radio = !!m.radio; store.set('img.radio', V.radio); } if ('noseLeft' in m) { V.noseLeft = !!m.noseLeft; store.set('img.noseLeft', V.noseLeft); }
-    if (!V.el || !V.nv) return;   // the viewer reads them when it opens
-    V.el.querySelectorAll('[data-o]').forEach(c => { const k = c.dataset.o; if (c.type === 'checkbox') c.checked = !!V.disp[k]; else c.value = String(V.disp[k]); });
-    if (DOSE) { V.R('dose').value = V.dose.key; V.R('dop').value = V.dose.op; V.R('dlines').checked = V.dose.lines; V.R('dblend').value = V.dose.blend; }
-    try { applyDisplay(); applyOrient(); applyDose(); } catch (e) { console.warn('imaging settings', e); } };
   MRD.title = id => mine(id) ? PANELS[id].title : o.title(id);
   MRD.unit = id => mine(id) ? (id === IDV && V.scan ? fd(V.scan.date) : PANELS[id].unit) : o.unit(id);
   MRD.h0 = id => mine(id) ? PANELS[id].h0 : o.h0(id);

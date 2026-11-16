@@ -156,7 +156,7 @@
     const R = k => w.querySelector(`[data-r="${k}"]`);
     V.R = R; V.el = w;
     R('lo').value = 0; R('hi').value = 1000;
-    SCANS.forEach(s => { const o = document.createElement('option'); o.value = s.date; o.textContent = fd(s.date) + ' · ' + s.lesions.length + ' lesions'; R('scan').appendChild(o); });
+    SCANS.forEach(s => { const o = document.createElement('option'); o.value = s.date; o.textContent = fd(s.date) + ' · ' + (s.viewing ? 'viewing only' : s.lesions.length + ' lesions'); R('scan').appendChild(o); });
     R('scan').onchange = () => load(R('scan').value);
     R('op').oninput = () => { if (LV() && V.disp.outline !== 'outline') { V.nv.setOpacity(LI(), R('op').value / 100); } };
     R('cut').onclick = () => { V.cut = !V.cut; R('cut').classList.toggle('on', V.cut); applyCut(); };
@@ -435,7 +435,7 @@
 
   /* ================= Lesions over time (Timeline · Lines · Grid) ================= */
   const L = {view: store.get('img.lesView', 'timeline'), hidden: new Set(store.get('img.lesHidden', [])),
-             showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true),
+             showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true), field: store.get('img.lesField', 'all'),
              doseNum: store.get('img.lesDoseNum', true), doseStrip: store.get('img.lesDoseStrip', true)};
   /* ---- radiation dose per lesion (ESTIMATED): unit switch shared by Lesions over time and Radiation dose by lesion ---- */
   const DU = {get: () => store.get('img.doseUnit', 'gy'), set: u => store.set('img.doseUnit', u)};
@@ -505,6 +505,12 @@
         ctx.restore(); }};
   }
 
+  /* scanner strength: 3T shows enhancement more strongly than 1.5T, so our volumes from 3T scans read larger.
+     Our measurements: ◆ = 1.5T, ▲ = 3T; the Scanner switch shows one strength only; Lines draws a jump between strengths dotted. */
+  const is3T = m => m && m.field === '3T';
+  const measShape = m => is3T(m) ? 'triangle' : 'rectRot';
+  const fieldOf = raw => raw ? (raw.meas ? raw.meas.field : raw.r ? raw.r.field : '') : '';
+  const fieldOK = m => L.field === 'all' || m.field === L.field;
   function lesToolbar(body, id) {
     const bar = document.createElement('div'); bar.className = 'nvbar'; bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;margin-bottom:6px';
     [['timeline', 'Timeline', 'One row per lesion; dots = what each report said'], ['lines', 'Lines', 'Size in mm over time, one line per lesion'],
@@ -513,6 +519,10 @@
     const chk = (label, key, prop) => { const lab = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = L[prop];
       cb.onchange = () => { L[prop] = cb.checked; store.set(key, cb.checked); drawLesions(id, body); }; lab.append(cb, ' ' + label); bar.append(lab); };
     chk('treatments', 'img.lesTx', 'showTx'); chk('our measurements', 'img.lesMeas', 'showMeas');
+    const fs = document.createElement('span'); fs.title = 'Our measurements by scanner strength. 3T shows enhancing tumour more strongly than 1.5T, so 3T volumes read larger: compare like with like.';
+    fs.append(Object.assign(document.createElement('span'), {className: 'sub', textContent: '· scanner:'}));
+    [['all', 'all'], ['1.5T', '1.5T ◆'], ['3T', '3T ▲']].forEach(([v, lab]) => fs.append(lbtn(lab, '', L.field === v, () => { L.field = v; store.set('img.lesField', v); drawLesions(id, body); })));
+    bar.append(fs);
     if (DOSE) { const sp = document.createElement('span'); sp.className = 'sub'; sp.style.color = '#e0a020'; sp.textContent = '· dose (estimated):'; bar.append(sp);
       chk('numbers', 'img.lesDoseNum', 'doseNum'); chk('strip', 'img.lesDoseStrip', 'doseStrip'); bar.append(unitButtons(() => drawLesions(id, body))); }
     // lesion chips: click to hide/show
@@ -532,7 +542,7 @@
 
   function lesTooltip(p) {
     if (p.meas) return [`${p.lesion} ${LNAME[p.lesion]}`, p.meas.none ? 'Our check: nothing at this place (normal scan, before the lesion appeared)'
-      : `Our measurement: ${(p.meas.enh_mm3 / 1000).toFixed(2)} cm³ enhancing · longest axial ${p.meas.axial_mm} mm`];
+      : `Our measurement: ${(p.meas.enh_mm3 / 1000).toFixed(2)} cm³ enhancing · longest axial ${p.meas.axial_mm} mm` + (p.meas.field ? ` · ${p.meas.field} scanner` + (is3T(p.meas) ? ' (reads larger than 1.5T)' : '') : '')];
     const r = p.r, tr = TREND[r.trend || ''];
     return [`${r.lesion} ${LNAME[r.lesion]}`, (r.mm != null ? (r.kind === 'punctate' ? 'punctate (~2 mm)' : r.kind === 'resolved' ? 'resolved' : r.kind === 'nonenhancing' ? 'non-enhancing' : r.mm + ' mm') : 'no size given') + (tr.t ? ' · ' + tr.t : ''),
             ...r.text.split(' | ').map(t => t.length > 90 ? t.slice(0, 88) + '…' : t)].concat(r.ambiguous ? ['(report wording fits more than one of our lesions)'] : []);
@@ -547,7 +557,7 @@
     const cv = document.createElement('canvas'); cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Brain lesions over time');
     box.appendChild(cv); body.appendChild(box); box.onmouseleave = () => setHover(null);
     const S = shownL(), row = Object.fromEntries(S.map((l, i) => [l.id, i]));
-    const reps = LS.reports.filter(r => row[r.lesion] != null), meas = L.showMeas ? LS.measured.filter(m => row[m.lesion] != null) : [];
+    const reps = LS.reports.filter(r => row[r.lesion] != null), meas = L.showMeas ? LS.measured.filter(m => row[m.lesion] != null && fieldOK(m)) : [];
     const common = {animation: false, maintainAspectRatio: false, clip: false,
       onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
       plugins: {legend: {display: false}, tooltip: {displayColors: false, callbacks: {title: it => fd(it[0].raw.date), label: it => lesTooltip(it.raw)}}}};
@@ -562,7 +572,7 @@
            pointBackgroundColor: p => p.raw && !p.raw.r.ambiguous && p.raw.r.kind !== 'nonenhancing' && p.raw.r.mm != null ? LCOL[p.raw.lesion] : 'rgba(0,0,0,0)',
            pointBorderColor: p => p.raw ? (TREND[p.raw.r.trend || ''].c !== 'transparent' ? TREND[p.raw.r.trend].c : LCOL[p.raw.lesion]) : '#888',
            pointBorderWidth: p => p.raw && p.raw.r.trend ? 2.2 : 1.4},
-          {data: mdata, parsing: true, pointStyle: 'rectRot', pointRadius: p => p.raw ? Math.max(4, Math.min(12, 3 + Math.cbrt(p.raw.meas.enh_mm3) / 2)) : 4,
+          {data: mdata, parsing: true, pointStyle: p => p.raw ? measShape(p.raw.meas) : 'rectRot', pointRadius: p => p.raw ? Math.max(4, Math.min(12, 3 + Math.cbrt(p.raw.meas.enh_mm3) / 2)) : 4,
            pointBackgroundColor: p => p.raw && !p.raw.meas.none ? LCOL[p.raw.lesion] : 'rgba(0,0,0,0)', pointBorderColor: p => p.raw && p.raw.meas.none ? LCOL[p.raw.lesion] : '#fff', pointBorderWidth: 1.5}]},
         options: Object.assign({}, common, {layout: {padding: {right: DOSE && L.doseNum ? 34 : 0, top: 8}}, scales: {x: xAxis(),
           y: {min: -0.6, max: S.length - 0.4, reverse: true, afterFit: s => { s.width = YW; }, afterBuildTicks: a => { a.ticks = S.map((_, i) => ({value: i})); },
@@ -575,10 +585,11 @@
           .sort((a, b) => a.x - b.x);   // one line per lesion through report sizes AND our measurements (◆)
         return {label: l.id, data: pts, parsing: true, borderColor: LCOL[l.id], backgroundColor: LCOL[l.id], borderWidth: 2, tension: 0.15,
                 segment: {borderDash: s => (s.p0.raw && s.p0.raw.meas && s.p0.raw.meas.none) ? [2, 4]
+                            : ((s.p0.raw && s.p0.raw.meas) || (s.p1.raw && s.p1.raw.meas)) && fieldOf(s.p0.raw) && fieldOf(s.p1.raw) && fieldOf(s.p0.raw) !== fieldOf(s.p1.raw) ? [1, 3]   // jump between 1.5T and 3T
                             : (s.p0.raw && s.p0.raw.r && s.p0.raw.r.ambiguous) || (s.p1.raw && s.p1.raw.r && s.p1.raw.r.ambiguous) ? [4, 3] : undefined,
                           borderColor: s => s.p0.raw && s.p0.raw.meas && s.p0.raw.meas.none ? LCOL[l.id].replace('rgb(', 'rgba(').replace(')', ',0.35)') : undefined},   // from "nothing there": when it appeared is unknown
                 pointRadius: p => !p.raw ? 3.5 : p.raw.meas ? 6 : p.raw.r.ambiguous ? 3 : 3.5,
-                pointStyle: p => p.raw && p.raw.meas ? 'rectRot' : p.raw && p.raw.r.kind === 'resolved' ? 'crossRot' : 'circle',
+                pointStyle: p => p.raw && p.raw.meas ? measShape(p.raw.meas) : p.raw && p.raw.r.kind === 'resolved' ? 'crossRot' : 'circle',
                 pointBorderColor: p => p.raw && p.raw.meas && !p.raw.meas.none ? '#fff' : LCOL[l.id], pointBorderWidth: p => p.raw && p.raw.meas ? 1.5 : 1,
                 pointBackgroundColor: p => !p.raw ? LCOL[l.id] : p.raw.meas ? (p.raw.meas.none ? 'rgba(0,0,0,0)' : LCOL[l.id]) : p.raw.r.ambiguous ? 'rgba(0,0,0,0)' : LCOL[l.id], spanGaps: true, showLine: true};
       });
@@ -589,16 +600,16 @@
     charts.set(id, new Chart(cv, cfg));
     const note = document.createElement('div'); note.className = 'sub'; note.style.marginTop = '4px';
     note.innerHTML = L.view === 'timeline'
-      ? 'Dot = a report mentioned the lesion; size = reported size (✕ resolved, ring only = no size or the wording fits two lesions). Ring colour: <b style="color:#e34948">grew</b> · <b style="color:#1baf7a">shrank</b> · <b style="color:#8a8984">stable</b>. ◆ = our own measurement. Purple box = SRS on that lesion (dashed = unverified); orange band = whole-brain radiation.' +
+      ? 'Dot = a report mentioned the lesion; size = reported size (✕ resolved, ring only = no size or the wording fits two lesions). Ring colour: <b style="color:#e34948">grew</b> · <b style="color:#1baf7a">shrank</b> · <b style="color:#8a8984">stable</b>. ◆ = our own measurement on a 1.5T scanner, ▲ = on a 3T scanner (3T reads larger). Purple box = SRS on that lesion (dashed = unverified); orange band = whole-brain radiation.' +
         (DOSE ? ` <span style="color:#e0a020">Dose (estimated, ${dunit()}): number after a treatment box = dose that course gave the lesion; strip under each row = dose so far (pale = little, dark red = most); right column = total.</span>` : '')
-      : 'Size, not volume: longest width in mm as each report gave it (different hospitals and readers: trends, not exact), joined with our own measurements (◆ = our longest axial width; hover it for our volume in cm³; hollow ◆ at 0 = our check found nothing there, 7/31/2023; the faint dotted stretch after it only means "appeared some time in between"). Dashed = report wording fits two lesions. Bands: orange = whole-brain radiation, purple = SRS.';
+      : 'Size, not volume: longest width in mm as each report gave it (different hospitals and readers: trends, not exact), joined with our own measurements (◆ = our longest axial width on a 1.5T scanner, ▲ = on 3T, which reads larger; a dotted stretch between the two strengths may be partly the scanner; hover it for our volume in cm³; hollow ◆ at 0 = our check found nothing there, 7/31/2023; the faint dotted stretch after it only means "appeared some time in between"). Dashed = report wording fits two lesions. Bands: orange = whole-brain radiation, purple = SRS.';
     body.appendChild(note);
   }
 
   function lesGrid(body) {
     const S = shownL(), dates = [...new Set(LS.scans.concat(LS.measured.map(m => m.date)))].sort();
     const cell = (lid, d) => LS.reports.find(r => r.lesion === lid && r.date === d);
-    const meas = (lid, d) => L.showMeas && LS.measured.find(m => m.lesion === lid && m.date === d);
+    const meas = (lid, d) => L.showMeas && LS.measured.find(m => m.lesion === lid && m.date === d && fieldOK(m));
     const inWin = d => { const t = ms(d); return t >= W.a && t <= W.b; };
     const txDates = d => LS.treatments.filter(t => t.start <= d).map(t => t.start);
     let h = '<div style="overflow:auto;max-height:' + (hOf(IDL, PANELS[IDL].h0) + 40) + 'px"><table class="lesgrid" style="border-collapse:collapse;font-size:11px">';
@@ -615,14 +626,14 @@
         const r = cell(l.id, d), m = meas(l.id, d), tr = r ? TREND[r.trend || ''] : null;
         const txt = r ? (r.kind === 'resolved' ? '✕' : r.kind === 'nonenhancing' ? 'ne' : r.kind === 'punctate' ? '·' : r.mm != null ? Math.round(r.mm) : '—') + (r.ambiguous ? '?' : '') : '';
         const bg = tr && tr.c !== 'transparent' ? `background:color-mix(in srgb, ${tr.c} 28%, transparent)` : '';
-        const tip = (r ? lesTooltip({r}).slice(1).join('\n') : '') + (m ? (r ? '\n' : '') + (m.none ? 'Our check: nothing at this place (normal scan)' : `Ours: ${(m.enh_mm3 / 1000).toFixed(2)} cm³, ${m.axial_mm} mm`) : '');
-        h += `<td title="${tip.replace(/"/g, '&quot;')}" style="text-align:center;padding:2px 4px;border:1px solid var(--line);${bg};${inWin(d) ? '' : 'opacity:.45'}">${txt}${m ? `<div style="font-size:9px;color:${LCOL[l.id]}">${m.none ? '◇ none' : '◆' + (m.enh_mm3 / 1000).toFixed(1)}</div>` : ''}</td>`;
+        const tip = (r ? lesTooltip({r}).slice(1).join('\n') : '') + (m ? (r ? '\n' : '') + (m.none ? 'Our check: nothing at this place (normal scan)' : `Ours: ${(m.enh_mm3 / 1000).toFixed(2)} cm³, ${m.axial_mm} mm` + (m.field ? ', ' + m.field + ' scanner' : '')) : '');
+        h += `<td title="${tip.replace(/"/g, '&quot;')}" style="text-align:center;padding:2px 4px;border:1px solid var(--line);${bg};${inWin(d) ? '' : 'opacity:.45'}">${txt}${m ? `<div style="font-size:9px;color:${LCOL[l.id]}">${m.none ? '◇ none' : (is3T(m) ? '▲' : '◆') + (m.enh_mm3 / 1000).toFixed(1)}</div>` : ''}</td>`;
       });
       if (DOSE) { const rr = doseRows(l.id), tot = rr.length ? drun(rr[rr.length - 1]) : null;
         h += `<td style="text-align:center;padding:2px 6px;border:1px solid var(--line);font-weight:600;color:#000;background:${tot != null ? heat(tot) : 'transparent'}" title="${rr.map(r => CLAB[r.course] + ': ' + Math.round(dval(r)) + ' ' + dunit()).join('\n')}">${tot != null ? Math.round(tot) : ''}</td>`; }
       h += '</tr>';
     });
-    h += '</table></div><div class="sub" style="margin-top:4px">Cells: longest size in mm as reported · "·" punctate · "ne" non-enhancing · "✕" resolved · "—" mentioned without a size · "?" wording fits two lesions. Colour: red grew, green shrank, grey stable. ◆ = our measured volume (cm³). Dimmed columns are outside the time window. Hover a cell for the report wording.</div>';
+    h += '</table></div><div class="sub" style="margin-top:4px">Cells: longest size in mm as reported · "·" punctate · "ne" non-enhancing · "✕" resolved · "—" mentioned without a size · "?" wording fits two lesions. Colour: red grew, green shrank, grey stable. ◆ = our measured volume (cm³) on 1.5T, ▲ = on 3T (reads larger). Dimmed columns are outside the time window. Hover a cell for the report wording.</div>';
     const wrap = document.createElement('div'); wrap.innerHTML = h; body.appendChild(wrap);
   }
 

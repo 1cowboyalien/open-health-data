@@ -239,7 +239,7 @@
     const name = document.createElement('input'); name.type = 'text'; name.placeholder = 'name this view'; name.value = defaultName();
     name.style.cssText = 'width:150px'; name.setAttribute('aria-label', 'Name for the saved view');
     const add = document.createElement('button'); add.type = 'button'; add.textContent = '★ Save view';
-    add.title = 'Save the current scan, position, layout, zoom, 3D angle, contrast and outline settings under this name (also shown in Moments)';
+    add.title = 'Save the current scan, position, layout, zoom, 3D angle, contrast and outline settings under this name (also shown in Keyframes)';
     const save = () => { if (!V.nv || !V.scan) return; const nm = name.value.trim(); if (!nm) { name.focus(); return; }
       const list = views().filter(x => x.name !== nm); list.push(snapshot(nm)); store.set(VKEY, list); syncMoments(); viewsBar();
       V.R('status').textContent = 'Saved "' + nm + '"'; setTimeout(() => { if (V.R('status').textContent.startsWith('Saved')) V.R('status').textContent = ''; }, 2500); };

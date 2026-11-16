@@ -287,12 +287,12 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <button id="roleBtn" style="margin-left:auto"></button><span id="soloBar" class="bar"></span><span class="sub hide" id="hint"></span></div>
 <div class="nrow win"><span class="wl">From</span><input type="range" id="wa" aria-label="Window start"><button id="wal" class="datebtn" title="Pick the start on a calendar"></button>
 <span class="wl">To</span><input type="range" id="wb" aria-label="Window end"><button id="wbl" class="datebtn" title="Pick the end on a calendar"></button>
-<button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Moments → Saved ranges)">☆ Save range</button>
+<button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Presets → Timeline)">☆ Save timeline</button>
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
-<div class="card mcard"><div class="mhead"><b>Moments</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a moment: your own note on the timeline">+ Moment</button><button id="mLines" title="Show or hide the moment lines across all charts">Lines: on</button></span></div>
-<div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Moments: your own notes on the timeline"></canvas></div></div>
+<div class="card mcard"><div class="mhead"><b>Keyframes</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a keyframe: your own note on the timeline">+ Keyframe</button><button id="mLines" title="Show or hide the keyframe lines across all charts">Lines: on</button></span></div>
+<div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Keyframes: your own notes on the timeline"></canvas></div></div>
 </div>
 <div id="ptpop" class="ptpop hide"></div><div id="calPop" class="calpop hide"></div><div id="mtip" class="ptpop mtip hide"></div><div id="mEdit" class="mpanel hide"></div>
 <div class="card" id="txCard">

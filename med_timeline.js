@@ -387,13 +387,24 @@ function migratePresets(){let n=0;(E.ranges||[]).forEach(r=>{(r.layouts||[]).for
    if(!(E.macros||[]).some(x=>x.panel===l.id&&x.tl===r.id))E.macros=(E.macros||[]).concat([{id:'m'+l.id,name:l.name,tl:r.id,panel:l.id,mon:mon||null}]);n++});
   if(r.layouts)delete r.layouts});
  if(n&&canEdit())setTimeout(saveEdits,0);return n}
+/* in-page questions: browser pop-ups (confirm/prompt) are cancelled at once in some embedded browsers (seen in the
+   Claude app's browser pane 2026-11-16), which made every Presets × and + Save do nothing. uiAsk(msg) → true/false;
+   uiAsk(msg, default, okLabel) → the typed text or null. Enter = OK, Esc = Cancel. */
+function uiAsk(msg,def,okLabel){return new Promise(res=>{const old=$('pdlg');if(old)old.remove();
+ const P=document.createElement('div');P.id='pdlg';P.className='calpop pdlg';const m=document.createElement('div');m.className='pdmsg';m.textContent=msg;P.appendChild(m);
+ let inp=null;if(def!==undefined){inp=document.createElement('input');inp.type='text';inp.value=def;P.appendChild(inp)}
+ const bar=document.createElement('div');bar.className='bar';
+ const done=v=>{P.remove();document.removeEventListener('keydown',kd,true);res(v)};
+ const ok=btn(okLabel||(inp?'Save':'Delete'),()=>done(inp?inp.value:true),'on'),no=btn('Cancel',()=>done(inp?null:false),'');bar.append(ok,no);P.appendChild(bar);
+ const kd=e=>{if(e.key==='Escape'){e.stopPropagation();done(inp?null:false)}else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();ok.click()}};
+ document.addEventListener('keydown',kd,true);document.body.appendChild(P);(inp||ok).focus();if(inp)inp.select()})}
 let activeR=store.get('activepreset',null)||(o=>o?{t:o.rid,p:o.lid}:{t:null,p:null})(store.get('activerange',null));
 function setActive(t,p,m){activeR={t:t===undefined?activeR.t:t,p:p===undefined?activeR.p:p,m:m===undefined?activeR.m:m};store.set('activepreset',activeR)}
 const actM=()=>activeR.m&&(E.macros||[]).find(x=>x.id===activeR.m),actT=()=>activeR.t&&(E.ranges||[]).find(x=>x.id===activeR.t),actP=()=>activeR.p&&(E.panels||[]).find(x=>x.id===activeR.p);
 const winLen=len=>len>=60?Math.round(len/30.44)+' mo':len>=2?Math.round(len)+' d':Math.round(len*24)+' h';
 function useTimeline(r){setActive(r.id);setWin(r.a,r.b);list()}
-function saveRange(){if(!canEdit())return;const dl=t=>localStamp(t).slice(0,10);
- const name=prompt('Name for this Timeline preset:',dl(W.a)+' to '+dl(W.b));if(name==null||!name.trim())return;
+async function saveRange(){if(!canEdit())return;const dl=t=>localStamp(t).slice(0,10);
+ const name=await uiAsk('Name for this Timeline preset:',dl(W.a)+' to '+dl(W.b));if(name==null||!name.trim())return;
  const r={id:'r'+Date.now().toString(36),name:name.trim(),a:Math.round(W.a),b:Math.round(W.b)};
  E.ranges=(E.ranges||[]).concat([r]);setActive(r.id);saveEdits();list()}
 function delBtn(title,fn){const x=document.createElement('button');x.type='button';x.className='mini redit';x.textContent='×';x.title=title;x.onclick=e=>{e.stopPropagation();fn()};return x}
@@ -403,7 +414,7 @@ function rangeGroup(S,q){migratePresets();queueLay();const rs=(E.ranges||[]).fil
  rs.forEach(r=>{const row=document.createElement('div');row.className='t';const len=(r.b-r.a)/DAYMS;
   const nm=document.createElement('span');nm.className='nm';nm.textContent='⟷ '+r.name;const st=t=>localStamp(t).slice(0,len<2?16:10);nm.title='Click to show this time window\nIn: '+st(r.a)+'\nOut: '+st(r.b)+'\nMiddle: '+st((r.a+r.b)/2);
   const d=document.createElement('span');d.className='n';d.textContent=localStamp(r.a).slice(2,10)+(len<2?' '+localStamp(r.a).slice(11):'')+' · '+winLen(len);
-  const x=delBtn('Delete this Timeline preset',()=>{if(!confirm('Delete the Timeline preset "'+r.name+'"?'+((E.macros||[]).some(m=>m.tl===r.id)?'\n'+(E.macros||[]).filter(m=>m.tl===r.id).length+' macro(s) use it and will keep only their panels and keyframes.':'')))return;
+  const x=delBtn('Delete this Timeline preset',async()=>{if(!await uiAsk('Delete the Timeline preset "'+r.name+'"?'+((E.macros||[]).some(m=>m.tl===r.id)?'\n'+(E.macros||[]).filter(m=>m.tl===r.id).length+' macro(s) use it and will keep only their panels and keyframes.':'')))return;
    E.ranges=E.ranges.filter(y=>y.id!==r.id);if(activeR.t===r.id)setActive(null);saveEdits();list()});
   if(activeR.t===r.id)row.classList.add('ract');
   row.append(nm,d,x);row.onclick=()=>useTimeline(r);G.appendChild(row)});
@@ -414,8 +425,8 @@ function panelGroup(S,q){const ps=(E.panels||[]).filter(l=>!q||l.name.toLowerCas
  ps.forEach(l=>{const row=document.createElement('div');row.className='t'+(activeR.p===l.id?' ract':'');
   const nm=document.createElement('span');nm.className='nm';nm.textContent='▦ '+l.name;nm.title='Click to show these panels ('+layDesc(l.v)+')';
   const d=document.createElement('span');d.className='n';d.textContent=(l.v.mode==='compare'?(l.v.sel||[]).length:1)+' ch · '+(l.v.txHidden?0:(l.v.txSel||[]).length)+' med';
-  const x=delBtn('Delete this Panel preset',()=>{const used=(E.macros||[]).filter(m=>m.panel===l.id).length;
-   if(!confirm('Delete the Panel preset "'+l.name+'"?'+(used?'\n'+used+' macro(s) use it and will keep only their timeline and keyframes.':'')))return;
+  const x=delBtn('Delete this Panel preset',async()=>{const used=(E.macros||[]).filter(m=>m.panel===l.id).length;
+   if(!await uiAsk('Delete the Panel preset "'+l.name+'"?'+(used?'\n'+used+' macro(s) use it and will keep only their timeline and keyframes.':'')))return;
    E.panels=E.panels.filter(y=>y.id!==l.id);if(activeR.p===l.id)setActive(undefined,null);saveEdits();list()});
   row.append(nm,d,x);row.onclick=()=>usePanel(l);G.appendChild(row)})}
 const modSettings=()=>typeof MRD!=='undefined'&&MRD.getSettings?JSON.parse(JSON.stringify(MRD.getSettings())):null;   // MRD + Brain MRI display settings
@@ -431,7 +442,7 @@ function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])
  if(v.mods&&typeof MRD!=='undefined'&&MRD.setSettings)MRD.setSettings(v.mods);
  [['txorder',txOrder],['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
 function usePanel(l){setActive(undefined,l.id);applyView(l.v);updateBar();list();render()}
-function savePanel(){if(!canEdit())return;const name=prompt('Name for this Panel preset:','Panels '+((E.panels||[]).length+1));if(name==null||!name.trim())return;
+async function savePanel(){if(!canEdit())return;const name=await uiAsk('Name for this Panel preset:','Panels '+((E.panels||[]).length+1));if(name==null||!name.trim())return;
  const l={id:'l'+Date.now().toString(36),name:name.trim(),v:viewNow()};E.panels=(E.panels||[]).concat([l]);setActive(undefined,l.id);saveEdits();list();layBar()}
 /* ---- Macros (E.macros: {id,name,tl,panel,mon}): one click sets a Timeline preset (tl = its id), a Panel preset
    (panel = its id) and which keyframes are shown (mon = {keyframe id: shown}). Timeline and panels are linked by id,
@@ -445,8 +456,8 @@ function useMacro(M){const r=M.tl&&(E.ranges||[]).find(x=>x.id===M.tl),l=M.panel
  setActive(r?r.id:activeR.t,l?l.id:activeR.p,M.id);if(l)applyView(l.v);applyKf(M.mon);if(r){W={a:r.a,b:r.b};store.set('window',W);syncWin()}
  updateBar();list();render()}
 function macroChanged(M){return (M.tl||null)!==(activeR.t||null)||(M.panel||null)!==(activeR.p||null)||kfDiffers(M.mon)||(!!actP()&&panelChanged(actP()))||(!!actT()&&(Math.round(W.a)!==actT().a||Math.round(W.b)!==actT().b))}
-function saveMacro(){if(!canEdit())return;const r=actT(),l=actP();
- const name=prompt('Name for this Macro.\nIt will set: '+(r?'Timeline "'+r.name+'"':'no timeline')+', '+(l?'Panels "'+l.name+'"':'no panels')+', and the keyframes shown now.\n(Pick a Timeline and a Panel preset first to include them.)',[r&&r.name,l&&l.name].filter(Boolean).join(' + ')||'Macro '+((E.macros||[]).length+1));
+async function saveMacro(){if(!canEdit())return;const r=actT(),l=actP();
+ const name=await uiAsk('Name for this Macro.\nIt will set: '+(r?'Timeline "'+r.name+'"':'no timeline')+', '+(l?'Panels "'+l.name+'"':'no panels')+', and the keyframes shown now.\n(Pick a Timeline and a Panel preset first to include them.)',[r&&r.name,l&&l.name].filter(Boolean).join(' + ')||'Macro '+((E.macros||[]).length+1));
  if(name==null||!name.trim())return;const M={id:'m'+Date.now().toString(36),name:name.trim(),tl:r?r.id:null,panel:l?l.id:null,mon:kfNow()};
  E.macros=(E.macros||[]).concat([M]);setActive(undefined,undefined,M.id);saveEdits();list();layBar()}
 function updateMacro(M){if(!canEdit())return;M.tl=activeR.t||null;M.panel=activeR.p||null;M.mon=kfNow();saveEdits();list();layBar()}
@@ -461,7 +472,7 @@ function macroGroup(S,q){const nm_=M=>[M.name,((E.ranges||[]).find(x=>x.id===M.t
   const i=E.macros.indexOf(M),d=document.createElement('span');d.className='n';d.textContent=(i<9?'key '+(i+1)+' · ':'')+[r&&'⟷',l&&'▦',M.mon&&'★'].filter(Boolean).join(' ');
   const mv=(k,lbl,tip)=>{const b=document.createElement('button');b.type='button';b.className='mini redit';b.textContent=lbl;b.title=tip;b.disabled=i+k<0||i+k>=E.macros.length;
    b.onclick=e=>{e.stopPropagation();const A=E.macros;[A[i],A[i+k]]=[A[i+k],A[i]];saveEdits();list()};return b};
-  const x=delBtn('Delete this Macro (its presets stay)',()=>{if(!confirm('Delete the Macro "'+M.name+'"?\nIts Timeline and Panel presets stay.'))return;
+  const x=delBtn('Delete this Macro (its presets stay)',async()=>{if(!await uiAsk('Delete the Macro "'+M.name+'"?\nIts Timeline and Panel presets stay.'))return;
    E.macros=E.macros.filter(y=>y.id!==M.id);if(activeR.m===M.id)setActive(undefined,undefined,null);saveEdits();list()});
   row.append(nm,d,mv(-1,'↑','Move up (also changes its number key)'),mv(1,'↓','Move down (also changes its number key)'),x);row.onclick=()=>useMacro(M);G.appendChild(row);
   /* its layers: click one to apply only that layer */
@@ -558,7 +569,7 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
    if(F.end.value&&F.date.value&&F.end.value<F.date.value){alert('End date is before the date.');return}
    const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,kind:F.kind.value,line:F.line.checked,links:draft.links,on:m.on!==false});
    E.moments=(E.moments||[]).filter(x=>x.id!==rec.id).concat([rec]);saveEdits();close();list();setTimeout(render,0)},'on'));
- if(!isNew)act.appendChild(btn('Delete',()=>{if(!confirm('Delete the keyframe "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
+ if(!isNew)act.appendChild(btn('Delete',async()=>{if(!await uiAsk('Delete the keyframe "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
  act.appendChild(btn('Close',close));P.appendChild(act);
  if(!canEdit()){P.querySelectorAll('input,select,textarea').forEach(i=>i.disabled=true);[...act.children].forEach(x=>{if(x.textContent!=='Close')x.remove()});sp.textContent='view only · switch to Edit in the top bar to change it';editingMoment=null}
  else F.title.focus()}

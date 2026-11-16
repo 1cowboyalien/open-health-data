@@ -45,7 +45,7 @@ function renderConcern(){const cv=$('msc');if(!cv)return;msControls();const TK=t
    if(hoverX!=null){const px=x.getPixelForValue(hoverX);if(px>=A.left&&px<=A.right){ctx.setLineDash([3,3]);ctx.strokeStyle=css('--ink2');ctx.beginPath();ctx.moveTo(px,A.top);ctx.lineTo(px,A.bottom);ctx.stroke()}}
    ctx.restore()}};
  const ch=new Chart(cv,{type:'scatter',plugins:[deco,momentPlugin],data:{datasets:[{data:pts,showLine:true,borderColor:css('--muted')+'55',borderWidth:1,
-   pointRadius:pts.map(p=>3+p.y/2.5),pointHoverRadius:pts.map(p=>5+p.y/2.5),pointBackgroundColor:pts.map(p=>msCol(p.y)),pointBorderColor:css('--card'),pointBorderWidth:1.5}]},
+   pointRadius:pts.map(p=>3+p.y/2.5),pointHoverRadius:pts.map(p=>5+p.y/2.5),pointBackgroundColor:pts.map(p=>typeof rowOn==='function'&&!rowOn(p.m)?css('--muted')+'66':msCol(p.y)),pointBorderColor:css('--card'),pointBorderWidth:1.5}]},
   options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,layout:{autoPadding:false,padding:{top:6,right:8,bottom:4}},
    onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null);c.canvas.style.cursor=els.length?'pointer':''},
    onClick:(e,els,c)=>{if(els[0]){$('mtip').classList.add('hide');goMoment(c.data.datasets[0].data[els[0].index].m)}},

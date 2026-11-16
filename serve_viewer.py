@@ -6,7 +6,8 @@ Usage:
     python3 serve_viewer.py --lan      # also other devices on the same Wi-Fi (no login!)
     python3 serve_viewer.py --port 8800
 
-- Serves only local/labs.html (no folder listing, no other files).
+- Serves only local/labs.html (no folder listing, no other files), plus the imaging viewer's files:
+  GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
 - GET  /api/edits  -> {"rev": n, "edits": {...}}  from local/med_edits.json (the same file the
   build scripts read, so moments, medication changes and saved ranges survive reloads/rebuilds).
 - POST /api/edits  {"rev": n, "edits": {...}} saves them. If someone saved in between (rev differs)
@@ -16,6 +17,7 @@ There is no login: anyone who can reach the address can view, and switch the pag
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
 """
+import urllib.parse
 import argparse
 import json
 import os
@@ -29,6 +31,7 @@ LOCAL = os.path.join(HERE, "local")
 PAGE = os.path.join(LOCAL, "labs.html")
 EDITS = os.path.join(LOCAL, "med_edits.json")
 HIST = os.path.join(LOCAL, "edits_history")
+IMG_TYPES = (".nii.gz", ".obj")
 KEEP = 300
 MAXBODY = 5_000_000
 lock = threading.Lock()
@@ -71,6 +74,13 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(PAGE):
                 return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
             return self.send(200, open(PAGE, "rb").read(), "text/html; charset=utf-8")
+        if path.startswith("/imaging/"):   # imaging viewer files: inside local/imaging/, scan/model types only
+            rel = urllib.parse.unquote(path[len("/imaging/"):])
+            base = os.path.realpath(os.path.join(LOCAL, "imaging"))
+            f = os.path.realpath(os.path.join(base, rel))
+            if (f.startswith(base + os.sep) and f.endswith(IMG_TYPES) and os.path.isfile(f)):
+                return self.send(200, open(f, "rb").read(), "application/octet-stream")
+            return self.send(404, {"error": "not found"})
         if path == "/api/edits":
             with lock:
                 rev, edits = read_edits()

@@ -399,7 +399,7 @@ function saveRange(){if(!canEdit())return;const dl=t=>localStamp(t).slice(0,10);
 function delBtn(title,fn){const x=document.createElement('button');x.type='button';x.className='mini redit';x.textContent='×';x.title=title;x.onclick=e=>{e.stopPropagation();fn()};return x}
 function rangeGroup(S,q){migratePresets();queueLay();const rs=(E.ranges||[]).filter(r=>!q||r.name.toLowerCase().includes(q)||'timeline presets saved ranges'.includes(q)).sort((x,y)=>x.a-y.a);
  const G=section(S,'presets:timeline','Timeline',rs.length||'none yet',true,'grp',q),gs=G.firstChild;
- gs.insertBefore(miniBtn('+ Save','Save the time window shown now (In, Out and Middle) as a Timeline preset',saveRange),gs.lastChild);
+ {const b=miniBtn('+ Save','Save the time window shown now (In, Out and Middle) as a Timeline preset',saveRange);b.classList.add('redit');gs.insertBefore(b,gs.lastChild)}
  rs.forEach(r=>{const row=document.createElement('div');row.className='t';const len=(r.b-r.a)/DAYMS;
   const nm=document.createElement('span');nm.className='nm';nm.textContent='⟷ '+r.name;const st=t=>localStamp(t).slice(0,len<2?16:10);nm.title='Click to show this time window\nIn: '+st(r.a)+'\nOut: '+st(r.b)+'\nMiddle: '+st((r.a+r.b)/2);
   const d=document.createElement('span');d.className='n';d.textContent=localStamp(r.a).slice(2,10)+(len<2?' '+localStamp(r.a).slice(11):'')+' · '+winLen(len);
@@ -410,7 +410,7 @@ function rangeGroup(S,q){migratePresets();queueLay();const rs=(E.ranges||[]).fil
  panelGroup(S,q)}
 function panelGroup(S,q){const ps=(E.panels||[]).filter(l=>!q||l.name.toLowerCase().includes(q)||'panel presets layouts'.includes(q)).sort((x,y)=>x.name.localeCompare(y.name));
  const G=section(S,'presets:panels','Panel presets',ps.length||'none yet',true,'grp',q),gs=G.firstChild;
- gs.insertBefore(miniBtn('+ Save','Save what the Library shows now (charts, medications, sizes and order) as a Panel preset',savePanel),gs.lastChild);
+ {const b=miniBtn('+ Save','Save what the Library shows now (charts, medications, sizes and order) as a Panel preset',savePanel);b.classList.add('redit');gs.insertBefore(b,gs.lastChild)}
  ps.forEach(l=>{const row=document.createElement('div');row.className='t'+(activeR.p===l.id?' ract':'');
   const nm=document.createElement('span');nm.className='nm';nm.textContent='▦ '+l.name;nm.title='Click to show these panels ('+layDesc(l.v)+')';
   const d=document.createElement('span');d.className='n';d.textContent=(l.v.mode==='compare'?(l.v.sel||[]).length:1)+' ch · '+(l.v.txHidden?0:(l.v.txSel||[]).length)+' med';
@@ -451,23 +451,29 @@ function saveMacro(){if(!canEdit())return;const r=actT(),l=actP();
  E.macros=(E.macros||[]).concat([M]);setActive(undefined,undefined,M.id);saveEdits();list();layBar()}
 function updateMacro(M){if(!canEdit())return;M.tl=activeR.t||null;M.panel=activeR.p||null;M.mon=kfNow();saveEdits();list();layBar()}
 function macroGroup(S,q){const nm_=M=>[M.name,((E.ranges||[]).find(x=>x.id===M.tl)||{}).name,((E.panels||[]).find(x=>x.id===M.panel)||{}).name].join(' ').toLowerCase();
- const ms=(E.macros||[]).filter(M=>!q||nm_(M).includes(q)||'macros presets'.includes(q)).sort((x,y)=>x.name.localeCompare(y.name));
+ const ms=(E.macros||[]).filter(M=>!q||nm_(M).includes(q)||'macros presets'.includes(q));   // kept in your own order (↑ ↓ while Editing); keys 1-9 apply the first nine
  const G=section(S,'presets:macros','Macros',ms.length||'none yet',true,'grp',q),gs=G.firstChild;
- gs.insertBefore(miniBtn('+ Save','Save the active Timeline preset, the active Panel preset and the keyframes shown now as a Macro',saveMacro),gs.lastChild);
+ {const b=miniBtn('+ Save','Save the active Timeline preset, the active Panel preset and the keyframes shown now as a Macro',saveMacro);b.classList.add('redit');gs.insertBefore(b,gs.lastChild)}
  ms.forEach(M=>{const r=M.tl&&(E.ranges||[]).find(x=>x.id===M.tl),l=M.panel&&(E.panels||[]).find(x=>x.id===M.panel);
   const row=document.createElement('div');row.className='t'+(activeR.m===M.id?' ract':'');
   const nm=document.createElement('span');nm.className='nm';nm.textContent='◆ '+M.name;nm.title='Click to set the timeline, panels and keyframes of this macro';
   const nk=M.mon?Object.keys(M.mon).filter(id=>M.mon[id]&&(E.moments||[]).some(m=>m.id===id)).length:null;
-  const d=document.createElement('span');d.className='n';d.textContent=[r&&'⟷',l&&'▦',M.mon&&'★'].filter(Boolean).join(' ');
+  const i=E.macros.indexOf(M),d=document.createElement('span');d.className='n';d.textContent=(i<9?'key '+(i+1)+' · ':'')+[r&&'⟷',l&&'▦',M.mon&&'★'].filter(Boolean).join(' ');
+  const mv=(k,lbl,tip)=>{const b=document.createElement('button');b.type='button';b.className='mini redit';b.textContent=lbl;b.title=tip;b.disabled=i+k<0||i+k>=E.macros.length;
+   b.onclick=e=>{e.stopPropagation();const A=E.macros;[A[i],A[i+k]]=[A[i+k],A[i]];saveEdits();list()};return b};
   const x=delBtn('Delete this Macro (its presets stay)',()=>{if(!confirm('Delete the Macro "'+M.name+'"?\nIts Timeline and Panel presets stay.'))return;
    E.macros=E.macros.filter(y=>y.id!==M.id);if(activeR.m===M.id)setActive(undefined,undefined,null);saveEdits();list()});
-  row.append(nm,d,x);row.onclick=()=>useMacro(M);G.appendChild(row);
+  row.append(nm,d,mv(-1,'↑','Move up (also changes its number key)'),mv(1,'↓','Move down (also changes its number key)'),x);row.onclick=()=>useMacro(M);G.appendChild(row);
   /* its layers: click one to apply only that layer */
   const layer=(icon,txt,tip,fn,missing)=>{const lr=document.createElement('div');lr.className='t layrow';const s_=document.createElement('span');s_.className='nm';
    s_.textContent=icon+' '+txt;s_.title=tip;if(missing)s_.style.opacity=.5;lr.appendChild(s_);if(fn)lr.onclick=e=>{e.stopPropagation();fn()};G.appendChild(lr)};
   layer('⟷',r?r.name:M.tl?'(deleted timeline)':'no timeline',r?'Timeline layer: click to apply only this time window':'This macro leaves the time window alone',r?()=>useTimeline(r):null,!r);
   layer('▦',l?l.name:M.panel?'(deleted panels)':'no panels',l?'Panel layer: click to apply only these panels':'This macro leaves the panels alone',l?()=>usePanel(l):null,!l);
   layer('★',M.mon?nk+' keyframe'+(nk===1?'':'s')+' shown':'keyframes left alone',M.mon?'Keyframe layer: click to show only these keyframes':'This macro leaves the keyframes alone',M.mon?()=>{applyKf(M.mon);list();render()}:null,!M.mon)})}
+/* keys 1-9 apply the first nine macros (not while typing, and not with Ctrl/Alt/Cmd) */
+document.addEventListener('keydown',e=>{if(e.ctrlKey||e.altKey||e.metaKey||!/^[1-9]$/.test(e.key))return;
+ const t=e.target;if(t&&t.closest&&(t.closest('input,textarea,select,[contenteditable],canvas')||t.isContentEditable))return;
+ const M=(E.macros||[])[+e.key-1];if(M){e.preventDefault();useMacro(M)}});
 let layT=0;const queueLay=()=>{clearTimeout(layT);layT=setTimeout(layBar,60)};
 function layBar(){const bar=$('layBar'),r=actT(),L=actP(),M=actM();bar.innerHTML='';bar.classList.toggle('hide',!r&&!L&&!M);if(!r&&!L&&!M)return;
  const lab=(icon,txt,tip)=>{const t=document.createElement('span');t.className='wl';t.textContent=icon+' '+txt;t.title=tip;return t};

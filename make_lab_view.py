@@ -9,6 +9,7 @@ If local/meds_all.tsv exists (python3 flatten_meds.py), a Treatment panel is dra
 lab charts on the same time axis (rows: med_timeline.py; drawing and editing: med_timeline.js).
 Changes made in the viewer can be exported to local/med_edits.json; it is built back in here.
 If local/procedures/procedures.json exists, a Procedures section is added (procedures_view.js).
+If local/dna/dna.json exists, a DNA section is added (dna_view.js).
 
 The same test from different hospitals is combined by LOINC code (by name when there's
 no LOINC) and unit; each point keeps its source hospital.
@@ -654,6 +655,7 @@ __IMGJS__
 __MSJS__
 __PROCJS__
 __PATHJS__
+__DNAJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
@@ -678,12 +680,20 @@ pathjs = ""
 if os.path.exists(path_json):
     pathjs = ("const PATH_DATA=" + open(path_json).read().strip().replace("</", "<\\/") + ";\n"
               + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pathology_view.js")).read())
+# DNA (Library → DNA): only if local/dna/dna.json exists. It is made outside this repo
+# (one sequenced sample: gene copy ratios, mutations, matching drugs, flagged findings); drawn by dna_view.js.
+dna_json = os.path.join(os.path.dirname(out), "dna", "dna.json")
+dnajs = ""
+if os.path.exists(dna_json):
+    dnajs = ("const DNA_DATA=" + open(dna_json).read().strip().replace("</", "<\\/") + ";\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dna_view.js")).read())
 # Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
 msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs))
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__DNAJS__", dnajs))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
       + ("; imaging: local/imaging/imaging.json" if imgjs else "")
       + ("; procedures: local/procedures/procedures.json" if procjs else "")
-      + ("; pathology: local/pathology/pathology.json" if pathjs else ""))
+      + ("; pathology: local/pathology/pathology.json" if pathjs else "")
+      + ("; dna: local/dna/dna.json" if dnajs else ""))

@@ -64,7 +64,9 @@ async function loadShared(quiet){if(!/^https?:/.test(location.protocol))return f
  try{const r=await fetch('/api/edits',{cache:'no-store'});if(!r.ok)return false;const j=await r.json();
   SHARED=true;
   if(!j.edits&&j.rev===0&&nEdits()){REV=0;pushEdits();shareMsg='your changes from this browser are now shared';txStatus();return true}   // first run: share what this browser had
-  const changed=j.rev!==REV;REV=j.rev;if(changed||!quiet){E=Object.assign(EMPTY_EDITS(),j.edits||{});delete E.rev;shareMsg='shared · everyone sees saved changes';txStatus();list();render()}
+  const changed=j.rev!==REV;REV=j.rev;if(changed||!quiet){E=Object.assign(EMPTY_EDITS(),j.edits||{});delete E.rev;
+   (window.momentSyncers||[]).forEach(f=>{try{f()}catch(err){console.error(err)}});   // panels re-add their generated moment lines (procedures, MRI views, pathology)
+  shareMsg='shared · everyone sees saved changes';txStatus();list();render()}
   return true}catch(e){return false}}
 /* coming back to the tab: pick up other people's changes (not while an editor is open) */
 window.addEventListener('focus',()=>{if(SHARED&&!editingMoment&&$('txEdit').classList.contains('hide'))loadShared(true)});

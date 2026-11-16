@@ -10,9 +10,14 @@
                 what the stain shows, ＋ Compare, "Use as cover", full-size link
      Compare  = the ＋ photos side by side in 1-4 columns (◀ ▶ reorder, × remove); "Covers" fills it with every slide's cover
    ⛶ (or double-click a photo) opens the full-window view: ‹ › / arrow keys, click the photo to see it at full resolution, Esc closes.
-   View settings, compare picks and cover picks are kept in this browser (store 'path.view', 'path.covers').
+   On the timeline: one line per case on every chart (the biopsy date, results in its note; Library tick, on by default), and
+   photos saved with 🔖 Keyframe as lines on the case date (group "Saved slide photos"). Both are generated moments, never written
+   to the edits file; clicking one opens the case or the photo here. A case's `procedure` id links it with the Procedures panel
+   (its card gets a "Slide photos" button through window.PATH; the Overview gets "Show in Procedures" through window.PROC_SHOW).
+   View settings, compare picks, cover picks, timeline ticks and keyframes are kept in this browser
+   (store 'path.view', 'path.covers', 'path.moments', 'path.keys').
    Data: PATH_DATA = {stains:[{key,label,kind,what}], cases:[{key,title,date,site,review,diagnosis,source,results:{stain:text},
-                      slides:[{stain,slide,photos:[file],cover}]}]}, made outside this repo (it holds health data). */
+                      procedure?, slides:[{stain,slide,photos:[file],cover}]}]}, made outside this repo (it holds health data). */
 (() => {
   const P = PATH_DATA;
   const ID = 'path:slides';
@@ -52,6 +57,48 @@
   let BODY = null, focusImg = false;
   const redraw = () => { if (BODY && BODY.isConnected) draw(ID, BODY); };
   const go = (mode, extra) => { Object.assign(V, extra || {}); V.mode = mode; save(); redraw(); if (typeof list === 'function') list(); };
+
+  /* ================= on the timeline (generated moments) ================= */
+  const MGROUP = 'Pathology', KGROUP = 'Saved slide photos';
+  const onLine = new Set(store.get('path.moments', P.cases.map(c => c.key)));
+  const keyframes = store.get('path.keys', []).filter(findKey);
+  const isKey = it => keyframes.includes(pkey(it));
+  const nOf = c => c.slides.reduce((a, s) => a + s.photos.length, 0);
+  const summary = c => [...new Set(c.slides.map(s => s.stain))].filter(k => (ST[k] || {}).kind === 'IHC' && c.results[k])
+    .map(k => ST[k].label + ' ' + c.results[k]).join(' · ');
+  function syncMoments() {
+    if (typeof E === 'undefined') return;
+    E.moments = (E.moments || []).filter(m => !m.pathGen && !m.pathKey);
+    P.cases.filter(c => onLine.has(c.key)).forEach(c => E.moments.push({id: 'path-' + c.key, title: 'Pathology: ' + c.title, group: MGROUP,
+      date: c.date, time: '', end: '', note: c.diagnosis + ' — ' + summary(c) + '. Click to see the ' + nOf(c) + ' slide photos.',
+      color: 'red', kind: 'test', line: true, on: true, links: [], pathGen: c.key}));
+    keyframes.map(findKey).filter(Boolean).forEach(it => E.moments.push({id: 'pathkey-' + pkey(it).replace(/[^A-Za-z0-9]+/g, '-'),
+      title: 'Slide photo: ' + slideName(it.c, it.s) + ' #' + (it.i + 1), group: KGROUP, date: it.c.date, time: '', end: '',
+      note: (result(it) || slideName(it.c, it.s)) + '. Click to open this photo.', color: 'purple', kind: 'test', line: true, on: true, links: [], pathKey: pkey(it)}));
+  }
+  const refreshAll = () => { syncMoments(); list(); render(); };
+  function setOnLine(keys, on) { keys.forEach(k => on ? onLine.add(k) : onLine.delete(k)); store.set('path.moments', [...onLine]); refreshAll(); }
+  function toggleKey(it) { const k = pkey(it), j = keyframes.indexOf(k); j >= 0 ? keyframes.splice(j, 1) : keyframes.push(k); store.set('path.keys', keyframes); refreshAll(); }
+  if (typeof saveEdits === 'function') { const _save = saveEdits;   // generated lines are never written to the edits file
+    saveEdits = function () { const mine = (E.moments || []).filter(m => m.pathGen || m.pathKey); E.moments = (E.moments || []).filter(m => !m.pathGen && !m.pathKey);
+      try { return _save.apply(this, arguments); } finally { E.moments.push(...mine); } }; }
+  function openPanel(mode) {   // show the panel (tick it if needed) in this view and scroll to it
+    V.mode = mode; save();
+    if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); }
+    setTimeout(() => { if (BODY && BODY.isConnected) BODY.parentElement.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 60);
+  }
+  const openPhoto = k => { const it = findKey(k); if (!it) return; Object.assign(V, {caseKey: it.c.key, filter: slideKey(it.c, it.s), cur: k}); focusImg = true; openPanel('viewer'); };
+  const _openMoment = openMoment;
+  openMoment = function (m) {   // clicking a pathology line opens the photos instead of the moment editor
+    if (m && m.pathGen) { V.caseKey = m.pathGen; return openPanel('overview'); }
+    if (m && m.pathKey) return openPhoto(m.pathKey);
+    return _openMoment.apply(this, arguments);
+  };
+  window.PATH = {forProcedure: id => P.cases.filter(c => c.procedure && c.procedure === id).map(c => ({key: c.key, title: c.title, n: nOf(c)})),
+                 open: key => { V.caseKey = key; openPanel('overview'); }};
+  const keyBtn = (it, after) => mkBtn(isKey(it) ? '🔖 On the timeline' : '🔖 Keyframe', isKey(it),
+    isKey(it) ? 'This photo is a line on the timeline charts (click to remove it)' : 'Save this photo as a line on the timeline charts, on the biopsy date',
+    () => { toggleKey(it); if (after) after(); });
 
   if (!document.getElementById('pathCss')) { const st = document.createElement('style'); st.id = 'pathCss';
     st.textContent =
@@ -124,6 +171,13 @@
     const info = document.createElement('div'); info.className = 'sub'; info.style.cssText = 'font-size:12px;margin-bottom:6px';
     info.innerHTML = `<b style="color:var(--ink)">${esc(c.title)}</b> · ${esc(fd(c.date))} · ${esc(c.site)} — ${esc(c.diagnosis)}<br>${esc(c.review)}`;
     info.title = 'Source: ' + c.source; body.append(info);
+    const tl = document.createElement('div'); tl.className = 'pth-bar';
+    tl.append(mkBtn(onLine.has(c.key) ? '✓ Line on the timeline' : '＋ Line on the timeline', onLine.has(c.key),
+      'A line on every chart on ' + fd(c.date) + ' (click it to come back here)', () => setOnLine([c.key], !onLine.has(c.key))));
+    if (c.procedure && window.PROC_SHOW) tl.append(mkBtn('Show in Procedures', false, 'Select this biopsy on the Procedures timeline', () => window.PROC_SHOW(c.procedure)));
+    const nk = keyframes.filter(k => k.startsWith(c.key + '/')).length;
+    if (nk) { const n = document.createElement('span'); n.className = 'sub'; n.style.fontSize = '11px'; n.textContent = '🔖 ' + nk + ' photo' + (nk > 1 ? 's' : '') + ' saved as keyframes'; tl.append(n); }
+    body.append(tl);
     const g = document.createElement('div'); g.className = 'pth-grid'; g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(190px,1fr))';
     c.slides.forEach(s => { const st = ST[s.stain] || {label: s.stain, kind: ''}, it = {c, s, f: coverOf(c, s), i: s.photos.indexOf(coverOf(c, s))};
       const t = document.createElement('div'); t.className = 'pth-tile'; t.title = (st.what || '') + '\nClick: open this slide in the Viewer';
@@ -164,6 +218,7 @@
     ctl.append(range('Size', 240, 1400, 20, V.size, 'Make the photo smaller or bigger', v => { V.size = v; save(); const m = body.querySelector('.pth-main'); if (m) m.style.height = v + 'px'; }));
     ctl.append(mkBtn('⛶ Full window', false, 'Show this photo as big as the window (Esc to close)', () => lightbox(L, k)));
     ctl.append(mkBtn(pinned(it) ? '✓ In Compare' : '＋ Compare', pinned(it), 'Add this photo to Compare, to see it next to others', () => { togglePin(it); redraw(); }));
+    ctl.append(keyBtn(it));
     body.append(ctl);
     const main = document.createElement('div'); main.className = 'pth-main'; main.style.height = V.size + 'px';
     const box = document.createElement('div'); box.className = 'pth-img'; box.tabIndex = 0; box.title = '← → previous / next photo · double-click: full window';
@@ -231,7 +286,7 @@
       const top = document.createElement('div'); top.className = 'top';
       const t = document.createElement('span'); t.className = 't';
       t.innerHTML = `<b>${esc(slideName(it.c, it.s))}</b> · ${esc(result(it) || '—')} · <span style="opacity:.7">photo ${it.i + 1} of ${it.s.photos.length}${L.length > 1 ? ' · ' + (k + 1) + '/' + L.length + ' here' : ''} · click the photo to see it at full resolution · ← → · Esc</span>`;
-      top.append(t, mkBtn(pinned(it) ? '✓ In Compare' : '＋ Compare', pinned(it), 'Add this photo to Compare', () => { togglePin(it); show(); }));
+      top.append(t, mkBtn(pinned(it) ? '✓ In Compare' : '＋ Compare', pinned(it), 'Add this photo to Compare', () => { togglePin(it); show(); }), keyBtn(it, show));
       const a = document.createElement('a'); a.href = url(it.c, 'full', it.f); a.target = '_blank'; a.rel = 'noopener'; a.className = 'pth-b'; a.textContent = 'Full size ↗';
       top.append(a, mkBtn('✕ Close', false, 'Close (Esc)', close));
       const stage = document.createElement('div'); stage.className = 'stage' + (zoom ? ' z' : '');
@@ -278,6 +333,10 @@
     SEC.append(row('Slide photos', nPhotos + ' photos', 'Overview, gallery, viewer and side-by-side compare of the slide photos', sel.includes(ID), v => setLabSel([ID], v)));
     P.cases.forEach(c => {
       const G = section(SEC, 'path:' + c.key, c.title + ' · ' + c.date.slice(0, 7), c.slides.length + ' slides', false, 'grp', q);
+      G.append(row('Line on the timeline', c.date.slice(0, 7), 'A line on every chart on ' + fd(c.date) + '; click the line to open these photos',
+        onLine.has(c.key), v => setOnLine([c.key], v)));
+      keyframes.map(findKey).filter(it => it && it.c === c).forEach(it => G.append(row('🔖 ' + slideName(c, it.s) + ' #' + (it.i + 1), 'keyframe',
+        'Saved as a line on the timeline\nUntick: remove it · Click: open this photo', true, v => { if (!v) toggleKey(it); }, () => openPhoto(pkey(it)))));
       c.slides.forEach(s => { const sk = slideKey(c, s), open = () => { V.caseKey = c.key; V.filter = sk; V.cur = sk + '|' + coverOf(c, s); V.mode = 'viewer'; save(); };
         G.append(row(slideName(c, s), (c.results[s.stain] || '').slice(0, 14), (c.results[s.stain] || '') + '\nClick: open this slide in the Pathology viewer',
           sel.includes(ID) && V.mode === 'viewer' && V.filter === sk,
@@ -286,6 +345,7 @@
     });
   };
 
+  syncMoments(); (window.momentSyncers = window.momentSyncers || []).push(syncMoments);   // again after the shared edits load
   const saved = store.get('selected', []);
   if (saved.includes(ID) && !sel.includes(ID)) sel = saved.filter(id => BYID[id] || MRD.isId(id));
   updateBar(); list(); render();

@@ -454,8 +454,8 @@ function list(){const q=$('q').value.toLowerCase();const el=$('list');el.innerHT
  const nT=Object.values(groups).reduce((a,g)=>a+g.length,0);
  const L=nT?section(el,'labs','Lab results',nT+' tests',true,'sec',q):null;
  if(L){const all=Object.values(groups).flat().map(t=>t.id),ls=L.firstChild;
-  ls.insertBefore(miniBtn('All','Select every '+(q?'matching ':'')+'lab test for comparison',()=>{
-   if(all.length>30&&!confirm('Add all '+all.length+' tests to the comparison? That draws '+all.length+' charts.'))return;setLabSel(all,true)}),ls.lastChild);
+  ls.insertBefore(miniBtn('All','Select every '+(q?'matching ':'')+'lab test for comparison',async()=>{
+   if(all.length>30&&!await uiAsk('Add all '+all.length+' tests to the comparison? That draws '+all.length+' charts.',undefined,'Add all'))return;setLabSel(all,true)}),ls.lastChild);
   ls.insertBefore(miniBtn('None','Deselect every '+(q?'matching ':'')+'lab test',()=>setLabSel(all,false)),ls.lastChild)}
  Object.keys(groups).sort().forEach(g=>{const ids=groups[g].map(t=>t.id),k=ids.filter(id=>sel.includes(id)).length;
   const G=section(L,'lab:'+g,g,k?k+'/'+ids.length:ids.length,true,'grp',q),gs=G.firstChild;

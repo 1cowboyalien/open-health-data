@@ -56,7 +56,7 @@ function pushEdits(){shareMsg='saving…';txStatus();
  saveQ=saveQ.then(async()=>{try{
    const r=await fetch('/api/edits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev:REV,edits:E})});const j=await r.json();
    if(r.status===409){REV=j.rev;E=Object.assign(EMPTY_EDITS(),j.edits||{});delete E.rev;shareMsg='';txStatus();list();render();
-    alert('Someone else saved a change just before you, so the newest version is now loaded.\nPlease make your last change again.');return}
+    uiNote('Someone else saved a change just before you, so the newest version is now loaded.\nPlease make your last change again.');return}
    if(!r.ok)throw new Error(j.error||r.status);REV=j.rev;shareMsg='saved for everyone'}
   catch(e){shareMsg='NOT saved: the viewer server is not reachable';store.set('txedits',E)}
   txStatus()})}
@@ -390,14 +390,15 @@ function migratePresets(){let n=0;(E.ranges||[]).forEach(r=>{(r.layouts||[]).for
 /* in-page questions: browser pop-ups (confirm/prompt) are cancelled at once in some embedded browsers (seen in the
    Claude app's browser pane 2026-11-16), which made every Presets × and + Save do nothing. uiAsk(msg) → true/false;
    uiAsk(msg, default, okLabel) → the typed text or null. Enter = OK, Esc = Cancel. */
-function uiAsk(msg,def,okLabel){return new Promise(res=>{const old=$('pdlg');if(old)old.remove();
+function uiAsk(msg,def,okLabel,noCancel){return new Promise(res=>{const old=$('pdlg');if(old)old.remove();
  const P=document.createElement('div');P.id='pdlg';P.className='calpop pdlg';const m=document.createElement('div');m.className='pdmsg';m.textContent=msg;P.appendChild(m);
  let inp=null;if(def!==undefined){inp=document.createElement('input');inp.type='text';inp.value=def;P.appendChild(inp)}
  const bar=document.createElement('div');bar.className='bar';
  const done=v=>{P.remove();document.removeEventListener('keydown',kd,true);res(v)};
- const ok=btn(okLabel||(inp?'Save':'Delete'),()=>done(inp?inp.value:true),'on'),no=btn('Cancel',()=>done(inp?null:false),'');bar.append(ok,no);P.appendChild(bar);
+ const ok=btn(okLabel||(inp?'Save':'Delete'),()=>done(inp?inp.value:true),'on'),no=btn('Cancel',()=>done(inp?null:false),'');bar.append(ok);if(!noCancel)bar.append(no);P.appendChild(bar);
  const kd=e=>{if(e.key==='Escape'){e.stopPropagation();done(inp?null:false)}else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();ok.click()}};
  document.addEventListener('keydown',kd,true);document.body.appendChild(P);(inp||ok).focus();if(inp)inp.select()})}
+const uiNote=msg=>uiAsk(msg,undefined,'OK',true);
 let activeR=store.get('activepreset',null)||(o=>o?{t:o.rid,p:o.lid}:{t:null,p:null})(store.get('activerange',null));
 function setActive(t,p,m){activeR={t:t===undefined?activeR.t:t,p:p===undefined?activeR.p:p,m:m===undefined?activeR.m:m};store.set('activepreset',activeR)}
 const actM=()=>activeR.m&&(E.macros||[]).find(x=>x.id===activeR.m),actT=()=>activeR.t&&(E.ranges||[]).find(x=>x.id===activeR.t),actP=()=>activeR.p&&(E.panels||[]).find(x=>x.id===activeR.p);
@@ -565,8 +566,8 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
  const L=document.createElement('div');L.id='mLinks';P.append(lh,L);setPick(false);drawLinks();
  const act=document.createElement('div');act.className='bar';act.style.marginTop='8px';
  const close=()=>{setPick(false);editingMoment=null;P.classList.add('hide');charts.forEach(c=>c.draw())};
- act.append(btn('Save',()=>{const title=F.title.value.trim();if(!title){alert('Enter a title.');return}
-   if(F.end.value&&F.date.value&&F.end.value<F.date.value){alert('End date is before the date.');return}
+ act.append(btn('Save',()=>{const title=F.title.value.trim();if(!title){uiNote('Enter a title.');return}
+   if(F.end.value&&F.date.value&&F.end.value<F.date.value){uiNote('End date is before the date.');return}
    const rec=Object.assign({},m,{title,group:F.group.value.trim(),date:F.date.value,time:F.date.value?F.time.value:'',end:F.date.value?F.end.value:'',note:F.note.value,color:F.color.value,kind:F.kind.value,line:F.line.checked,links:draft.links,on:m.on!==false});
    E.moments=(E.moments||[]).filter(x=>x.id!==rec.id).concat([rec]);saveEdits();close();list();setTimeout(render,0)},'on'));
  if(!isNew)act.appendChild(btn('Delete',async()=>{if(!await uiAsk('Delete the keyframe "'+m.title+'"?'))return;E.moments=E.moments.filter(x=>x.id!==m.id);saveEdits();close();list();setTimeout(render,0)}));
@@ -817,7 +818,7 @@ function openSeg(r,g,clickDate){if(!canEdit())return;
   const f=r.setting==='home'?schedFields(box,Object.assign({perDay:1,every:1,on:0,off:0,prn:false},g.sch||{})):null;
   box.append(field('Note',note),field('Hide this bar',hide));
   const act=document.createElement('div');act.className='bar';act.style.marginTop='10px';
-  act.append(btn('Save',()=>{if(b.value<a.value){alert('End is before start.');return}
+  act.append(btn('Save',()=>{if(b.value<a.value){uiNote('End is before start.');return}
     const ov={a:a.value,b:b.value,dose:dose.value,note:note.value,hidden:hide.checked};if(f)Object.assign(ov,readSched(f));
     E.seg[g.sid]=ov;saveEdits();$('txEdit').classList.add('hide');render()},'on'),
    btn('Reset to record',()=>{delete E.seg[g.sid];saveEdits();$('txEdit').classList.add('hide');render()}));
@@ -849,15 +850,15 @@ function openAdd(m){if(!canEdit())return;const isNew=!m;m=m||{id:'m'+Date.now().
   field('Start',F.a),field('End (blank = one day)',F.b),field('Status',F.status));
  const S=schedFields(box,m);box.append(field('Note',F.note),field('Dates taken or given',F.given));
  const act=document.createElement('div');act.className='bar';act.style.marginTop='10px';
- act.append(btn('Save',()=>{const drug=F.drug.value.trim();if(!drug){alert('Enter a drug name.');return}if(!F.a.value){alert('Enter a start date.');return}
-   if(F.b.value&&F.b.value<F.a.value){alert('End is before start.');return}
+ act.append(btn('Save',()=>{const drug=F.drug.value.trim();if(!drug){uiNote('Enter a drug name.');return}if(!F.a.value){uiNote('Enter a start date.');return}
+   if(F.b.value&&F.b.value<F.a.value){uiNote('End is before start.');return}
    const given=F.given.value.split(/[\s,;]+/).filter(Boolean),bad=given.filter(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x)||isNaN(dms(x)));
-   if(bad.length){alert('Not a date (use YYYY-MM-DD): '+bad.join(', '));return}
+   if(bad.length){uiNote('Not a date (use YYYY-MM-DD): '+bad.join(', '));return}
    const rec=Object.assign({},m,{drug,cls:F.cls.value,setting:F.setting.value,dose:F.dose.value,route:F.route.value,freq:F.freq.value,a:F.a.value,b:F.b.value,
     status:F.status.value,note:F.note.value,given:[...new Set(given)].sort()},readSched(S));
    E.added=(E.added||[]).filter(x=>x.id!==rec.id).concat([rec]);const dk=rec.drug.toLowerCase();if(!txSel.includes(dk)){txSel.push(dk);store.set('txsel',txSel)}
    saveEdits();$('txEdit').classList.add('hide');list();render()},'on'));
- if(!isNew)act.appendChild(btn('Delete',()=>{if(!confirm('Delete '+m.drug+' (entered by you)?'))return;E.added=E.added.filter(x=>x.id!==m.id);saveEdits();$('txEdit').classList.add('hide');list();render()}));
+ if(!isNew)act.appendChild(btn('Delete',async()=>{if(!await uiAsk('Delete '+m.drug+' (entered by you)?'))return;E.added=E.added.filter(x=>x.id!==m.id);saveEdits();$('txEdit').classList.add('hide');list();render()}));
  $('txEdit').appendChild(act);F.drug.focus()}
 
 /* ---- export / import ---- */
@@ -866,10 +867,10 @@ function txStatus(){const n=nEdits();$('txStatus').textContent=SHARED?(n?n+' cha
 function exportEdits(){const blob=new Blob([JSON.stringify(E,null,1)],{type:'application/json'});const a=document.createElement('a');
  a.href=URL.createObjectURL(blob);a.download='med_edits.json';document.body.appendChild(a);a.click();a.remove();
  txDirty=false;store.set('txdirty',false);txStatus();
- alert('Saved med_edits.json to your Downloads folder.\nMove it into the project\'s local/ folder, then rebuild:\n  python3 flatten_meds.py && python3 make_lab_view.py')}
-function importEdits(file){const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(rd.result);if(!j||j.version!==1)throw new Error('not a med_edits.json file');
-  if(nEdits()&&!confirm('Replace the '+nEdits()+' changes'+(SHARED?' (for everyone)':' in this browser')+' with the file?'))return;
-  E=Object.assign(EMPTY_EDITS(),j);delete E.rev;if(SHARED){saveEdits();list();render();return}store.set('txedits',E);txDirty=false;store.set('txdirty',false);txStatus();list();render()}catch(e){alert('Could not read the file: '+e.message)}};rd.readAsText(file)}
+ uiNote('Saved med_edits.json to your Downloads folder.\nMove it into the project\'s local/ folder, then rebuild:\n  python3 flatten_meds.py && python3 make_lab_view.py')}
+function importEdits(file){const rd=new FileReader();rd.onload=async()=>{try{const j=JSON.parse(rd.result);if(!j||j.version!==1)throw new Error('not a med_edits.json file');
+  if(nEdits()&&!await uiAsk('Replace the '+nEdits()+' changes'+(SHARED?' (for everyone)':' in this browser')+' with the file?',undefined,'Replace'))return;
+  E=Object.assign(EMPTY_EDITS(),j);delete E.rev;if(SHARED){saveEdits();list();render();return}store.set('txedits',E);txDirty=false;store.set('txdirty',false);txStatus();list();render()}catch(e){uiNote('Could not read the file: '+e.message)}};rd.readAsText(file)}
 function txInit(){initTxSel();
  {const s0=store.set;store.set=(k,v)=>{s0.call(store,k,v);queueLay()}}
  $('mAdd').onclick=()=>openMoment(null);

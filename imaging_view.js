@@ -195,8 +195,12 @@
     R('size').onkeydown = e => e.stopPropagation();
     R('sizel').ondblclick = () => { V.size = 0; store.set('img.size', 0); sizeBox(IDV); };
     R('sizel').title = 'Double-click to go back to the panel height';
-    R('fit').onclick = () => { V.size = Math.max(300, Math.round((innerHeight - toolbarH() - 60) / 20) * 20); store.set('img.size', V.size); sizeBox(IDV);
-      R('box').scrollIntoView({block: 'nearest'}); };
+    /* the pinned bar at the top of the page (time window, keyframes) covers part of the window: fit the images into
+       the space below it and scroll them there (before, part of the viewer stayed hidden under that bar) */
+    const pinH = () => { const p = document.querySelector('.navpin'); return p && getComputedStyle(p).position === 'sticky' ? p.getBoundingClientRect().height : 0; };
+    R('fit').onclick = () => { const room = innerHeight - pinH() - 16, withBar = room - toolbarH();
+      V.size = Math.max(300, Math.floor((withBar >= 420 ? withBar : room) / 20) * 20); store.set('img.size', V.size); sizeBox(IDV);
+      requestAnimationFrame(() => { const top = (withBar >= 420 ? w : R('box')).getBoundingClientRect().top; scrollBy(0, top - pinH() - 8); }); };
     const setFull = on => { V.full = on; w.classList.toggle('nvfull', on); R('full').classList.toggle('on', on);
       R('full').textContent = on ? '✕ Close full window' : '⛶ Full window'; document.body.style.overflow = on ? 'hidden' : ''; sizeBox(IDV); };
     R('full').onclick = () => setFull(!V.full);
@@ -209,10 +213,15 @@
   }
   /* ---- zoom ---- */
   function zoom3(d) { if (!V.nv) return; V.nv.volScaleMultiplier = Math.max(0.4, Math.min(6, (V.nv.volScaleMultiplier || 1) * (d > 0 ? 1.25 : 0.8))); V.nv.drawScene(); }
-  function zoom2(d) { if (!V.nv) return; const mm = V.nv.frac2mm(V.nv.scene.crosshairPos); const z0 = (V.nv.scene.pan2Dxyzmm || [0, 0, 0, 1])[3] || 1;
-    const z = Math.max(1, Math.min(8, z0 * (d > 0 ? 1.4 : 1 / 1.4)));
-    // keep the crosshair point in view: pan so that it sits at the centre when zoomed
-    V.nv.setPan2Dxyzmm(z === 1 ? [0, 0, 0, 1] : [-mm[0] * (z - 1) / z, -mm[1] * (z - 1) / z, -mm[2] * (z - 1) / z, z]); }
+  const zoomOf2 = () => (V.nv.scene.pan2Dxyzmm || [0, 0, 0, 1])[3] || 1;
+  function zoom2(d) { if (!V.nv) return; const z0 = zoomOf2(); let z = Math.max(1, Math.min(8, z0 * (d > 0 ? 1.4 : 1 / 1.4)));
+    if (z < 1.01) z = 1;   // 1.4 × 1/1.4 is not exactly 1: snap back to the unzoomed view
+    centre2(z); }
+  /* keep the crosshair point at the centre of each slice view when zoomed in. Measured in NiiVue 0.69: a view's centre is
+     (volume middle − pan) / zoom, so pan = volume middle − zoom × point (the old −point × (z−1)/z drifted off-centre). */
+  function centre2(z) { if (!V.nv) return; if (z === 1) { V.nv.setPan2Dxyzmm([0, 0, 0, 1]); return; }
+    const mm = V.nv.frac2mm(V.nv.scene.crosshairPos), c = V.nv.frac2mm([0.5, 0.5, 0.5]);
+    V.nv.setPan2Dxyzmm([...[0, 1, 2].map(i => c[i] - z * mm[i]), z]); }
   /* ---- contrast: Low / High = black and white points within the scan's range; Mid = gamma ---- */
   function range() { const v = V.nv && V.nv.volumes[0]; if (!v) return [0, 1]; const lo = v.robust_min ?? v.global_min, hi = v.robust_max ?? v.global_max; return [lo, hi]; }
   function setContrast(lo, hi, mid) { V.R('lo').value = lo; V.R('hi').value = hi; V.R('mid').value = mid; applyContrast(); }
@@ -398,6 +407,13 @@
     const scan = SCANS.find(s => s.date === date) || SCANS[0]; if (!scan) return;
     if (V.scan === scan && V.nv) return;
     V.scan = scan; V.R('scan').value = scan.date;
+    /* one load at a time: NiiVue's loads overlap badly (an older scan finishing last replaced the newer one).
+       Each pick waits for the load before it; picks that were overtaken while waiting are skipped. */
+    const tok = V.loadTok = (V.loadTok || 0) + 1;
+    V.queue = (V.queue || Promise.resolve()).catch(() => {}).then(() => tok === V.loadTok ? loadNow(scan) : null);
+    return V.queue;
+  }
+  async function loadNow(scan) {
     const NV = await lib();
     if (!V.nv) {
       V.nv = new NV.Niivue({backColor: [0, 0, 0, 1], show3Dcrosshair: true, multiplanarShowRender: NV.SHOW_RENDER.ALWAYS,
@@ -435,7 +451,9 @@
   }
   function jump(l) {
     if (!V.nv || !l) return;
-    V.nv.scene.crosshairPos = V.nv.mm2frac(l.ras); V.nv.drawScene();
+    V.nv.scene.crosshairPos = V.nv.mm2frac(l.ras);
+    if (zoomOf2() > 1) centre2(zoomOf2());   // zoomed in: bring the lesion to the middle, or it can be off-screen
+    V.nv.drawScene();
     V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', e.dataset.id === l.id));
     V.R('read').innerHTML = `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ enhancing · longest axial ${l.axial} mm`;
   }

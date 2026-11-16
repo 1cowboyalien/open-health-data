@@ -401,27 +401,28 @@
     applyContrast(); applyOrient(); applyGlass(); viewsBar(); await applyDose();
     const big = L.slice().sort((a, b) => b.enh - a.enh)[0]; if (big) jump(big);
   }
+  const volOf = l => (typeof L !== 'undefined' && L.rule === 'old' && l.enh_old != null) ? l.enh_old : l.enh;   // outline rule switch
   function lesionList(scan) {   // (not 'list': that name is the viewer's own Library function)
-    const box = V.R('list'); const tot = scan.lesions.reduce((a, l) => a + l.enh, 0);
+    const box = V.R('list'); const tot = scan.lesions.reduce((a, l) => a + volOf(l), 0);
     if (!scan.lesions.length) { box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)}${scan.field ? ' · ' + scan.field + ' scanner' : ''} · ${esc(scan.note || 'no lesions outlined')}</div>`; return; }
     const fld = scan.field ? (scan.field === '3T' ? ` · <b style="color:#e0a020" title="3T shows enhancement more strongly than 1.5T; our edge rule corrects most of it, small lesions can still differ">3T scanner ▲</b>` : ' · 1.5T scanner ◆') : '';
-    box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines)${fld}</div>` +
-      scan.lesions.map(l => `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · ${l.enh.toLocaleString()} mm³ · longest axial ${l.axial} mm. Click to go there.">
-        <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(l.enh / 1000).toFixed(2)} cm³</span></div>`).join('');
+    box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines${typeof L !== 'undefined' && L.rule === 'old' ? ', old 1.45× rule' : ''})${fld}</div>` +
+      scan.lesions.map(l => `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ · longest axial ${l.axial} mm. Click to go there.">
+        <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(volOf(l) / 1000).toFixed(2)} cm³</span></div>`).join('');
     box.querySelectorAll('.nvles').forEach(e => e.onclick = () => jump(scan.lesions.find(l => l.id === e.dataset.id)));
   }
   function jump(l) {
     if (!V.nv || !l) return;
     V.nv.scene.crosshairPos = V.nv.mm2frac(l.ras); V.nv.drawScene();
     V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', e.dataset.id === l.id));
-    V.R('read').innerHTML = `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${l.enh.toLocaleString()} mm³ enhancing · longest axial ${l.axial} mm`;
+    V.R('read').innerHTML = `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ enhancing · longest axial ${l.axial} mm`;
   }
   function readout(d) {
     const li = V.nv ? LI() : 1, v = d && d.values && d.values[li] ? Math.round(d.values[li].value) : 0;
     const l = V.scan && V.scan.lesions.find(x => x.n === v);
     V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', !!l && e.dataset.id === l.id));
     const mm = d && d.mm ? ' · position ' + d.mm.slice(0, 3).map(x => x.toFixed(0)).join(', ') + ' mm' : '';
-    V.R('read').innerHTML = (l ? `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${l.enh.toLocaleString()} mm³ enhancing${mm}`
+    V.R('read').innerHTML = (l ? `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ enhancing${mm}`
                              : `No lesion outline here${mm}`) + (d && d.mm ? doseAt(d.mm) : '');
   }
   function openViewer(date) {
@@ -436,7 +437,7 @@
 
   /* ================= Lesions over time (Timeline · Lines · Grid) ================= */
   const L = {view: store.get('img.lesView', 'timeline'), hidden: new Set(store.get('img.lesHidden', [])),
-             showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true), field: store.get('img.lesField', 'all'),
+             showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true), field: store.get('img.lesField', 'all'), rule: store.get('img.lesRule', 'new'),
              doseNum: store.get('img.lesDoseNum', true), doseStrip: store.get('img.lesDoseStrip', true)};
   /* ---- radiation dose per lesion (ESTIMATED): unit switch shared by Lesions over time and Radiation dose by lesion ---- */
   const DU = {get: () => store.get('img.doseUnit', 'gy'), set: u => store.set('img.doseUnit', u)};
@@ -509,6 +510,10 @@
   /* scanner strength: 3T shows enhancement more strongly than 1.5T, so our volumes from 3T scans read larger.
      Our measurements: ◆ = 1.5T, ▲ = 3T; the Scanner switch shows one strength only; Lines draws a jump between strengths dotted. */
   const is3T = m => m && m.field === '3T';
+  /* outline rule switch: new = edge 1/3 of the way to each lesion's own peak (default since 2026-11-16, corrects most of the
+     1.5T/3T difference); old = edge at 1.45 x median brain. Both sets are in the data so the difference can be shown. */
+  const OLD = () => L.rule === 'old' && LS.measured_old && LS.measured_old.length;
+  const MEAS = () => OLD() ? LS.measured_old : LS.measured;
   const measShape = m => is3T(m) ? 'triangle' : 'rectRot';
   const fieldOf = raw => raw ? (raw.meas ? raw.meas.field : raw.r ? raw.r.field : '') : '';
   const fieldOK = m => L.field === 'all' || m.field === L.field;
@@ -524,6 +529,13 @@
     fs.append(Object.assign(document.createElement('span'), {className: 'sub', textContent: '· scanner:'}));
     [['all', 'all'], ['1.5T', '1.5T ◆'], ['3T', '3T ▲']].forEach(([v, lab]) => fs.append(lbtn(lab, '', L.field === v, () => { L.field = v; store.set('img.lesField', v); drawLesions(id, body); })));
     bar.append(fs);
+    if (LS.measured_old && LS.measured_old.length) {
+      const rs = document.createElement('span');
+      rs.title = 'How our outlines are drawn. New (default): the edge sits a third of the way from the brain around a lesion to its own brightest point, which follows each scan\'s contrast and corrects most of the 1.5T/3T difference. Old: the edge sits at 1.45 x the brain\'s brightness on every scan, so 3T scans read larger. Switch to show the difference.';
+      rs.append(Object.assign(document.createElement('span'), {className: 'sub', textContent: '· outlines:'}));
+      [['new', 'new ⅓ rule'], ['old', 'old 1.45×']].forEach(([v, lab]) => rs.append(lbtn(lab, '', L.rule === v, () => { L.rule = v; store.set('img.lesRule', v); drawLesions(id, body); if (V.scan) lesionList(V.scan); })));
+      bar.append(rs);
+    }
     if (DOSE) { const sp = document.createElement('span'); sp.className = 'sub'; sp.style.color = '#e0a020'; sp.textContent = '· dose (estimated):'; bar.append(sp);
       chk('numbers', 'img.lesDoseNum', 'doseNum'); chk('strip', 'img.lesDoseStrip', 'doseStrip'); bar.append(unitButtons(() => drawLesions(id, body))); }
     // lesion chips: click to hide/show
@@ -541,13 +553,14 @@
     body.append(bar, chips);
     // mixed-scanner warning: hard to miss on purpose (the user asked to be made to notice it, 2026-11-16)
     if (L.showMeas) {
-      const vis = LS.measured.filter(m => !m.none && !L.hidden.has(m.lesion));
+      const vis = MEAS().filter(m => !m.none && !L.hidden.has(m.lesion));
       const n3 = vis.filter(is3T).length, n15 = vis.filter(m => m.field === '1.5T').length;
       const warn = document.createElement('div');
       if (L.field === 'all' && n3 && n15) {
         warn.style.cssText = 'margin:2px 0 8px;padding:6px 10px;border:2px solid #e0a020;border-radius:6px;background:color-mix(in srgb,#e0a020 14%,transparent);font-size:12px';
         warn.innerHTML = `<b style="color:#e0a020">⚠ Mixed scanners.</b> ${n3} of our measurements are from <b>3T ▲</b> scanners and ${n15} from <b>1.5T ◆</b>. ` +
-          `3T shows tumour enhancement more strongly. Our outlining corrects most of this (edge set relative to each lesion's own brightness), but small lesions can still differ by scanner: a jump between ▲ and ◆ may be partly the scanner. Compare like with like: `;
+          (OLD() ? `3T shows tumour enhancement more strongly, and the <b>old 1.45× rule</b> does not correct for it: ▲ volumes read larger, so a jump between ▲ and ◆ may be the scanner, not the lesion. Compare like with like: `
+        : `3T shows tumour enhancement more strongly. Our outlining corrects most of this (edge set relative to each lesion's own brightness), but small lesions can still differ by scanner: a jump between ▲ and ◆ may be partly the scanner. Compare like with like: `);
         [['1.5T', 'Show 1.5T only'], ['3T', 'Show 3T only']].forEach(([v, lab]) => warn.append(lbtn(lab, '', false, () => { L.field = v; store.set('img.lesField', v); drawLesions(id, body); }), ' '));
       } else if (L.field !== 'all') {
         const hid = vis.filter(m => m.field !== L.field).length;
@@ -576,7 +589,7 @@
     const cv = document.createElement('canvas'); cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Brain lesions over time');
     box.appendChild(cv); body.appendChild(box); box.onmouseleave = () => setHover(null);
     const S = shownL(), row = Object.fromEntries(S.map((l, i) => [l.id, i]));
-    const reps = LS.reports.filter(r => row[r.lesion] != null), meas = L.showMeas ? LS.measured.filter(m => row[m.lesion] != null && fieldOK(m)) : [];
+    const reps = LS.reports.filter(r => row[r.lesion] != null), meas = L.showMeas ? MEAS().filter(m => row[m.lesion] != null && fieldOK(m)) : [];
     const common = {animation: false, maintainAspectRatio: false, clip: false,
       onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
       plugins: {legend: {display: false}, tooltip: {displayColors: false, callbacks: {title: it => fd(it[0].raw.date), label: it => lesTooltip(it.raw)}}}};
@@ -626,9 +639,9 @@
   }
 
   function lesGrid(body) {
-    const S = shownL(), dates = [...new Set(LS.scans.concat(LS.measured.map(m => m.date)))].sort();
+    const S = shownL(), dates = [...new Set(LS.scans.concat(MEAS().map(m => m.date)))].sort();
     const cell = (lid, d) => LS.reports.find(r => r.lesion === lid && r.date === d);
-    const meas = (lid, d) => L.showMeas && LS.measured.find(m => m.lesion === lid && m.date === d && fieldOK(m));
+    const meas = (lid, d) => L.showMeas && MEAS().find(m => m.lesion === lid && m.date === d && fieldOK(m));
     const inWin = d => { const t = ms(d); return t >= W.a && t <= W.b; };
     const txDates = d => LS.treatments.filter(t => t.start <= d).map(t => t.start);
     let h = '<div style="overflow:auto;max-height:' + (hOf(IDL, PANELS[IDL].h0) + 40) + 'px"><table class="lesgrid" style="border-collapse:collapse;font-size:11px">';

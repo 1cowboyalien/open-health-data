@@ -266,7 +266,8 @@ function momentRings(test,pv,tm){return{id:'mrings',afterDatasetsDraw(c){const e
 let momCur=null;
 /* a moment with a concern rating lives on the Concern graph (milestones_view.js), not on this track or its ◀ ▶ stepping */
 function isRated(m){return typeof m.concern==='number'&&isFinite(m.concern)}
-function momList(){const all=(E.moments||[]).filter(m=>m.date&&!isRated(m)),on=all.filter(momentOn);return(on.length?on:all).sort((a,b)=>momentT(a)-momentT(b))}
+/* ◀ ▶ stop only at the rows that are switched on (Keyframes / Concern buttons); rated ones also only inside the Concern range */
+function momList(){const all=(E.moments||[]).filter(m=>m.date&&rowOn(m)&&(!isRated(m)||typeof msIn!=='function'||msIn(m))),on=all.filter(momentOn);return(on.length?on:all).sort((a,b)=>momentT(a)-momentT(b))}
 function goMoment(m){if(!m)return;momCur=m.id;const t=momentT(m);let len=W.b-W.a;if(len>60*DAYMS)len=14*DAYMS;
  const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len);setTimeout(()=>setHover(pos(t)),40)}
 function momNav(){const el=$('mNav');if(!el)return;el.innerHTML='';const L=momList(),n=L.length;if(!n)return;const mid=(W.a+W.b)/2;
@@ -323,10 +324,10 @@ const rulerPlugin={id:'ruler',afterDraw(c){const{ctx,chartArea:A,scales:{x}}=c,U
 function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls();const TK=ticks();
  if(charts.has('mtrack')){charts.get('mtrack').destroy();charts.delete('mtrack')}   // also redrawn alone (Concern range)
  /* row 1: plain keyframes; row 2 (under it): rated keyframes, the same marks as the Concern graph (its colours, and its 1–10 range) */
- const R=mRows(),two=R.kf&&R.cc,inW=m=>m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b;
- const shown=(E.moments||[]).filter(m=>momentOn(m)&&inW(m)&&(isRated(m)?R.cc&&(typeof msIn!=='function'||msIn(m)):R.kf));
+ const R=mRows(),two=(E.moments||[]).some(isRated),inW=m=>m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b;
+ const shown=(E.moments||[]).filter(m=>momentOn(m)&&inW(m)&&(!isRated(m)||typeof msIn!=='function'||msIn(m)));   // a row that is off stays, greyed out
  cv.parentNode.style.height=two?'100px':'64px';
- const rowV=m=>two?(isRated(m)?-.5:.5):0,colOf=m=>isRated(m)?msCol(m.concern):MCOL[m.color]||MCOL.red,shp=m=>isRated(m)?'circle':mShape(m),
+ const rowV=m=>two?(isRated(m)?-.5:.5):0,colOf=m=>!rowOn(m)?css('--muted'):isRated(m)?msCol(m.concern):MCOL[m.color]||MCOL.red,shp=m=>isRated(m)?'circle':mShape(m),
   rad=m=>isRated(m)?3+m.concern/2.5:mShape(m)==='star'?10:8;
  const band=(y,m)=>{const v=rowV(m);return two?[y.getPixelForValue(v+.5),y.getPixelForValue(v-.5)]:[y.getPixelForValue(1),y.getPixelForValue(-1)]};
  const titles={id:'mtitles',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x,y}}=c;ctx.save();
@@ -334,7 +335,7 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
    if(two){ctx.fillStyle=css('--muted');ctx.textAlign='right';ctx.fillText('keyframes',A.left-6,y.getPixelForValue(.5)+3);ctx.fillText('concern',A.left-6,y.getPixelForValue(-.5)+3);ctx.textAlign='left';
     ctx.strokeStyle=css('--line');ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(A.left,Math.round(y.getPixelForValue(0))+.5);ctx.lineTo(A.right,Math.round(y.getPixelForValue(0))+.5);ctx.stroke()}
    shown.forEach(m=>{const t=momentT(m),te=m.end?dms(m.end):null,colr=colOf(m),px=x.getPixelForValue(pos(Math.max(t,W.a))),[T,B]=band(y,m),cy=y.getPixelForValue(rowV(m)),rk=isRated(m)?'c':'k';
-    if(last[rk]==null)last[rk]=A.left;
+    if(last[rk]==null)last[rk]=A.left;if(!rowOn(m))return;   // greyed row: just the faint marks (drawn below)
     if(te&&te>t){const p2=x.getPixelForValue(pos(Math.min(te,W.b)));ctx.globalAlpha=.16;ctx.fillStyle=colr;ctx.fillRect(px,T,Math.max(2,p2-px),B-T);
      ctx.globalAlpha=.7;ctx.fillRect(px,B-4,Math.max(2,p2-px),4);ctx.globalAlpha=1}
     if(t>=W.a){ctx.strokeStyle=colr;ctx.globalAlpha=.6;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,T);ctx.lineTo(px,B);ctx.stroke();ctx.globalAlpha=1}
@@ -345,9 +346,9 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
    ctx.restore()},
   afterDatasetsDraw(c){const{ctx,chartArea:A,scales:{x,y}}=c;ctx.save();
    shown.forEach(m=>{const px=x.getPixelForValue(pos(Math.max(momentT(m),W.a))),sh=shp(m),cy=y.getPixelForValue(rowV(m));
-    if(m.id===momCur){ctx.beginPath();ctx.arc(px,cy,13,0,7);ctx.lineWidth=2;ctx.strokeStyle=colOf(m);ctx.stroke()}
-    drawShape(ctx,sh,px,cy,rad(m));ctx.fillStyle=colOf(m);ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke()});ctx.font='10px system-ui';
-   if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText(!R.kf&&!R.cc?'both rows are off: switch on Keyframes or Concern above':(E.moments||[]).length?'no shown keyframes in this window':'click here or “+ Keyframe” to add one; or click a reading on a chart and choose ★ Make keyframe',A.left+4,A.top+12)}
+    if(m.id===momCur&&rowOn(m)){ctx.beginPath();ctx.arc(px,cy,13,0,7);ctx.lineWidth=2;ctx.strokeStyle=colOf(m);ctx.stroke()}
+    ctx.globalAlpha=rowOn(m)?1:.35;drawShape(ctx,sh,px,cy,rad(m));ctx.fillStyle=colOf(m);ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke();ctx.globalAlpha=1});ctx.font='10px system-ui';
+   if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown keyframes in this window':'click here or “+ Keyframe” to add one; or click a reading on a chart and choose ★ Make keyframe',A.left+4,A.top+12)}
    ctx.restore()}};
  charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:rowV(m),m})),
    pointStyle:shown.map(shp),pointRadius:shown.map(rad),pointHoverRadius:shown.map(m=>rad(m)+2),

@@ -453,6 +453,9 @@
       const cv = document.createElement('canvas'); cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Summary row: every point shown in the Procedures timeline');
       const tip = document.createElement('div'); tip.style.cssText = 'position:absolute;pointer-events:none;display:none;z-index:6;max-width:260px;background:rgba(0,0,0,.85);color:#fff;font-size:11px;line-height:1.35;padding:4px 6px;border-radius:5px';
       box.append(cv, tip); track.before(box);
+      // follow the chart's width: without this the row kept its old pixel width after the window or Library changed size,
+      // pushing the page sideways (a horizontal scrollbar) or leaving the row short
+      let rz = 0; new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { if (box.isConnected && mcv.isConnected) drawLayer(); }); }).observe(mcv);
       const near = ev => { const r = cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
         return layerHits.filter(h => px >= h.x0 - 3 && px <= h.x1 + 3 && py >= h.y0 && py <= h.y1).sort((a, b) => b.pri - a.pri || Math.abs(px - a.x0) - Math.abs(px - b.x0))[0]; };
       cv.addEventListener('mousemove', ev => { const h = near(ev); cv.style.cursor = h ? 'pointer' : 'default';

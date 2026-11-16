@@ -621,7 +621,12 @@ let panFrame=0;
 function shiftWin(a,len){a=Math.max(X0,Math.min(a,X1-len));W={a,b:a+len};store.set('window',W);syncWin();cancelAnimationFrame(panFrame);panFrame=requestAnimationFrame(renderWin)}
 wp.oninput=()=>shiftWin(X0+wp.value*DAY,W.b-W.a);
 $('wPrev').onclick=()=>shiftWin(W.a-(W.b-W.a)/4,W.b-W.a);$('wNext').onclick=()=>shiftWin(W.a+(W.b-W.a)/4,W.b-W.a);
-function zoomWin(f){const c=(W.a+W.b)/2,len=Math.min(X1-X0,Math.max(MINW,(W.b-W.a)*f));shiftWin(c-len/2,len)}
+/* zoom around the date in the middle of the charts. In wide windows the years before the break are squeezed, so
+   that date is not the window's time midpoint (zooming around the midpoint jumped to a nearly empty stretch) */
+function zoomWin(f){const c=compressing()?unpos(50):(W.a+W.b)/2,len=Math.min(X1-X0,Math.max(MINW,(W.b-W.a)*f));let a=c-len/2;
+ if(BRK!=null){const keep=W;let lo=X0,hi=Math.max(X0,X1-len);   // find the start that puts c in the middle of the (maybe squeezed) new window
+  for(let i=0;i<50;i++){const m=(lo+hi)/2;W={a:m,b:m+len};if(unpos(50)<c)lo=m;else hi=m}a=(lo+hi)/2;W=keep}
+ shiftWin(a,len)}
 $('wIn').onclick=()=>zoomWin(.5);$('wOut').onclick=()=>zoomWin(2);
 /* drag any chart left/right to slide the window (the navigator follows). It only counts as a drag
    after 4 px, so a plain click still marks doses / opens editors. Listeners live on the document

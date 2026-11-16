@@ -62,7 +62,7 @@ for (code, unit), s in series.items():
 tests.sort(key=lambda t: (-t["n"], t["name"]))
 
 # Vitals (python3 flatten_vitals.py -> local/vitals_all.tsv): same chart shape as a lab test, shown
-# in their own "Vitals" section of the sidebar (kind "vital"); no reference ranges.
+# in their own "Vitals" section of the Library (kind "vital"); no reference ranges.
 vit_file = os.path.join(os.path.dirname(os.path.abspath(src)), "vitals_all.tsv")
 vit_rows = list(csv.DictReader(open(vit_file), delimiter="\t")) if os.path.exists(vit_file) else []
 VITAL_ORDER = ["Blood pressure", "Pulse", "SpO2", "Respirations", "Temperature", "Weight", "Height", "BMI", "BSA"]
@@ -176,7 +176,7 @@ data = json.dumps({"tests": tests, "sources": sources, "span": span, "tx": tx, "
 
 html = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lab results</title>
+<title>Library</title>
 <style>
 :root{--bg:#fbfbfa;--card:#fff;--ink:#141413;--ink2:#5e5d59;--muted:#8a8984;--line:#e6e5e0;--accent:#2a78d6;--band:rgba(27,175,122,.12);--hi:#d03b3b;--lo:#2a78d6}
 @media (prefers-color-scheme:dark){:root{--bg:#1a1a19;--card:#232322;--ink:#f0efec;--ink2:#c3c2b7;--muted:#8a8984;--line:#383835;--accent:#3987e5;--band:rgba(27,175,122,.18)}}
@@ -284,8 +284,8 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 @media (max-width:760px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:40vh;border-right:0;border-bottom:1px solid var(--line)}main{padding:14px}}
 </style></head><body>
 <div class="wrap">
-<aside><h1>Labs &amp; medications</h1><div class="sub" id="meta"></div>
-<input type="search" id="q" placeholder="Filter labs and medications" aria-label="Filter labs and medications">
+<aside><h1>Library</h1><div class="sub" id="meta"></div>
+<input type="search" id="q" placeholder="Filter the Library" aria-label="Filter the Library">
 <div class="sub">Labs: click a name to view it, tick boxes to compare several. Medications: tick the ones to show in the Treatment panel.</div>
 <div class="sidectl"><button id="collapseAll" title="Close every section and group">Collapse all</button><button id="expandAll" title="Open every section and group">Expand all</button></div>
 <div id="list"></div></aside>
@@ -427,16 +427,17 @@ __TXJS__
 
 __MRDJS__
 
-/* sidebar: collapsible sections (open state remembered; all open while filtering) */
-let openState=store.get('open',{});let sectionIds=[];
-function setAllOpen(on){sectionIds.forEach(id=>openState[id]=on);store.set('open',openState);list()}
+/* Library: collapsible sections. Every section starts closed when the page opens (a clean start;
+   Presets bring back bigger views). What you open stays open until you reload; all open while filtering. */
+let openState={};let sectionIds=[];store.set('open',null);   // (labs.open used to remember sections across visits)
+function setAllOpen(on){sectionIds.forEach(id=>openState[id]=on);list()}
 /* small button inside a <summary>: preventDefault keeps the click from opening/closing the section */
 function miniBtn(label,title,fn){const b=document.createElement('button');b.type='button';b.className='mini';b.textContent=label;b.title=title;
  b.setAttribute('aria-label',title);b.onclick=e=>{e.preventDefault();e.stopPropagation();fn()};return b}
-function section(parent,id,title,count,defOpen,cls,q){sectionIds.push(id);const d=document.createElement('details');d.className=cls;d.open=q?true:(openState[id]??defOpen);
+function section(parent,id,title,count,defOpen,cls,q){sectionIds.push(id);const d=document.createElement('details');d.className=cls;d.open=q?true:(openState[id]??false);   // defOpen is no longer used: everything starts closed
  const s=document.createElement('summary');const t=document.createElement('span');t.className='st';t.textContent=title;t.title=title;const n=document.createElement('span');n.className='n';n.textContent=count;
  s.append(t,n);d.appendChild(s);
- s.onclick=()=>setTimeout(()=>{if($('q').value)return;openState[id]=d.open;store.set('open',openState)},0);  // only your own clicks are remembered
+ s.onclick=()=>setTimeout(()=>{if($('q').value)return;openState[id]=d.open},0);  // only your own clicks are kept (until reload)
  parent.appendChild(d);return d}
 /* "ALT · Alanine aminotransferase": abbreviation and full name from reference/lab_names.tsv */
 function labLabel(t){if(t.abbr&&t.full)return t.abbr.toLowerCase()===t.full.toLowerCase()?t.full:t.abbr+' · '+t.full;return t.full?t.name+' · '+t.full:t.name}

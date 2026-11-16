@@ -73,7 +73,8 @@
 
   /* ================= Slice viewer panel (NiiVue) ================= */
   const V = {el: null, nv: null, NV: null, scan: null, loading: null, cut: true, radio: store.get('img.radio', true), noseLeft: store.get('img.noseLeft', true),
-             dose: Object.assign({key: '', op: 35, lines: true, blend: 25}, store.get('img.dose', {}))};
+             dose: Object.assign({key: '', op: 35, lines: true, blend: 25}, store.get('img.dose', {})),
+             size: store.get('img.size', 0), full: false};   // size: viewer height in px (0 = the panel's height); full: filling the window
   window.__imgViewer = V;   // for testing in the browser console
   if (typeof saveEdits === 'function') { const _save = saveEdits;
     saveEdits = function () { const mine = (E.moments || []).filter(m => m.imgView); E.moments = (E.moments || []).filter(m => !m.imgView);
@@ -100,6 +101,8 @@
       .nvwrap .nvdisp{margin:0 0 6px;font-size:12px}
       .nvwrap .nvdisp summary{cursor:pointer;color:var(--muted)}
       .nvwrap .nvgrid{display:flex;flex-wrap:wrap;gap:6px 14px;padding:6px 2px}
+      .nvwrap.nvfull{position:fixed;inset:0;z-index:9999;background:var(--bg);padding:10px 12px;overflow:auto}
+      .nvwrap button.on{outline:1px solid var(--accent)}
     </style>
     <div class="nvmain"><div class="nvbar">
         <label>Scan <select data-r="scan"></select></label>
@@ -107,6 +110,9 @@
         <button type="button" data-r="cut" class="on" title="Cut the 3D view open so the lesions inside show">3D: cut open</button>
         <button type="button" data-r="radio" title="Radiologist view: the patient's right is on the screen's left (as the hospitals show it). Click for neurologist view (patient's left on the left).">L/R: radiologist</button>
         <button type="button" data-r="nose" title="Side (sagittal) view: which way the face points">Side view: face left</button>
+        <span title="Make the viewer taller or shorter (handy on big, high-resolution screens). Remembered in this browser.">Size <input data-r="size" type="range" min="300" max="2400" step="20" style="width:110px"> <span class="sub" data-r="sizel"></span></span>
+        <button type="button" data-r="fit" title="Make the viewer as tall as the window">Fit height</button>
+        <button type="button" data-r="full" title="Fill the whole window with the viewer (Esc to close)">⛶ Full window</button>
         <span class="sub" data-r="status"></span></div>
       <div class="nvbar">
         <span class="sub">3D zoom</span><button type="button" data-z3="-1" title="Zoom the 3D view out">−</button><button type="button" data-z3="1" title="Zoom the 3D view in">+</button>
@@ -183,6 +189,19 @@
     R('cutflip').onclick = () => { V.disp.cutAz = (V.disp.cutAz + 180) % 360; w.querySelector('[data-o="cutAz"]').value = V.disp.cutAz;
       if (!V.cut) { V.cut = true; R('cut').classList.add('on'); } store.set('img.disp', V.disp); applyCut();
       if (V.nv) { const sc = V.nv.scene; V.nv.setRenderAzimuthElevation(((sc.renderAzimuth || 0) + 180) % 360, sc.renderElevation || 15); } };   // turn round to face the new cut
+    // viewer size (like Pathology's Size slider): a fixed height in px, the window's height, or the whole window
+    const toolbarH = () => R('box').getBoundingClientRect().top - w.getBoundingClientRect().top;
+    R('size').oninput = () => { V.size = +R('size').value; store.set('img.size', V.size); sizeBox(IDV); };
+    R('size').onkeydown = e => e.stopPropagation();
+    R('sizel').ondblclick = () => { V.size = 0; store.set('img.size', 0); sizeBox(IDV); };
+    R('sizel').title = 'Double-click to go back to the panel height';
+    R('fit').onclick = () => { V.size = Math.max(300, Math.round((innerHeight - toolbarH() - 60) / 20) * 20); store.set('img.size', V.size); sizeBox(IDV);
+      R('box').scrollIntoView({block: 'nearest'}); };
+    const setFull = on => { V.full = on; w.classList.toggle('nvfull', on); R('full').classList.toggle('on', on);
+      R('full').textContent = on ? '✕ Close full window' : '⛶ Full window'; document.body.style.overflow = on ? 'hidden' : ''; sizeBox(IDV); };
+    R('full').onclick = () => setFull(!V.full);
+    addEventListener('keydown', e => { if (e.key === 'Escape' && V.full) setFull(false); });
+    addEventListener('resize', () => { if (V.full) sizeBox(IDV); });
     R('radio').onclick = () => { V.radio = !V.radio; store.set('img.radio', V.radio); applyOrient(); };
     R('nose').onclick = () => { V.noseLeft = !V.noseLeft; store.set('img.noseLeft', V.noseLeft); applyOrient(); };
 
@@ -369,7 +388,10 @@
   }
   function doseAt(mm) { const w = doseVol('wash'); if (!w || !mm) return '';
     const m = DOSE.maps.find(x => x.key === V.dose.key); const v = w.getValue(...w.mm2vox(mm)); return ` · dose here ≈ ${(v / 10).toFixed(1)} ${m.unit} (estimated)`; }
-  function sizeBox(id) { if (!V.el) return; const h = hOf(id, PANELS[id].h0); V.R('box').style.height = h + 'px'; V.R('list').style.maxHeight = (h + 30) + 'px';
+  function sizeBox(id) { if (!V.el) return; const box = V.R('box');
+    const h = V.full ? Math.max(300, innerHeight - (box.getBoundingClientRect().top - V.el.getBoundingClientRect().top) - 50) : (V.size || hOf(id, PANELS[id].h0));
+    box.style.height = h + 'px'; V.R('list').style.maxHeight = (h + 30) + 'px';
+    V.R('size').value = h; V.R('sizel').textContent = V.full ? 'full window' : V.size ? h + ' px' : 'panel height';
     if (V.nv) requestAnimationFrame(() => V.nv.resizeListener()); }
   async function lib() { if (!V.NV) { V.R('status').textContent = 'loading NiiVue…'; V.NV = await import(NIIVUE); } return V.NV; }
   async function load(date) {
@@ -747,7 +769,7 @@
     if (DOSE) row(IDD, 'Radiation dose by lesion', 'estimated', 'Estimated radiation dose each lesion received, split by course (stacked bars)');
   };
 
-  syncMoments(); (window.momentSyncers = window.momentSyncers || []).push(syncMoments);   // again after the shared edits load
+  syncMoments();
   const saved = store.get('selected', []);
   if (saved.some(mine)) { sel = saved.filter(id => BYID[id] || MRD.isId(id)); }
   updateBar(); list(); render();

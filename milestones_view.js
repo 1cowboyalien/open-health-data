@@ -8,7 +8,7 @@
    "List ↗" opens the private milestones list (record excerpts and original PDF pages) at that moment.
    Everything here is a function declaration or var: render() runs before this file's code (inlined at the end).
    Moment fields used here: concern (number), why (text), good (true = good news), rated_by ('family' | 'draft'). */
-var MS_PAGE='http://127.0.0.1:8771/open-health-data-presets/local/milestones.html';
+var MS_PAGE='http://127.0.0.1:8771/milestones.html';   // local/milestones/serve_milestones.py (private, this Mac only)
 function msCol(c){const s=[[1,[27,175,122]],[5,[226,160,40]],[7.5,[235,104,52]],[10,[200,40,40]]];
  for(let i=1;i<s.length;i++)if(c<=s[i][0]){const[a,ca]=s[i-1],[b,cb]=s[i],f=(c-a)/(b-a);return'rgb('+ca.map((v,j)=>Math.round(v+(cb[j]-v)*f)).join(',')+')'}return'rgb(200,40,40)'}
 function msRated(){return(E.moments||[]).filter(m=>m.date&&typeof m.concern==='number'&&isFinite(m.concern))}

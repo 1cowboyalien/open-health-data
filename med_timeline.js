@@ -487,7 +487,7 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
   field('Concern 1–10 (optional)',F.concern),field('Good news',F.good));P.append(g,dl,field('Note',F.note),field('Why this rating',F.why));
  /* record sources (from the milestones import): the text line and the original PDF pages, on the private milestones server */
  if((m.sources||[]).length){const S=document.createElement('div');S.className='sub';S.style.marginTop='6px';S.textContent='Record sources: ';
-  const base='http://127.0.0.1:8771/',pv=base+'open-health-data-presets/local/pdfview.html';
+  const base='http://127.0.0.1:8771/',pv=base+'pdfview.html';
   m.sources.forEach((x,i)=>{const a=document.createElement('a');a.href=base+x.path.split('/').map(encodeURIComponent).join('/');a.target='_blank';a.textContent=x.label;a.title=x.path+(x.line?':'+x.line:'');
    S.append(i?' · ':'',a);(x.pdfs||[]).forEach(p=>{const b=document.createElement('a');b.href=pv+'?key='+encodeURIComponent(p.key)+'&page='+p.page+'&site='+encodeURIComponent(p.site||'');b.target='_blank';b.textContent=' 📄 p. '+p.page;b.title='Original PDF from '+(p.site||p.key)+', page '+p.page;S.append(b)})});
   P.appendChild(S)}

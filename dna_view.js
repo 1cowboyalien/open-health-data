@@ -6,6 +6,8 @@
      All gained regions = every gained stretch with the genes in it
      Mitochondria view  = (when DNA_DATA.mito exists) variant table for the mitochondrial genome and a drawing of the
                           reads around one position (one row per read, letters only where a read differs)
+     Findings views     = one per entry of DNA_DATA.views: an intro, any number of plain tables (a cell may be a
+                          {chip,strong} tag) and notes; for further topics that need no drawing of their own
      Microbes view      = (when DNA_DATA.microbes exists) organisms named among reads that did not match the reference,
                           and a table of where every unmatched read went
    Flags (DNA_DATA.flags) show as boxes at the top of the panel and as rows in the Library.
@@ -16,6 +18,7 @@
      flags:[{date,by,title,text,source}],
      mito:{title,intro,sample_names:[a,b],variants:[{pos,change,a_alt,a_depth,a_pct,b_alt,b_depth,call,note,flag}],notes:[text],source,
            pileup:{pos,start,ref,caption,samples:[{label,summary,rows:[{s,e,d:{pos:letter}}]}]}|null}|null,
+     views:[{key,title,count,intro,tables:[{title,columns:[text],rows:[[text|{chip,strong}]]}],notes:[text],source}],
      microbes:{title,intro,sample_names:[a,b],organisms:[{name,tumor,normal,kind,note}],notes:[text],categories:[{label,tumor,normal,what}],source}|null}, made outside this repo (it holds health data).
    Drug status keys: approved-here (approved for this patient's kind of cancer), approved-other, investigational. */
 (() => {
@@ -79,7 +82,7 @@
   function draw(id, body) {
     BODY = body;
     let h = '<div class="dna-bar">' +
-      [['genes', 'Genes and drugs'], ['regions', 'All gained regions']].concat(D.mito ? [['mito', D.mito.title]] : []).concat(D.microbes ? [['microbes', D.microbes.title]] : []).map(([k, t]) => '<button class="dna-b' + (V.view === k ? ' on' : '') + '" data-view="' + k + '">' + t + '</button>').join('') +
+      [['genes', 'Genes and drugs'], ['regions', 'All gained regions']].concat(D.mito ? [['mito', D.mito.title]] : []).concat(D.microbes ? [['microbes', D.microbes.title]] : []).concat((D.views || []).map(v => ['x:' + v.key, v.title])).map(([k, t]) => '<button class="dna-b' + (V.view === k ? ' on' : '') + '" data-view="' + k + '">' + t + '</button>').join('') +
       (V.view === 'genes' ? '<span style="color:var(--muted)">|</span>' +
         [['group', 'Grouped'], ['ratio', 'By copy number'], ['chrom', 'By chromosome']].map(([k, t]) => '<button class="dna-b' + (V.sort === k ? ' on' : '') + '" data-sort="' + k + '">' + t + '</button>').join('') +
         '<label style="font-size:11px;margin-left:6px"><input type="checkbox" data-od ' + (V.onlyDrugs ? 'checked' : '') + '> only genes with a drug</label>' : '') +
@@ -97,6 +100,14 @@
       if (V.sort === 'group') D.groups.forEach(G => { const x = gs.filter(g => g.group === G.key); if (x.length) rows += '<tr class="g"><td colspan="3">' + esc(G.title) + '</td></tr>' + x.map(row).join(''); });
       else { const CH = c => c === 'X' ? 23 : +c; gs = gs.slice().sort(V.sort === 'ratio' ? (a, b) => b.ratio - a.ratio : (a, b) => CH(a.chrom) - CH(b.chrom) || a.start - b.start); rows = gs.map(row).join(''); }
       h += '<div class="dna-wrap"><table class="dna-t"><thead><tr><th style="width:150px">Gene</th><th style="width:38%">Copies vs genome average (1× = normal)' + ticks + '</th><th>Drugs that target it</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    } else if (V.view.startsWith('x:') && (D.views || []).some(v => 'x:' + v.key === V.view)) {
+      const X = D.views.find(v => 'x:' + v.key === V.view);
+      const cellx = c => c && typeof c === 'object' ? (c.strong ? '<span class="dna-mut">' + esc(c.chip) + '</span>' : '<span class="dna-chip other">' + esc(c.chip) + '</span>') : esc(c);
+      h += '<div class="dna-card"><div>' + esc(X.intro) + '</div></div>';
+      (X.tables || []).forEach(T => { h += '<div style="font-weight:600;font-size:12.5px;margin:10px 0 4px">' + esc(T.title) + '</div><div class="dna-wrap"><table class="dna-t"><thead><tr>' + T.columns.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>' +
+        T.rows.map(r => '<tr>' + r.map((c, i) => '<td' + (i === 0 ? ' style="font-weight:600;white-space:nowrap"' : i === r.length - 1 ? ' class="dna-sub" style="color:var(--ink2);font-size:12px"' : ' style="white-space:nowrap"') + '>' + cellx(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>'; });
+      if ((X.notes || []).length) h += '<div class="dna-card"><b>What it may mean</b><ul>' + X.notes.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul></div>';
+      h += '<div class="dna-sub" style="margin-top:6px">Source: ' + esc(X.source || '') + '</div>';
     } else if (V.view === 'mito' && D.mito) {
       const M = D.mito, sn = M.sample_names || ['Sample', 'Comparison'];
       h += '<div class="dna-card"><div>' + esc(M.intro) + '</div></div>' +
@@ -156,7 +167,7 @@
   /* Library: DNA -> the panel + one group per copy-number group; clicking a gene opens its card */
   MRD.section = (el, q) => {
     o.section(el, q);
-    const hay = ('dna gene genes copy number amplification exome tumor drugs therapy mitochondria flagged microbes bacteria virus ' + (D.microbes ? D.microbes.organisms.map(o => o.name).join(' ') + ' ' : '') + (D.flags || []).map(f => f.title).join(' ') + ' ' + D.genes.map(g => g.gene + ' ' + g.drugs.map(d => d.drug).join(' ')).join(' ')).toLowerCase();
+    const hay = ('dna gene genes copy number amplification exome tumor drugs therapy mitochondria flagged microbes bacteria virus ' + (D.views || []).map(v => v.title).join(' ') + ' ' + (D.microbes ? D.microbes.organisms.map(o => o.name).join(' ') + ' ' : '') + (D.flags || []).map(f => f.title).join(' ') + ' ' + D.genes.map(g => g.gene + ' ' + g.drugs.map(d => d.drug).join(' ')).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     const SEC = section(el, 'dna', 'DNA', D.sample.label, true, 'sec', q), s0 = SEC.firstChild;
     s0.insertBefore(groupOnlyBtn('DNA panel', 'grp:dna', [ID], soloLab && soloLab.key === 'grp:dna', false, () => onlyLab('grp:dna', [ID], 'DNA')), s0.lastChild);
@@ -172,6 +183,8 @@
       d.onclick = () => { V.view = 'mito'; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } }; SEC.append(d); }
     if (D.microbes) { const d = document.createElement('div'); d.className = 't'; d.title = D.microbes.intro; d.innerHTML = '<span class="nm">' + esc(D.microbes.title) + '</span><span class="n">' + D.microbes.organisms.length + ' named</span>';
       d.onclick = () => { V.view = 'microbes'; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } }; SEC.append(d); }
+    (D.views || []).forEach(X => { const d = document.createElement('div'); d.className = 't'; d.title = X.intro; d.innerHTML = '<span class="nm">' + esc(X.title) + '</span><span class="n">' + esc(X.count || '') + '</span>';
+      d.onclick = () => { V.view = 'x:' + X.key; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } }; SEC.append(d); });
     SEC.append(row('Gene copies and drugs', D.genes.length + ' genes', 'Gene copy number in the tumor next to the drugs that target each gene', sel.includes(ID), v => setLabSel([ID], v)));
     D.groups.forEach(G => { const gs = D.genes.filter(g => g.group === G.key);
       const S = section(SEC, 'dna:' + G.key, G.title.replace(/ \(.*/, ''), gs.length + ' genes', false, 'grp', q);

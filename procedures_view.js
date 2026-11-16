@@ -299,6 +299,11 @@
          <details style="margin-top:4px"><summary class="sub" style="cursor:pointer">Sources (${e.sources.reduce((n, s) => n + s.n, 0)} mentions in ${e.sources.length} hospital${e.sources.length === 1 ? '' : 's'})</summary>
            ${e.sources.map(s => `<div class="sub">${esc(SNAME[s.site] || s.site)}: ${esc(s.kinds)} · e.g. <code style="font-size:10px">${esc(s.example)}</code></div>`).join('')}</details>`;
     d.append(h);
+    // pathology slide photos of this procedure (pathology_view.js, when loaded, sets window.PATH)
+    const slides = !isPlan && window.PATH ? window.PATH.forProcedure(e.id) : [];
+    if (slides.length) { const r = document.createElement('div'); r.style.cssText = 'margin-top:6px;display:flex;gap:6px;flex-wrap:wrap';
+      slides.forEach(c => r.append(btn2('🔬 Slide photos · ' + c.n, false, 'Open the pathology slide photos of this procedure (' + c.title + ')', () => window.PATH.open(c.key))));
+      d.append(r); }
     return d;
   }
 
@@ -412,6 +417,7 @@
   const _openMoment = openMoment;
   openMoment = function (m) { if (m && m.procGen) { show(m.procGen); return; } return _openMoment.apply(this, arguments); };
   function setTicked(ids, on) { ids.forEach(i => on ? ticked.add(i) : ticked.delete(i)); store.set('proc.moments', [...ticked]); syncMoments(); list(); render(); }
+  window.PROC_SHOW = id => show(id);   // used by pathology_view.js ("Show in Procedures")
   function show(id) {   // select a procedure and make sure the timeline panel is open
     picked = id;
     if (!sel.includes(IDT)) setLabSel([IDT], true);
@@ -574,7 +580,7 @@
     });
   };
 
-  syncMoments();
+  syncMoments(); (window.momentSyncers = window.momentSyncers || []).push(syncMoments);   // again after the shared edits load
   const saved = store.get('selected', []);
   if (saved.some(mine)) { sel = saved.filter(id => BYID[id] || MRD.isId(id)); }
   updateBar(); list(); render();

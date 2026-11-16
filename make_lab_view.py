@@ -8,6 +8,7 @@ Usage:
 If local/meds_all.tsv exists (python3 flatten_meds.py), a Treatment panel is drawn above the
 lab charts on the same time axis (rows: med_timeline.py; drawing and editing: med_timeline.js).
 Changes made in the viewer can be exported to local/med_edits.json; it is built back in here.
+If local/procedures/procedures.json exists, a Procedures section is added (procedures_view.js).
 
 The same test from different hospitals is combined by LOINC code (by name when there's
 no LOINC) and unit; each point keeps its source hospital.
@@ -235,7 +236,16 @@ body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 .t.ract .nm{font-weight:600}.t.layrow{padding:3px 8px 3px 26px;font-size:13px}.t.layon{background:var(--accent);color:#fff}
 body.viewonly #mAdd,body.viewonly #txAdd,body.viewonly #txImport,body.viewonly .ptpop button:not(.pclose),body.viewonly #mLinks button,body.viewonly .madd{display:none!important}.pmove button{padding:0 7px;font-size:12px}
 .navpin .mcard{margin-top:6px;padding:4px 16px 2px}.mhead{display:flex;align-items:center;gap:8px;font-size:12px}.mhead b{font-size:13px}.mhead .mtbtn{margin-left:auto;display:flex;gap:4px}.mhead .mtbtn button{font-size:11px;padding:1px 7px}
-.mtrack{position:relative;height:64px}.mshape{flex:none;vertical-align:middle}.mhead{flex-wrap:wrap;row-gap:3px}.mhead>.sub{white-space:nowrap}
+.mtrack{position:relative;height:64px}
+#msRow .mhead{margin-top:4px}.mstrack{position:relative;height:74px}
+.msrng{position:relative;display:inline-block;width:150px;height:18px;vertical-align:middle}
+.msrng .trk,.msrng .fill{position:absolute;top:7px;height:4px;border-radius:2px}.msrng .trk{left:0;right:0;background:var(--line)}
+.msrng .fill{background:linear-gradient(90deg,#1baf7a,#e2a028,#c82828)}
+.msrng input{position:absolute;left:0;top:0;width:100%;height:18px;margin:0;background:none;pointer-events:none;-webkit-appearance:none;appearance:none}
+.msrng input::-webkit-slider-runnable-track{background:none;height:18px}
+.msrng input::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:14px;height:14px;margin-top:2px;border-radius:50%;background:var(--card);border:2px solid var(--ink);cursor:grab}
+.msrng input::-moz-range-thumb{pointer-events:auto;width:11px;height:11px;border-radius:50%;background:var(--card);border:2px solid var(--ink);cursor:grab}
+.msrng input::-moz-range-track{background:none}.mshape{flex:none;vertical-align:middle}.mhead{flex-wrap:wrap;row-gap:3px}.mhead>.sub{white-space:nowrap}
 .mnav{display:inline-flex;align-items:center;gap:4px;margin-left:8px}.mnav button{font-size:11px;padding:1px 7px}.mnav button:disabled{opacity:.35}.mnavl{font-size:12px;color:var(--ink2);cursor:pointer;max-width:330px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mnavl:hover{color:var(--ink)}
 .mklegend{display:inline-flex;gap:8px;align-items:center;color:var(--muted);font-size:11px}.mklegend span{display:inline-flex;gap:3px;align-items:center}
 .mlinkh{display:flex;align-items:center;gap:8px}.mpick{font-size:11px;padding:1px 8px}.mpick.on{background:var(--accent);color:#fff;border-color:var(--accent)}body.picking main canvas{cursor:crosshair!important}.nrow.lay .wl{width:auto}.mtip{pointer-events:none;z-index:60;max-width:340px}
@@ -292,7 +302,11 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
 <div class="card mcard"><div class="mhead"><b>Moments</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a moment: your own note on the timeline">+ Moment</button><button id="mLines" title="Show or hide the moment lines across all charts">Lines: on</button></span></div>
-<div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Moments: your own notes on the timeline"></canvas></div></div>
+<div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Moments: your own notes on the timeline"></canvas></div>
+<div id="msRow" class="hide"><div class="mhead"><b>Concern</b><span class="sub">moments you rated 1–10</span>
+<span class="msrng"><span class="trk"></span><span class="fill" id="msFill"></span><input id="msLo" type="range" min="1" max="10" step="0.5" value="1" aria-label="Lowest concern shown" title="Lowest concern shown"><input id="msHi" type="range" min="1" max="10" step="0.5" value="10" aria-label="Highest concern shown" title="Highest concern shown"></span>
+<b id="msRv"></b><span class="sub" id="msCount"></span><span class="mtbtn"><button id="msList" title="Open the milestones list (record excerpts and original PDF pages; private page on this Mac) at the last moment you went to">List ↗</button></span></div>
+<div class="mstrack"><canvas id="msc" role="img" aria-label="Concern rating of each milestone over time"></canvas></div></div></div>
 </div>
 <div id="ptpop" class="ptpop hide"></div><div id="calPop" class="calpop hide"></div><div id="mtip" class="ptpop mtip hide"></div><div id="mEdit" class="mpanel hide"></div>
 <div class="card" id="txCard">
@@ -628,6 +642,8 @@ const sl=$('srcLegend');D.sources.forEach(s=>{const e=document.createElement('sp
  const sw=document.createElement('span');sw.className='sw';sw.style.background=SC[s];const tx=document.createElement('span');tx.textContent=s;e.append(sw,tx);sl.appendChild(e)});
 syncWin();updateBar();list();render();
 __IMGJS__
+__MSJS__
+__PROCJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
@@ -638,8 +654,18 @@ imgjs = ""
 if os.path.exists(img_json):
     imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "imaging_view.js")).read())
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs))
+# Procedures (Library → Procedures): only if local/procedures/procedures.json exists. It is made outside this repo
+# (procedures, devices, hospital stays, visits, radiation fractions, with their sources); drawn by procedures_view.js.
+proc_json = os.path.join(os.path.dirname(out), "procedures", "procedures.json")
+procjs = ""
+if os.path.exists(proc_json):
+    procjs = ("const PROC_DATA=" + open(proc_json).read().strip().replace("</", "<\\/") + ";\n"
+              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "procedures_view.js")).read())
+# Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
+msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
-      + ("; imaging: local/imaging/imaging.json" if imgjs else ""))
+      + ("; imaging: local/imaging/imaging.json" if imgjs else "")
+      + ("; procedures: local/procedures/procedures.json" if procjs else ""))

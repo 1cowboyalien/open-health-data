@@ -4,6 +4,8 @@
      Genes and drugs    = one row per gene: copies vs the genome average (log scale), a mutation tag, drug chips
                           (filled = found in the medication records); click a row for its card
      All gained regions = every gained stretch with the genes in it
+     Mitochondria view  = (when DNA_DATA.mito exists) variant table for the mitochondrial genome and a drawing of the
+                          reads around one position (one row per read, letters only where a read differs)
      Microbes view      = (when DNA_DATA.microbes exists) organisms named among reads that did not match the reference,
                           and a table of where every unmatched read went
    Flags (DNA_DATA.flags) show as boxes at the top of the panel and as rows in the Library.
@@ -12,6 +14,8 @@
      genes:[{gene,group,chrom,start,end,ratio,state,bins,tumor_reads,normal_reads,region,note,mutation:{name,reads,effect}|null,
              drugs:[{drug,cls,status,note,given:{first,last,orders}|null}]}], regions:[{chrom,start,end,kb,ratio,state,genes}],
      flags:[{date,by,title,text,source}],
+     mito:{title,intro,sample_names:[a,b],variants:[{pos,change,a_alt,a_depth,a_pct,b_alt,b_depth,call,note,flag}],notes:[text],source,
+           pileup:{pos,start,ref,caption,samples:[{label,summary,rows:[{s,e,d:{pos:letter}}]}]}|null}|null,
      microbes:{title,intro,sample_names:[a,b],organisms:[{name,tumor,normal,kind,note}],notes:[text],categories:[{label,tumor,normal,what}],source}|null}, made outside this repo (it holds health data).
    Drug status keys: approved-here (approved for this patient's kind of cancer), approved-other, investigational. */
 (() => {
@@ -48,6 +52,7 @@
       '.dna-mut{display:inline-block;font-size:11px;padding:0 6px;border-radius:3px;background:var(--hi);color:#fff;margin-left:6px}' +
       '.dna-none{color:var(--muted);font-size:11.5px}' +
       '.dna-card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:var(--card);font-size:12.5px}.dna-card h4{margin:0 0 4px;font-size:14px}.dna-card ul{margin:4px 0 0 18px;padding:0}.dna-card li{margin:2px 0}' +
+      '.dna-pile{font:12px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;margin:2px 0 0;letter-spacing:.28em;white-space:pre}.dna-pile .r{font-weight:700;color:var(--ink)}.dna-pile .m{color:var(--muted)}.dna-pile .o{font-weight:700;color:var(--ink)}.dna-pile .x{font-weight:700;color:#c2410c}.dna-pile .hl{background:rgba(194,65,12,.16)}' +
       '.dna-leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;color:var(--ink2);margin:6px 0}.dna-foot{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4}';
     document.head.append(st); }
 
@@ -74,7 +79,7 @@
   function draw(id, body) {
     BODY = body;
     let h = '<div class="dna-bar">' +
-      [['genes', 'Genes and drugs'], ['regions', 'All gained regions']].concat(D.microbes ? [['microbes', D.microbes.title]] : []).map(([k, t]) => '<button class="dna-b' + (V.view === k ? ' on' : '') + '" data-view="' + k + '">' + t + '</button>').join('') +
+      [['genes', 'Genes and drugs'], ['regions', 'All gained regions']].concat(D.mito ? [['mito', D.mito.title]] : []).concat(D.microbes ? [['microbes', D.microbes.title]] : []).map(([k, t]) => '<button class="dna-b' + (V.view === k ? ' on' : '') + '" data-view="' + k + '">' + t + '</button>').join('') +
       (V.view === 'genes' ? '<span style="color:var(--muted)">|</span>' +
         [['group', 'Grouped'], ['ratio', 'By copy number'], ['chrom', 'By chromosome']].map(([k, t]) => '<button class="dna-b' + (V.sort === k ? ' on' : '') + '" data-sort="' + k + '">' + t + '</button>').join('') +
         '<label style="font-size:11px;margin-left:6px"><input type="checkbox" data-od ' + (V.onlyDrugs ? 'checked' : '') + '> only genes with a drug</label>' : '') +
@@ -92,6 +97,28 @@
       if (V.sort === 'group') D.groups.forEach(G => { const x = gs.filter(g => g.group === G.key); if (x.length) rows += '<tr class="g"><td colspan="3">' + esc(G.title) + '</td></tr>' + x.map(row).join(''); });
       else { const CH = c => c === 'X' ? 23 : +c; gs = gs.slice().sort(V.sort === 'ratio' ? (a, b) => b.ratio - a.ratio : (a, b) => CH(a.chrom) - CH(b.chrom) || a.start - b.start); rows = gs.map(row).join(''); }
       h += '<div class="dna-wrap"><table class="dna-t"><thead><tr><th style="width:150px">Gene</th><th style="width:38%">Copies vs genome average (1× = normal)' + ticks + '</th><th>Drugs that target it</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    } else if (V.view === 'mito' && D.mito) {
+      const M = D.mito, sn = M.sample_names || ['Sample', 'Comparison'];
+      h += '<div class="dna-card"><div>' + esc(M.intro) + '</div></div>' +
+        '<div class="dna-wrap"><table class="dna-t"><thead><tr><th>Position</th><th>Change</th><th style="width:26%">' + esc(sn[0]) + ': share of reads with the change</th><th>' + esc(sn[1]) + '</th><th>Call</th><th>Note</th></tr></thead><tbody>' +
+        M.variants.map(v => '<tr' + (v.flag ? ' class="cur"' : '') + '><td><span class="dna-gene">' + v.pos + '</span></td><td>' + esc(v.change) + '</td><td><div class="dna-ax" style="min-width:120px"><div class="dna-fill ' + (v.flag ? 'up' : 'av') +
+          '" style="left:0;width:' + Math.max(v.a_pct * .62, 1) + '%"></div><span class="dna-val" style="left:' + (v.a_pct * .62 + 1) + '%">' + v.a_pct.toFixed(v.a_pct < 10 ? 1 : 0) + '% (' + v.a_alt.toLocaleString() + ' of ' + v.a_depth.toLocaleString() + ')</span></div></td><td style="white-space:nowrap">' +
+          v.b_alt + ' of ' + v.b_depth + '</td><td>' + (v.flag ? '<span class="dna-mut">⚑ ' + esc(v.call) + '</span>' : '<span class="dna-chip other">' + esc(v.call) + '</span>') + '</td><td class="dna-sub" style="color:var(--ink2)">' + esc(v.note) + '</td></tr>').join('') +
+        '</tbody></table></div>';
+      if (M.pileup) { const P = M.pileup, L = P.ref.length;
+        h += '<div class="dna-card"><b>What the change looks like: position ' + P.pos + '</b><div class="dna-sub" style="margin:2px 0 6px">' + esc(P.caption || '') + '</div><div style="overflow:auto">';
+        const cell = (ch, cls) => '<span class="' + cls + '">' + ch + '</span>';
+        P.samples.forEach(S => {
+          let t = '<div style="margin-top:8px"><b>' + esc(S.label) + '</b> <span class="dna-sub">' + esc(S.summary) + '</span></div><pre class="dna-pile">';
+          t += P.ref.split('').map((c, i) => cell(c, 'r' + (P.start + i === P.pos ? ' hl' : ''))).join('') + '\n';
+          S.rows.forEach(r => { let line = '';
+            for (let i = 0; i < L; i++) { const x = P.start + i, hl = x === P.pos ? ' hl' : '';
+              if (x < r.s || x > r.e) line += cell(' ', hl.trim());
+              else { const b = r.d[x]; line += b == null ? cell('·', 'm' + hl) : b !== P.ref[i] ? cell(esc(b), (x === P.pos ? 'x' : 'o') + hl) : cell(esc(b), 'm' + hl); } }
+            t += line + '\n'; });
+          h += t + '</pre>'; });
+        h += '</div></div>'; }
+      h += '<div class="dna-card"><b>What it may mean</b><ul>' + M.notes.map(t => '<li>' + esc(t) + '</li>').join('') + '</ul></div><div class="dna-sub" style="margin-top:6px">Source: ' + esc(M.source) + '</div>';
     } else if (V.view === 'microbes' && D.microbes) {
       const M = D.microbes, sn = M.sample_names || ['Sample', 'Comparison'], n = x => x.toLocaleString();
       const mx = Math.max(1, ...M.organisms.map(o => Math.max(o.tumor, o.normal)));
@@ -141,6 +168,8 @@
       const n = document.createElement('span'); n.className = 'n'; n.textContent = count;
       d.append(cb, nm, n); d.onclick = onName || (() => { cb.checked = !cb.checked; onTick(cb.checked); }); return d; };
     (D.flags || []).forEach(f => { const d = document.createElement('div'); d.className = 't'; d.title = f.text; d.innerHTML = '<span class="nm">⚑ ' + esc(f.title) + '</span>'; d.onclick = () => { if (!sel.includes(ID)) setLabSel([ID], true); }; SEC.append(d); });
+    if (D.mito) { const d = document.createElement('div'); d.className = 't'; d.title = D.mito.intro; d.innerHTML = '<span class="nm">' + esc(D.mito.title) + '</span><span class="n">' + D.mito.variants.length + ' sites</span>';
+      d.onclick = () => { V.view = 'mito'; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } }; SEC.append(d); }
     if (D.microbes) { const d = document.createElement('div'); d.className = 't'; d.title = D.microbes.intro; d.innerHTML = '<span class="nm">' + esc(D.microbes.title) + '</span><span class="n">' + D.microbes.organisms.length + ' named</span>';
       d.onclick = () => { V.view = 'microbes'; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } }; SEC.append(d); }
     SEC.append(row('Gene copies and drugs', D.genes.length + ' genes', 'Gene copy number in the tumor next to the drugs that target each gene', sel.includes(ID), v => setLabSel([ID], v)));

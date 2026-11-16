@@ -19,13 +19,13 @@ function msInit(){const row=$('msRow');if(!row)return;row.classList.remove('hide
  {const q=new URLSearchParams(location.search),lo=+q.get('msLo'),hi=+q.get('msHi');if(lo>=1&&hi<=10&&lo<=hi)store.set('msrange',{lo,hi})}
  const LO=$('msLo'),HI=$('msHi'),r=msRange();LO.value=r.lo;HI.value=r.hi;
  const upd=e=>{if(+LO.value>+HI.value){if(e&&e.target===LO)LO.value=HI.value;else HI.value=LO.value}
-  store.set('msrange',{lo:+LO.value,hi:+HI.value});renderConcern()};
+  store.set('msrange',{lo:+LO.value,hi:+HI.value});renderMomentTrack();renderConcern()};   // the Keyframes track's concern row follows the range too
  LO.oninput=upd;HI.oninput=upd;
  $('msList').onclick=()=>{const r=msRange();window.open(MS_PAGE+'?lo='+r.lo+'&hi='+r.hi+(momCur?'#'+momCur:''),'_blank')}}
 function msControls(){const{lo,hi}=msRange(),p=v=>(v-1)/9*100,F=$('msFill');F.style.left=p(lo)+'%';F.style.width=(p(hi)-p(lo))+'%';
  $('msLo').style.zIndex=lo>=9.5?3:2;$('msRv').textContent=lo===1&&hi===10?'all':lo===hi?String(lo):lo+' – '+hi;
  const R=msRated(),n=R.filter(m=>momentOn(m)&&msIn(m)).length,inW=R.filter(m=>momentOn(m)&&msIn(m)&&(msTe(m)||momentT(m))>=W.a&&momentT(m)<=W.b).length;
- $('msCount').textContent=n+' of '+R.length+' rated moments · '+inW+' in this window'}
+ $('msCount').textContent=n+' of '+R.length+' rated keyframes · '+inW+' in this window'}
 function renderConcern(){const cv=$('msc');if(!cv)return;msControls();const TK=ticks();
  if(charts.has('msc')){charts.get('msc').destroy();charts.delete('msc')}
  const shown=msRated().filter(m=>momentOn(m)&&msIn(m)).sort((a,b)=>momentT(a)-momentT(b));
@@ -37,7 +37,7 @@ function renderConcern(){const cv=$('msc');if(!cv)return;msControls();const TK=t
     const x1=x.getPixelForValue(pos(a)),x2=x.getPixelForValue(pos(b)),py=y.getPixelForValue(m.concern);
     ctx.globalAlpha=.45;ctx.strokeStyle=msCol(m.concern);ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1,py);ctx.lineTo(Math.max(x1+2,x2),py);ctx.stroke();ctx.globalAlpha=1});
    if(!shown.length){ctx.fillStyle=css('--muted');ctx.font='10px system-ui';ctx.textAlign='left';
-    ctx.fillText(msRated().length?'no rated moments in this concern range':'give a moment a concern rating (1–10) in its editor to see it here',A.left+4,A.top+12)}
+    ctx.fillText(msRated().length?'no rated keyframes in this concern range':'give a keyframe a concern rating (1–10) in its editor to see it here',A.left+4,A.top+12)}
    ctx.restore()},
   afterDatasetsDraw(c){const{ctx,chartArea:A,scales:{x,y}}=c;ctx.save();
    shown.forEach(m=>{if(m.id!==momCur)return;const px=x.getPixelForValue(pos(momentT(m))),py=y.getPixelForValue(m.concern);if(px<A.left||px>A.right)return;
@@ -53,7 +53,7 @@ function renderConcern(){const cv=$('msc');if(!cv)return;msControls();const TK=t
      const m=tooltip.dataPoints[0].raw.m;el.innerHTML='';const h=document.createElement('b');h.textContent=m.concern+' · '+m.title;h.style.color=msCol(m.concern);el.appendChild(h);
      [m.date+(m.end?' → '+m.end:'')+(m.good?' · ✓ good news':''),m.note?(m.note.length>220?m.note.slice(0,219)+'…':m.note):'',m.why?'Why '+m.concern+': '+m.why:'',
       (m.rated_by==='family'?'family rating':'draft rating')+((m.links||[]).length?' · '+m.links.length+' linked reading'+(m.links.length>1?'s':''):'')+((m.sources||[]).length?' · '+m.sources.length+' record source'+(m.sources.length>1?'s':''):''),
-      'click: go there · double-click: open the moment']
+      'click: go there · double-click: open the keyframe']
       .filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
      const r=chart.canvas.getBoundingClientRect();el.style.left=Math.min(r.left+tooltip.caretX+12,innerWidth-330)+'px';el.style.top=(r.top+tooltip.caretY+14)+'px';el.classList.remove('hide')}}},
    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},

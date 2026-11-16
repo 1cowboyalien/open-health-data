@@ -517,9 +517,9 @@
         const cs = RTC.filter(c => c.lane === l.key); if (!cs.length) return; const n = cs.filter(c => ticked.has(c.id)).length;
         const L = section(SEC, 'proc:lane:' + l.key, l.label + (hidden.has(l.key) ? ' (lane hidden)' : ''), (n ? n + '/' : '') + cs.length + ' · ' + cs.reduce((a, c) => a + c.n, 0) + ' fx', false, 'grp', q), s0 = L.firstChild;
         s0.insertBefore(miniBtn('All', 'Put every course on all charts', () => setTicked(cs.map(c => c.id), true)), s0.lastChild);
-        s0.insertBefore(miniBtn('None', 'Remove these moment lines', () => setTicked(cs.map(c => c.id), false)), s0.lastChild);
+        s0.insertBefore(miniBtn('None', 'Remove these keyframe lines', () => setTicked(cs.map(c => c.id), false)), s0.lastChild);
         cs.forEach(c => { const d = document.createElement('div'); d.className = 't';
-          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(c.id); cb.title = 'Moment line on every chart';
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(c.id); cb.title = 'Keyframe line on every chart';
           cb.onclick = ev => { ev.stopPropagation(); setTicked([c.id], cb.checked); };
           const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = c.label + ' · ' + c.n + ' fx'; nm.title = c.dose + ' · ' + c.where + '\nClick: show it on the Procedures timeline';
           const nn = document.createElement('span'); nn.className = 'n'; nn.textContent = c.from.slice(0, 7);
@@ -529,9 +529,9 @@
         const n = STAYS.filter(s => ticked.has(s.id)).length;
         const L = section(SEC, 'proc:lane:stay', l.label + (hidden.has('stay') ? ' (lane hidden)' : ''), (n ? n + '/' : '') + STAYS.length, false, 'grp', q), s0 = L.firstChild;
         s0.insertBefore(miniBtn('All', 'Put every hospital stay on all charts', () => setTicked(STAYS.map(s => s.id), true)), s0.lastChild);
-        s0.insertBefore(miniBtn('None', 'Remove these moment lines', () => setTicked(STAYS.map(s => s.id), false)), s0.lastChild);
+        s0.insertBefore(miniBtn('None', 'Remove these keyframe lines', () => setTicked(STAYS.map(s => s.id), false)), s0.lastChild);
         STAYS.forEach(s => { const d = document.createElement('div'); d.className = 't';
-          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(s.id); cb.title = 'Moment line on every chart';
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(s.id); cb.title = 'Keyframe line on every chart';
           cb.onclick = ev => { ev.stopPropagation(); setTicked([s.id], cb.checked); };
           const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = (SK[s.kind] || s.kind) + ' · ' + (SNAME[s.site] || s.site) + (s.kind === 'er' ? '' : ' · ' + days(s.from, s.to) + ' d');
           nm.title = s.location + '\nClick: show it on the Procedures timeline';
@@ -556,15 +556,15 @@
       const on = evs.filter(e => ticked.has(e.id)).length;
       const L = section(SEC, 'proc:lane:' + l.key, l.label, (on ? on + '/' : '') + (evs.length + early.length), l.key === 'surgery', 'grp', q);
       const s = L.firstChild;
-      s.insertBefore(miniBtn('All', 'Put every ' + l.label.toLowerCase() + ' on all charts as a moment line', () => setTicked(evs.map(e => e.id), true)), s.lastChild);
-      s.insertBefore(miniBtn('None', 'Remove these moment lines', () => setTicked(evs.map(e => e.id), false)), s.lastChild);
+      s.insertBefore(miniBtn('All', 'Put every ' + l.label.toLowerCase() + ' on all charts as a keyframe line', () => setTicked(evs.map(e => e.id), true)), s.lastChild);
+      s.insertBefore(miniBtn('None', 'Remove these keyframe lines', () => setTicked(evs.map(e => e.id), false)), s.lastChild);
       const item = (e, dated) => {
         const d = document.createElement('div'); d.className = 't';
         const sw = document.createElement('span'); sw.innerHTML = `<svg width="10" height="10" style="vertical-align:-1px"><rect width="10" height="10" rx="2" fill="${LCOL[l.key]}"/></svg>`;
         const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = e.short; nm.title = (e.procedure || e.note) + '\nClick: show it on the Procedures timeline';
         const n = document.createElement('span'); n.className = 'n'; n.textContent = e.date ? e.date.slice(0, 7) : e.date_text ? e.date_text.slice(0, 9) : 'planned';
         if (dated) { const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(e.id);
-          cb.title = 'Moment line on every chart'; cb.setAttribute('aria-label', 'Moment line for ' + e.short);
+          cb.title = 'Keyframe line on every chart'; cb.setAttribute('aria-label', 'Keyframe line for ' + e.short);
           cb.onclick = ev => { ev.stopPropagation(); setTicked([e.id], cb.checked); }; d.append(cb); }
         else { const sp = document.createElement('span'); sp.style.cssText = 'display:inline-block;width:13px'; d.append(sp); }
         d.append(nm, n); if (!e.date && !dated) nm.style.fontStyle = 'italic';

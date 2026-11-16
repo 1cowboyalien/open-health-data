@@ -239,8 +239,11 @@ function shapeSvg(shape,col,px){const c=document.createElement('canvas');c.width
 const momentT=m=>!m||!m.date?null:m.time?new Date(m.date+'T'+m.time).getTime():dms(m.date);   // with a time: your local time
 const momentOn=m=>m.on!==false;
 let mLines=store.get('mlines',true),editingMoment=null;
+/* the Keyframes track has two rows: plain keyframes, and rated ones (the Concern marks); each can be switched off (per browser) */
+function mRows(){const r=store.get('mrows',{kf:true,cc:true});return{kf:r.kf!==false,cc:r.cc!==false}}
+function rowOn(m){const r=mRows();return isRated(m)?r.cc:r.kf}
 /* a dashed line (and a light shade for periods) at each shown moment, drawn on every chart */
-const momentPlugin={id:'moments',afterDatasetsDraw(c){const ms_=(E.moments||[]).filter(m=>momentOn(m)&&m.date&&m.line!==false);if(!mLines||!ms_.length)return;
+const momentPlugin={id:'moments',afterDatasetsDraw(c){const ms_=(E.moments||[]).filter(m=>momentOn(m)&&m.date&&m.line!==false&&rowOn(m));if(!mLines||!ms_.length)return;
  const{ctx,chartArea:a,scales:{x}}=c;ctx.save();
  ms_.forEach(m=>{const t=momentT(m),te=m.end?dms(m.end):null,colr=MCOL[m.color]||MCOL.red;if((te||t)<W.a||t>W.b)return;
   const px=x.getPixelForValue(pos(Math.max(t,W.a)));
@@ -274,7 +277,8 @@ function momNav(){const el=$('mNav');if(!el)return;el.innerHTML='';const L=momLi
  if(i>=0){const m=L[i];lab.textContent=(i+1)+' of '+n+' · '+(m.title.length>28?m.title.slice(0,27)+'…':m.title)+' · '+m.date;lab.title='Open this keyframe';lab.onclick=()=>openMoment(m)}
  else lab.textContent=n+' keyframe'+(n>1?'s':'');
  el.append(b('⏮','First keyframe',0),b('◀','Previous keyframe',prev),lab,b('▶','Next keyframe',next),b('⏭','Last keyframe',n-1))}
-function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':'';momNav();
+function momentControls(){$('mLines').textContent='Lines: '+(mLines?'on':'off');$('mLines').className=mLines?'on':'';
+ {const r=mRows();if($('mRowK')){$('mRowK').className=r.kf?'on':'';$('mRowC').className=r.cc?'on':''}}momNav();
  const k=$('mKinds');if(k&&!k.childNodes.length)Object.values(MKIND).forEach(v=>{const e=document.createElement('span');e.append(shapeSvg(v.shape,css('--muted'),10),v.label.split(' /')[0].toLowerCase());k.appendChild(e)})}
 function setMomentsOn(ids,on){(E.moments||[]).forEach(m=>{if(ids.includes(m.id))m.on=on});saveEdits();list();render()}
 /* jump: centre the window on the moment, keeping its length (3 days if the window is over ~2 months) */
@@ -317,34 +321,43 @@ const rulerPlugin={id:'ruler',afterDraw(c){const{ctx,chartArea:A,scales:{x}}=c,U
   ctx.fillStyle=css('--ink');ctx.beginPath();ctx.roundRect(bx,y0+5,w,17,8);ctx.fill();ctx.fillStyle=css('--bg');ctx.fillText(t,bx+w/2,y0+17)}
  ctx.restore()}};
 function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls();const TK=ticks();
- const shown=(E.moments||[]).filter(m=>!isRated(m)&&momentOn(m)&&m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b);   // rated ones: Concern graph
- const titles={id:'mtitles',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c;ctx.save();
-   let last=A.left;ctx.font='10px system-ui';
-   const cy=(A.top+A.bottom)/2;
-   shown.forEach(m=>{const t=momentT(m),te=m.end?dms(m.end):null,colr=MCOL[m.color]||MCOL.red,px=x.getPixelForValue(pos(Math.max(t,W.a)));
-    if(te&&te>t){const p2=x.getPixelForValue(pos(Math.min(te,W.b)));ctx.globalAlpha=.16;ctx.fillStyle=colr;ctx.fillRect(px,A.top,Math.max(2,p2-px),A.bottom-A.top);
-     ctx.globalAlpha=.7;ctx.fillRect(px,A.bottom-4,Math.max(2,p2-px),4);ctx.globalAlpha=1}
-    if(t>=W.a){ctx.strokeStyle=colr;ctx.globalAlpha=.6;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,A.top);ctx.lineTo(px,A.bottom);ctx.stroke();ctx.globalAlpha=1}
-    /* title label: a tinted pill to the right of the shape, with the number of linked readings */
-    ctx.font='600 11px system-ui';const n=(m.links||[]).length,txt0=m.title.length>36?m.title.slice(0,35)+'…':m.title,txt=txt0+(n?'  ·  '+n+' reading'+(n>1?'s':''):''),w=ctx.measureText(txt).width+12;
-    const lx=px+12;if(lx>last&&lx+w<A.right){ctx.globalAlpha=.2;ctx.fillStyle=colr;ctx.beginPath();ctx.roundRect(lx,cy-9,w,18,9);ctx.fill();ctx.globalAlpha=1;
-     ctx.fillStyle=colr;ctx.fillText(txt,lx+6,cy+4);last=lx+w+6}});
+ if(charts.has('mtrack')){charts.get('mtrack').destroy();charts.delete('mtrack')}   // also redrawn alone (Concern range)
+ /* row 1: plain keyframes; row 2 (under it): rated keyframes, the same marks as the Concern graph (its colours, and its 1–10 range) */
+ const R=mRows(),two=R.kf&&R.cc,inW=m=>m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b;
+ const shown=(E.moments||[]).filter(m=>momentOn(m)&&inW(m)&&(isRated(m)?R.cc&&(typeof msIn!=='function'||msIn(m)):R.kf));
+ cv.parentNode.style.height=two?'100px':'64px';
+ const rowV=m=>two?(isRated(m)?-.5:.5):0,colOf=m=>isRated(m)?msCol(m.concern):MCOL[m.color]||MCOL.red,shp=m=>isRated(m)?'circle':mShape(m),
+  rad=m=>isRated(m)?3+m.concern/2.5:mShape(m)==='star'?10:8;
+ const band=(y,m)=>{const v=rowV(m);return two?[y.getPixelForValue(v+.5),y.getPixelForValue(v-.5)]:[y.getPixelForValue(1),y.getPixelForValue(-1)]};
+ const titles={id:'mtitles',beforeDatasetsDraw(c){const{ctx,chartArea:A,scales:{x,y}}=c;ctx.save();
+   const last={};ctx.font='10px system-ui';
+   if(two){ctx.fillStyle=css('--muted');ctx.textAlign='right';ctx.fillText('keyframes',A.left-6,y.getPixelForValue(.5)+3);ctx.fillText('concern',A.left-6,y.getPixelForValue(-.5)+3);ctx.textAlign='left';
+    ctx.strokeStyle=css('--line');ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(A.left,Math.round(y.getPixelForValue(0))+.5);ctx.lineTo(A.right,Math.round(y.getPixelForValue(0))+.5);ctx.stroke()}
+   shown.forEach(m=>{const t=momentT(m),te=m.end?dms(m.end):null,colr=colOf(m),px=x.getPixelForValue(pos(Math.max(t,W.a))),[T,B]=band(y,m),cy=y.getPixelForValue(rowV(m)),rk=isRated(m)?'c':'k';
+    if(last[rk]==null)last[rk]=A.left;
+    if(te&&te>t){const p2=x.getPixelForValue(pos(Math.min(te,W.b)));ctx.globalAlpha=.16;ctx.fillStyle=colr;ctx.fillRect(px,T,Math.max(2,p2-px),B-T);
+     ctx.globalAlpha=.7;ctx.fillRect(px,B-4,Math.max(2,p2-px),4);ctx.globalAlpha=1}
+    if(t>=W.a){ctx.strokeStyle=colr;ctx.globalAlpha=.6;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,T);ctx.lineTo(px,B);ctx.stroke();ctx.globalAlpha=1}
+    /* title label: a tinted pill to the right of the shape, with the number of linked readings (rated: the rating first) */
+    ctx.font='600 11px system-ui';const n=(m.links||[]).length,txt0=(isRated(m)?m.concern+' · ':'')+(m.title.length>36?m.title.slice(0,35)+'…':m.title),txt=txt0+(n?'  ·  '+n+' reading'+(n>1?'s':''):''),w=ctx.measureText(txt).width+12;
+    const lx=px+12;if(lx>last[rk]&&lx+w<A.right){ctx.globalAlpha=.2;ctx.fillStyle=colr;ctx.beginPath();ctx.roundRect(lx,cy-9,w,18,9);ctx.fill();ctx.globalAlpha=1;
+     ctx.fillStyle=colr;ctx.fillText(txt,lx+6,cy+4);last[rk]=lx+w+6}});
    ctx.restore()},
-  afterDatasetsDraw(c){const{ctx,chartArea:A,scales:{x}}=c,cy=(A.top+A.bottom)/2;ctx.save();
-   shown.forEach(m=>{const px=x.getPixelForValue(pos(Math.max(momentT(m),W.a))),sh=mShape(m);
-    if(m.id===momCur){ctx.beginPath();ctx.arc(px,cy,13,0,7);ctx.lineWidth=2;ctx.strokeStyle=MCOL[m.color]||MCOL.red;ctx.stroke()}
-    drawShape(ctx,sh,px,cy,sh==='star'?10:8);ctx.fillStyle=MCOL[m.color]||MCOL.red;ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke()});ctx.font='10px system-ui';
-   if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText((E.moments||[]).length?'no shown keyframes in this window':'click here or “+ Keyframe” to add one; or click a reading on a chart and choose ★ Make keyframe',A.left+4,A.top+12)}
+  afterDatasetsDraw(c){const{ctx,chartArea:A,scales:{x,y}}=c;ctx.save();
+   shown.forEach(m=>{const px=x.getPixelForValue(pos(Math.max(momentT(m),W.a))),sh=shp(m),cy=y.getPixelForValue(rowV(m));
+    if(m.id===momCur){ctx.beginPath();ctx.arc(px,cy,13,0,7);ctx.lineWidth=2;ctx.strokeStyle=colOf(m);ctx.stroke()}
+    drawShape(ctx,sh,px,cy,rad(m));ctx.fillStyle=colOf(m);ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=css('--card');ctx.stroke()});ctx.font='10px system-ui';
+   if(!shown.length){ctx.fillStyle=css('--muted');ctx.fillText(!R.kf&&!R.cc?'both rows are off: switch on Keyframes or Concern above':(E.moments||[]).length?'no shown keyframes in this window':'click here or “+ Keyframe” to add one; or click a reading on a chart and choose ★ Make keyframe',A.left+4,A.top+12)}
    ctx.restore()}};
- charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:0,m})),
-   pointStyle:shown.map(mShape),pointRadius:shown.map(m=>mShape(m)==='star'?10:8),pointHoverRadius:shown.map(m=>mShape(m)==='star'?12:10),
+ charts.set('mtrack',new Chart(cv,{type:'scatter',plugins:[titles,rulerPlugin],data:{datasets:[{data:shown.map(m=>({x:pos(Math.max(momentT(m),W.a)),y:rowV(m),m})),
+   pointStyle:shown.map(shp),pointRadius:shown.map(rad),pointHoverRadius:shown.map(m=>rad(m)+2),
    pointBackgroundColor:'transparent',pointBorderColor:'transparent',clip:false}]},   // the shapes are drawn filled by the titles plugin (Chart.js draws stars as outlines only)
   options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,layout:{autoPadding:false,padding:{top:3,right:8,bottom:RULERH}},
    onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null)},
    onClick:(e,els,c)=>{if(e.y>c.chartArea.bottom)return;const xv=c.scales.x.getValueForPixel(e.x);setTimeout(()=>{if(els[0])openMoment(c.data.datasets[0].data[els[0].index].m);else if(xv>=0&&xv<=100)openMoment(null,{date:localStamp(unpos(xv)).slice(0,10)})},0)},
    plugins:{legend:{display:false},tooltip:{enabled:false,external:({chart,tooltip})=>{const el=$('mtip');if(!tooltip.opacity||!tooltip.dataPoints||!tooltip.dataPoints.length){el.classList.add('hide');return}
-     const m=tooltip.dataPoints[0].raw.m;el.innerHTML='';const b=document.createElement('b');b.textContent=m.title;el.appendChild(b);
-     [m.date+(m.time?' '+m.time:'')+(m.end?' → '+m.end:'')+(m.group?' · '+m.group:''),m.note?m.note.slice(0,140):'',(m.links||[]).length?(m.links.length+' linked reading'+(m.links.length>1?'s':'')):'','click to edit']
+     const m=tooltip.dataPoints[0].raw.m;el.innerHTML='';const b=document.createElement('b');b.textContent=(isRated(m)?m.concern+' · ':'')+m.title;if(isRated(m))b.style.color=msCol(m.concern);el.appendChild(b);
+     [m.date+(m.time?' '+m.time:'')+(m.end?' → '+m.end:'')+(m.group?' · '+m.group:''),m.note?m.note.slice(0,140):'',isRated(m)&&m.why?'Why '+m.concern+': '+m.why:'',(m.links||[]).length?(m.links.length+' linked reading'+(m.links.length>1?'s':'')):'','click to edit']
       .filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
      const r=chart.canvas.getBoundingClientRect();el.style.left=Math.min(r.left+tooltip.caretX+12,innerWidth-270)+'px';el.style.top=(r.top+tooltip.caretY+16)+'px';el.classList.remove('hide')}}},
    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
@@ -891,6 +904,7 @@ function txInit(){initTxSel();
  {const s0=store.set;store.set=(k,v)=>{s0.call(store,k,v);queueLay()}}
  $('mAdd').onclick=()=>openMoment(null);
  $('mLines').onclick=()=>{mLines=!mLines;store.set('mlines',mLines);render()};
+ {const flip=k=>{const r=mRows();r[k]=!r[k];store.set('mrows',r);render()};$('mRowK').onclick=()=>flip('kf');$('mRowC').onclick=()=>flip('cc')}
  $('hlOn').onclick=()=>{hlOn=!hlOn;store.set('hlon',hlOn);render()};
  const hlSize=dlt=>{hlH=Math.max(16,Math.min(200,hlH+dlt));store.set('hlh',hlH);render()};
  $('hlSmall').onclick=()=>hlSize(-8);$('hlBig').onclick=()=>hlSize(8);if(!TX.length&&!E.added.length&&!D.tx)$('txCard').classList.add('hide');

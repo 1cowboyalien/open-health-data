@@ -670,12 +670,10 @@ mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.
 img_json = os.path.join(os.path.dirname(out), "imaging", "imaging.json")
 imgjs = ""
 if os.path.exists(img_json):
+    # lesion_trends_view.js (volume trends, doubling times) first: imaging_view.js draws them in Lesions over time
     imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_trends_view.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "imaging_view.js")).read())
-    # MRI (test) section: new brain MRI views tried out before they join Imaging (mri_test_view.js, same data)
-    mt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mri_test_view.js")
-    if os.path.exists(mt):
-        imgjs += "\n" + open(mt).read()
 # Procedures (Library → Procedures): only if local/procedures/procedures.json exists. It is made outside this repo
 # (procedures, devices, hospital stays, visits, radiation fractions, with their sources); drawn by procedures_view.js.
 proc_json = os.path.join(os.path.dirname(out), "procedures", "procedures.json")

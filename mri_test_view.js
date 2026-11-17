@@ -11,7 +11,7 @@
   const LS = IMG_DATA.lesion_series, ID = 'mrit:vol';
   if (!LS || !LS.measured || !LS.measured.length) return;
   const PANEL = {title: 'MRI test · Tumor volume trends', unit: 'mm³, our measurements', h0: 380};
-  const V0 = {total: false, scale: 'log', fit: 'off', hidden: [], tx: true, view: 'chart'};
+  const V0 = {total: true, scale: 'log', fit: 'window', hidden: [], tx: true, view: 'chart'};   // opens with the total and the fitted trends (doubling times) showing
   const V = Object.assign({}, V0, store.get('mrit.view', {}));
   if (V.show) { V.total = V.show !== 'each'; if (V.show === 'total') V.hidden = LS.lesions.map(l => l.id); delete V.show; }   // older saved setting
   const save = () => store.set('mrit.view', V);

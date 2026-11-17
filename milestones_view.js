@@ -56,7 +56,7 @@ function renderConcern(){const cv=$('msc');if(!cv)return;msControls();const TK=t
       'click: go there · double-click: open the keyframe']
       .filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
      const r=chart.canvas.getBoundingClientRect();el.style.left=Math.min(r.left+tooltip.caretX+12,innerWidth-330)+'px';el.style.top=(r.top+tooltip.caretY+14)+'px';el.classList.remove('hide')}}},
-   scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
+   scales:{x:{type:'linear',min:0,max:100,afterFit:tEdge,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
     y:{min:0,max:10.8,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}});
  charts.set('msc',ch);
  cv.ondblclick=e=>{const el=ch.getElementsAtEventForMode(e,'nearest',{intersect:true},false)[0];if(el){$('mtip').classList.add('hide');openMoment(ch.data.datasets[0].data[el.index].m)}};

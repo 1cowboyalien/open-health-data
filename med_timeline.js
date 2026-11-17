@@ -363,7 +363,7 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
      [m.date+(m.time?' '+m.time:'')+(m.end?' → '+m.end:'')+(m.group?' · '+m.group:''),m.note?m.note.slice(0,140):'',isRated(m)&&m.why?'Why '+m.concern+': '+m.why:'',(m.links||[]).length?(m.links.length+' linked reading'+(m.links.length>1?'s':'')):'','click to edit']
       .filter(Boolean).forEach(t=>{const d=document.createElement('div');d.textContent=t;el.appendChild(d)});
      const r=chart.canvas.getBoundingClientRect();el.style.left=Math.min(r.left+tooltip.caretX+12,innerWidth-270)+'px';el.style.top=(r.top+tooltip.caretY+16)+'px';el.classList.remove('hide')}}},
-   scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
+   scales:{x:{type:'linear',min:0,max:100,afterFit:tEdge,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},ticks:{display:false},grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}},border:{display:false}},
     y:{min:-1,max:1,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}));
  cv.parentNode.onmouseleave=()=>setHover(null)}
 
@@ -683,8 +683,8 @@ function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txB
      if(e.rlo!=null)L.push('amount given not in the record (only the range '+e.dose+')');
      L.push(...whyLines(e.why));
      if(e.k==='assumed'||e.k==='skipped'||e.doseKey)L.push(pxPerDay(c.chart)<4?'Click to edit; zoom in to click single doses':'Click to change: taken / skipped / assumed');return L}}}},
-   layout:{padding:{right:8}},
-   scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
+   layout:TLAY(),
+   scales:{x:{type:'linear',min:0,max:100,afterFit:tEdge,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
      ticks:{color:css('--muted'),autoSkip:false,maxRotation:0,callback:(v,i)=>TK[i]?TK[i].label:''},
      grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}}},
     y:{type:'linear',reverse:true,min:0,max:acc,afterFit:s=>{s.width=YW},ticks:{display:false},grid:{display:false},border:{display:false}}}}}));
@@ -768,8 +768,8 @@ function renderDoses(){const box=$('txDoses');box.innerHTML='';if(txHidden)retur
     onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null)},
     plugins:{legend:{display:false},tooltip:{filter:c=>!!(c.raw.p&&st(c.raw)[1]),callbacks:{title:c=>{const p=c[0].raw.p;return p.e?evWhen(p.e):isoD(p.t)},
      label:c=>{const p=c.raw.p;const what=p.k==='rx'?'prescribed from this date':KIND[p.k]?KIND[p.k].label:'';return [fmt(p.v)+' '+dp.u+(p.src?'  · '+p.src:''),what,...whyLines((p.e||p.g||{}).why)]}}}},
-    layout:{padding:{right:8}},
-    scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
+    layout:TLAY(),
+    scales:{x:{type:'linear',min:0,max:100,afterFit:tEdge,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
       ticks:{color:css('--muted'),autoSkip:false,maxRotation:0,callback:(v,i)=>TK[i]?TK[i].label:''},
       grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}}},
      y:{min:0,max:ymax,afterFit:s=>{s.width=YW},ticks:{color:css('--muted'),maxTicksLimit:4},grid:{color:css('--line')}}}}}))});

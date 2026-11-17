@@ -2,14 +2,14 @@
    - "Ask anything" box at the top of the navigator; the conversation opens under it.
    - "Ask questions" button on each panel: that panel alone, with a chat about it beside it.
      The chat is sent what the panel shows (title, time window, its text, the chart points in the window).
-   It talks to a separate local chat server (not part of this repo), given in local/ask.json as
-   {"chatServer": "http://127.0.0.1:8820"}. That server answers POST /api/chat with a stream of
-   Claude Code stream-json lines, and serves /review and /file. If the server can't be reached
-   (e.g. on another device), nothing is shown. */
+   It talks to a separate chat server (not part of this repo) through the viewer's own server:
+   serve_viewer.py passes /ask/... on to the server named in local/ask.json, so Ask works at any
+   address the viewer is reached by. The chat server answers POST /api/chat with a stream of
+   Claude Code stream-json lines, and serves /review and /file. If it can't be reached, nothing is shown. */
 (function () {
 'use strict';
-const API = String((typeof ASK_CONFIG !== 'undefined' && ASK_CONFIG.chatServer) || '').replace(/\/$/, '');
-if (!API) return;
+if (typeof ASK_CONFIG === 'undefined') return;
+const API = '/ask';   // same address as the viewer; serve_viewer.py passes it on to the chat server
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function inline(s) {
   s = esc(s);

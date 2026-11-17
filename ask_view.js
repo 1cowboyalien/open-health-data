@@ -98,6 +98,15 @@ body.askFocus .askTarget { outline:2px solid #5c7cfa; outline-offset:4px; }
 document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css }));
 
 const asker = () => localStorage.getItem('recordsChatAsker') || '';
+// A name (no login) keeps each person's questions together for review. Asked once per browser.
+function ensureName(change) {
+  if (asker() && !change) return true;
+  const n = (prompt('Your name, so your questions are kept together (no login needed):', asker()) || '').trim();
+  if (!n) return !!asker();
+  localStorage.setItem('recordsChatAsker', n);
+  document.querySelectorAll('.askWho').forEach(e => { e.textContent = n; });
+  return true;
+}
 const newId = () => 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 const navpin = () => document.querySelector('.navpin');
 
@@ -156,6 +165,7 @@ function Chat(logEl, opts) {
 Chat.prototype.reset = function () { this.conversationId = newId(); this.sessionId = null; this.busy = false; this.log.innerHTML = ''; };
 Chat.prototype.ask = async function (text) {
   text = (text || '').trim(); if (!text || this.busy) return;
+  if (!ensureName()) return;
   this.busy = true; this.opts.onBusy && this.opts.onBusy(true); this.opts.onAsk && this.opts.onAsk();
   const q = document.createElement('div'); q.className = 'q'; q.innerHTML = `<span>${esc(text)}</span>`; this.log.appendChild(q);
   const steps = document.createElement('div'); steps.className = 'steps'; steps.innerHTML = '<div>Thinking…</div>'; this.log.appendChild(steps);
@@ -205,7 +215,7 @@ function buildTop() {
   const row = document.createElement('div'); row.id = 'askTop';
   row.innerHTML = `<input id="askTopIn" placeholder="Ask anything about the records…"><button class="askBtn" id="askTopGo">Ask</button>`;
   const wrap = document.createElement('div'); wrap.id = 'askTopWrap';
-  wrap.innerHTML = `<div class="bar"><span>Conversation · answers come from the files · <a href="${API}/review" target="_blank" style="color:inherit">review all ↗</a></span>
+  wrap.innerHTML = `<div class="bar"><span>Conversation · asking as <a href="#" class="askWho" style="color:inherit" title="Change your name">${esc(asker() || 'you')}</a> · answers come from the files · <a href="${API}/review" target="_blank" style="color:inherit">review all ↗</a></span>
     <span><button class="askGhost" id="askTopNew">New</button> <button class="askGhost" id="askTopHide">▴ Hide</button></span></div><div class="askLog"></div>`;
   nav.insertBefore(wrap, nav.firstChild); nav.insertBefore(row, wrap);
   const input = row.querySelector('input'), go = row.querySelector('button');
@@ -215,6 +225,7 @@ function buildTop() {
     onBusy: b => { go.disabled = b; } });
   const hide = wrap.querySelector('#askTopHide');
   hide.onclick = () => { const c = wrap.classList.toggle('collapsed'); hide.textContent = c ? '▾ Show' : '▴ Hide'; };
+  wrap.querySelector('.askWho').onclick = e => { e.preventDefault(); ensureName(true); };
   wrap.querySelector('#askTopNew').onclick = () => { chat.reset(); wrap.classList.remove('open'); input.focus(); };
   const send = () => { const t = input.value; input.value = ''; chat.ask(t); };
   go.onclick = send; input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send(); } });

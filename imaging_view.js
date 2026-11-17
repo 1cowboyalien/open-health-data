@@ -13,7 +13,7 @@
   const LS = IMG_DATA.lesion_series || {lesions: [], reports: [], measured: [], treatments: [], scans: []};
   const PANELS = {[ID]: {title: 'Brain MRI · Scan dates', unit: ROWS.length + ' scans', h0: 190},
                   [IDV]: {title: 'Brain MRI · Slice viewer', unit: 'our lesion outlines', h0: 520},
-                  [IDL]: {title: 'Brain MRI · Lesions over time', unit: 'size as reported (mm) · our volumes', h0: 340},
+                  [IDL]: {title: 'Brain MRI · Lesions over time', unit: 'our volumes (mm³) · trends · report sizes', h0: 380},
                   [IDD]: {title: 'Brain MRI · Radiation dose by lesion', unit: 'estimated', h0: 260}};
   const DOSE = IMG_DATA.dose;   // ESTIMATED radiation dose (imaging/radiation_dose), or null
   const NIIVUE = 'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/+esm';   // jsDelivr bundles it as a browser module (unpkg's build file did not import)
@@ -476,7 +476,7 @@
   }
 
   /* ================= Lesions over time (Timeline · Lines · Grid) ================= */
-  const L = {view: store.get('img.lesView', 'timeline'), hidden: new Set(store.get('img.lesHidden', [])),
+  const L = {view: store.get('img.lesView2', 'volume'), hidden: new Set(store.get('img.lesHidden', [])),
              showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true), field: store.get('img.lesField', 'all'), rule: store.get('img.lesRule', 'new'),
              doseNum: store.get('img.lesDoseNum', true), doseStrip: store.get('img.lesDoseStrip', true)};
   /* ---- radiation dose per lesion (ESTIMATED): unit switch shared by Lesions over time and Radiation dose by lesion ---- */
@@ -566,11 +566,20 @@
   const measShape = m => is3T(m) ? 'triangle' : 'rectRot';
   const fieldOf = raw => raw ? (raw.meas ? raw.meas.field : raw.r ? raw.r.field : '') : '';
   const fieldOK = m => L.field === 'all' || m.field === L.field;
+  /* the view buttons shared by every view of this panel (saved as img.lesView2: volume trends became the first view, 2026-11-17) */
+  const LES_VIEWS = [['volume', 'Volume trends', 'Our measured volume of each lesion over time, with fitted trends and doubling times'],
+    ['periods', 'Doubling times', 'Doubling or halving time of each lesion in each treatment period'],
+    ['timeline', 'Timeline', 'One row per lesion; dots = what each report said'], ['lines', 'Report sizes (mm)', 'Size in mm over time as the reports gave it, one line per lesion'],
+    ['grid', 'Grid', 'Lesions x scan dates, with the reported size in each cell']];
+  function lesViewBtns(id, body) {
+    const bar = document.createElement('div'); bar.className = 'nvbar'; bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;margin-bottom:6px';
+    LES_VIEWS.filter(([v]) => window.LesionTrends || (v !== 'volume' && v !== 'periods')).forEach(([v, lab, tip]) =>
+      bar.append(lbtn(lab, tip, L.view === v, () => { L.view = v; store.set('img.lesView2', v); drawLesions(id, body); })));
+    return bar;
+  }
   function lesToolbar(body, id) {
     const bar = document.createElement('div'); bar.className = 'nvbar'; bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;margin-bottom:6px';
-    [['timeline', 'Timeline', 'One row per lesion; dots = what each report said'], ['lines', 'Lines', 'Size in mm over time, one line per lesion'],
-     ['grid', 'Grid', 'Lesions x scan dates, with the reported size in each cell']].forEach(([v, lab, tip]) =>
-      bar.append(lbtn(lab, tip, L.view === v, () => { L.view = v; store.set('img.lesView', v); drawLesions(id, body); })));
+    bar.append(...lesViewBtns(id, body).childNodes);
     const chk = (label, key, prop) => { const lab = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = L[prop];
       cb.onchange = () => { L[prop] = cb.checked; store.set(key, cb.checked); drawLesions(id, body); }; lab.append(cb, ' ' + label); bar.append(lab); };
     chk('treatments', 'img.lesTx', 'showTx'); chk('our measurements', 'img.lesMeas', 'showMeas');
@@ -630,6 +639,8 @@
   }
 
   function drawLesions(id, body) {
+    if ((L.view === 'volume' || L.view === 'periods') && !window.LesionTrends) L.view = 'timeline';
+    if (L.view === 'volume' || L.view === 'periods') return window.LesionTrends.draw(id, body, L.view, lesViewBtns(id, body), () => drawLesions(id, body));
     const old = charts.get(id); if (old) { old.destroy(); charts.delete(id); }
     body.innerHTML = ''; lesToolbar(body, id);
     const H = hOf(id, PANELS[id].h0);
@@ -782,7 +793,7 @@
       G.appendChild(d);
     };
     row(ID, 'Scan dates', ROWS.length + ' · ' + ROWS.filter(r => !r.images).length + ' no images', 'Every brain MRI as a point on the timeline');
-    row(IDL, 'Lesions over time', LS.lesions.length + ' lesions · ' + LS.scans.length + ' reports', 'Each lesion (L01…) across every report: timeline, size lines, grid; treatments marked');
+    row(IDL, 'Lesions over time', LS.lesions.length + ' lesions · ' + LS.scans.length + ' reports', 'Each lesion (L01…): our measured volumes with trends and doubling times, plus what every report said (timeline, sizes, grid); treatments marked');
     row(IDV, 'Slice viewer', SCANS.length + ' measured', 'Scroll through a scan in 3 planes + 3D with our lesion outlines (L01…)');
     if (DOSE) row(IDD, 'Radiation dose by lesion', 'estimated', 'Estimated radiation dose each lesion received, split by course (stacked bars)');
   };

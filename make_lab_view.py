@@ -350,6 +350,11 @@ const X0=ms(D.span[0]);const _e=new Date(ms(D.span[1]));const X1=Date.UTC(_e.get
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const BRK=D.brk?ms(D.brk):null,FR=D.brk?D.brkw:0,NDAYS=Math.round((X1-X0)/DAY);
 const YW=64;
+/* Shared plot edges for every chart on the time axis (labs, treatments, keyframes, MRD, imaging, procedures...):
+   y axis YW wide on the left, 8px on the right, no automatic padding for big points or edge tick labels.
+   Then the same moment is at the same x in every panel, so the scrub line lines up. Draw extra labels inside the plot. */
+const TLAY=(top=8,bottom=0)=>({autoPadding:false,padding:{left:0,top,right:8,bottom}});
+const tEdge=s=>{s.paddingLeft=0;s.paddingRight=0};
 const MINW=DAY/2;   // shortest window: 12 hours (hospital stays with readings every few hours)
 let W=store.get('window',{a:X0,b:X1});if(!(W.a>=X0&&W.b<=X1&&W.b-W.a>=MINW))W={a:X0,b:X1};
 let mode=store.get('mode','single');
@@ -413,8 +418,8 @@ function chartSpec(t,opt){
    onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null);pointPop(e,els,c,t,pv,x=>x.ts!=null?x.ts:ms(x.date))},
    onClick:(e,els,c)=>pointPop(e,els,c,t,pv,x=>x.ts!=null?x.ts:ms(x.date),true),   // click a reading: pin its box
    plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const x=pv[c[0].dataIndex];return x.ts!=null?localStamp(x.ts):x.date},label:c=>{const x=pv[c.dataIndex];return valText(x)+' '+t.unit+(x.flag?'  ['+x.flag+']':'')+'  · '+x.src+(x.name!==t.name?' ('+x.name+')':'')}}}},
-   layout:{padding:{right:8}},
-   scales:{x:{type:'linear',min:0,max:100,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
+   layout:TLAY(),
+   scales:{x:{type:'linear',min:0,max:100,afterFit:tEdge,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
      ticks:{display:opt.showX!==false,color:css('--muted'),autoSkip:false,maxRotation:0,callback:(v,i)=>TK[i]?TK[i].label:''},
      grid:{color:c=>{const k=TK[c.index];return k&&(k.year||k.brk)?(k.brk?css('--ink2'):css('--line')):'transparent'}}},
     y:{min:ymin-pad,max:ymax+pad,afterFit:s=>{s.width=YW},ticks:{color:css('--muted'),maxTicksLimit:opt.compact?4:8},grid:{color:css('--line')}}}}};

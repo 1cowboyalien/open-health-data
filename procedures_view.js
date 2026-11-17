@@ -35,7 +35,8 @@
   let picked = null;                       // id shown in the detail card
   let ticked = new Set(store.get('proc.moments', P.events.filter(e => e.key).map(e => e.id)));
   const BODIES = new Map();
-  const YW = 232, CW = 54;   // left of the chart: × ↑ ↓, lane name, then the lane's total (CW wide)
+  // the plot keeps the shared edges (YW and the 8px right margin from the viewer), so the scrub line lines up with the other panels:
+  // × ↑ ↓ sit in the YW column; each lane's name and total are a small label at the top-left of its lane, inside the plot
   /* total per lane, all on record: procedures in that lane (an operation that also counts in a second lane counts there too),
      devices for Ports & lines, stays + ER for Hospital stay, visits for Outpatient visit */
   function laneTotal(k) {
@@ -92,7 +93,7 @@
   /* ================= Procedures over time ================= */
   function xAxis() {
     const TK = ticks();
-    return {type: 'linear', min: 0, max: 100, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
+    return {type: 'linear', min: 0, max: 100, afterFit: tEdge, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
       ticks: {color: css('--muted'), autoSkip: false, maxRotation: 0, callback: (v, i) => TK[i] ? TK[i].label : ''},
       grid: {color: c => { const k = TK[c.index]; return k && (k.year || k.brk) ? (k.brk ? css('--ink2') : css('--line')) : 'transparent'; }}};
   }
@@ -173,8 +174,9 @@
     afterDatasetsDraw(c) {
       const {ctx, chartArea: a, scales: {x, y}} = c, Y = lane => y.getPixelForValue(VIS.indexOf(lane));
       ctx.save();
-      // planned (no date): dashed hollow marker in the right margin
-      P.planned.forEach((p, i) => { if (!on(p.lane)) return; const px = a.right + 16 + i * 18, yc = Y(p.lane);
+      // planned (no date): dashed hollow marker at the right edge
+      P.planned.forEach((p, i) => { if (!on(p.lane)) return; const px = a.right - 12 - (P.planned.length - 1 - i) * 18, yc = Y(p.lane);   // just inside the right edge
+        ctx.fillStyle = css('--card'); ctx.globalAlpha = .85; ctx.fillRect(px - 9, yc - 19, 18, 29); ctx.globalAlpha = 1;
         ctx.strokeStyle = LCOL[p.lane]; ctx.setLineDash([2, 2]); ctx.lineWidth = 1.5; drawShape(ctx, shapeOf(p.lane), px, yc, 7); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = LCOL[p.lane]; ctx.font = 'bold 9px system-ui'; ctx.textAlign = 'center'; ctx.fillText('?', px, yc + 3);
         ctx.font = '9px system-ui'; ctx.fillText('planned', px, yc - 12); ctx.textAlign = 'start';
@@ -326,7 +328,7 @@
         pointBorderColor: p => p.raw && ticked.has(p.raw.e.id) ? css('--ink') : '#fff', pointBorderWidth: p => p.raw && ticked.has(p.raw.e.id) ? 2 : 1},
         {data: vpts, pointStyle: 'rect', pointRadius: p => p.raw && picked === 'visit:' + p.raw.vi ? 6 : 3.5, pointHoverRadius: 6,
          pointBackgroundColor: p => p.raw ? visitCol(p.raw.v) : '#888', pointBorderColor: p => p.raw && picked === 'visit:' + p.raw.vi ? css('--ink') : 'transparent', pointBorderWidth: 2}]},
-      options: {animation: false, maintainAspectRatio: false, clip: false, layout: {padding: {right: 46 + 18 * (P.planned.length - 1), top: 14}},
+      options: {animation: false, maintainAspectRatio: false, clip: false, layout: TLAY(14),
         onHover: (ev, els, ch) => { const xv = ch.scales.x.getValueForPixel(ev.x); setHover(xv >= 0 && xv <= 100 ? xv : null);
           if (els.length) { showTip(tip, null); ch.canvas.style.cursor = 'pointer'; } },
         onClick: (ev, els, ch) => {
@@ -342,21 +344,19 @@
             afterBuildTicks: a => { a.ticks = VIS.map((_, i) => ({value: i})); },
             ticks: {display: false}, grid: {color: css('--line')}}}}});
     // lane names with × ↑ ↓ (HTML on top of the chart, like the Treatment panel's medication rows)
-    VIS.forEach((k, i) => { const yc = c.scales.y.getPixelForValue(i), L = laneLabel(k);
-      const row = document.createElement('div'); row.style.cssText = `position:absolute;z-index:4;left:2px;top:${yc - 9}px;width:${c.chartArea.left - 8}px;height:18px;display:flex;align-items:center;gap:1px`;
+    const band = VIS.length > 1 ? Math.abs(c.scales.y.getPixelForValue(1) - c.scales.y.getPixelForValue(0)) : 40;
+    VIS.forEach((k, i) => { const yc = c.scales.y.getPixelForValue(i), L = laneLabel(k), t = laneTotal(k);
+      const row = document.createElement('div'); row.style.cssText = `position:absolute;z-index:4;left:2px;top:${yc - 9}px;width:${c.chartArea.left - 6}px;height:18px;display:flex;align-items:center;justify-content:flex-end;gap:1px`;
       const mk = (t, title, fn, off) => { const b = btn(t, e => { e.stopPropagation(); fn(); }, 'prmv'); b.title = title; b.setAttribute('aria-label', title); b.disabled = !!off; return b; };
-      const nm = document.createElement('span'); nm.textContent = L; nm.title = L + (k === 'visit' ? ' (' + VISITS.length + ')' : k === 'stay' ? ' (' + STAYS.length + ')' : '');
-      nm.style.cssText = `flex:1;text-align:right;font:bold 11px system-ui;color:${LCOL[k]};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:4px`;
       row.append(mk('×', 'Hide the ' + L + ' lane (＋ above the chart brings it back)', () => hideLane(k, true)),
-        mk('↑', 'Move ' + L + ' up', () => moveLane(k, -1), i === 0), mk('↓', 'Move ' + L + ' down', () => moveLane(k, 1), i === VIS.length - 1), nm);
-      // total right after the name: all on record (not only the time window); hover says how many are in view
-      const t = laneTotal(k), cnt = document.createElement('span');
-      cnt.style.cssText = `flex:none;width:${CW}px;text-align:left;font:bold 12px system-ui;color:${LCOL[k]};cursor:default;white-space:nowrap;overflow:hidden`;
-      cnt.textContent = t.n; cnt.title = t.tip; cnt.setAttribute('aria-label', L + ' total: ' + t.tip);
-      if (t.sub) { const sm = document.createElement('span'); sm.style.cssText = 'font-weight:400;font-size:9px;opacity:.8;margin-left:2px'; sm.textContent = t.sub; cnt.append(sm); }
-      row.append(cnt); box.append(row); });
-    { const hd = document.createElement('div'); hd.className = 'sub';
-      hd.style.cssText = `position:absolute;left:${c.chartArea.left - 6 - CW}px;top:0;width:${CW}px;font-size:10px`; hd.textContent = 'total'; box.append(hd); }
+        mk('↑', 'Move ' + L + ' up', () => moveLane(k, -1), i === 0), mk('↓', 'Move ' + L + ' down', () => moveLane(k, 1), i === VIS.length - 1));
+      // name and total (all on record, not only the time window): top-left of the lane, inside the plot; clicks pass through to the chart
+      const tag = document.createElement('div'); tag.title = t.tip; tag.setAttribute('aria-label', L + ' total: ' + t.tip);
+      tag.style.cssText = `position:absolute;z-index:3;pointer-events:none;left:${c.chartArea.left + 3}px;top:${yc - Math.min(band / 2, 24) + 1}px;max-width:240px;` +
+        `font:bold 10.5px system-ui;line-height:13px;color:${LCOL[k]};background:color-mix(in srgb,var(--card) 80%,transparent);padding:0 4px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+      tag.textContent = L + ' ' + t.n;
+      if (t.sub) { const sm = document.createElement('span'); sm.style.cssText = 'font-weight:400;font-size:9px;opacity:.8;margin-left:3px'; sm.textContent = t.sub; tag.append(sm); }
+      box.append(row, tag); });
     // drawn shapes (bars, stays, bands, planned) are handled on the canvas itself: Chart.js ignores clicks outside the plot area
     const onPoint = ev => c.getElementsAtEventForMode(ev, 'nearest', {intersect: true}, false).length > 0;
     cv.addEventListener('mousemove', ev => { if (onPoint(ev)) return; const h = hitAt(ev.offsetX, ev.offsetY);
@@ -471,8 +471,8 @@
     const items = layerItems(), X = t => x.getPixelForValue(pos(Math.min(Math.max(t, W.a), W.b)));
     layerHits = [];
     // label in the narrow strip left of the axis (as wide as the Moments track's own margin)
-    ctx.textAlign = 'right'; ctx.font = '600 11px system-ui'; ctx.fillStyle = css('--ink'); ctx.fillText('All in selection', A.left - 6, 14);
-    ctx.font = '10px system-ui'; ctx.fillStyle = css('--muted'); ctx.fillText(items.filter(i => i.kind !== 'bar').length + ' points', A.left - 6, 27); ctx.textAlign = 'start';
+    ctx.textAlign = 'right'; ctx.font = '600 10px system-ui'; ctx.fillStyle = css('--ink'); ctx.fillText('Selected', A.left - 6, 14);
+    ctx.font = '10px system-ui'; ctx.fillStyle = css('--muted'); ctx.fillText(items.filter(i => i.kind !== 'bar').length + ' pts', A.left - 6, 27); ctx.textAlign = 'start';
     ctx.strokeStyle = css('--line'); ctx.beginPath(); ctx.moveTo(A.left, 17.5); ctx.lineTo(A.right, 17.5); ctx.stroke();
     // bars first (bottom), then visit dots (top row), fraction ticks, then procedure keyframes on the centre line
     items.filter(i => i.kind === 'bar').forEach(i => { const x0 = X(i.t), x1 = Math.max(X(i.t1), x0 + 3);

@@ -88,7 +88,7 @@ const MRD = (() => {
   /* ---------- shared chart pieces: the viewer's x axis (0-100 via pos, compressed early years), hover line, moments ---------- */
   function xAxis(show = true) {
     const TK = ticks();
-    return {type: 'linear', min: 0, max: 100, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
+    return {type: 'linear', min: 0, max: 100, afterFit: tEdge, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
       ticks: {display: show, color: css('--muted'), autoSkip: false, maxRotation: 0, callback: (v, i) => TK[i] ? TK[i].label : ''},
       grid: {color: c => { const k = TK[c.index]; return k && (k.year || k.brk) ? (k.brk ? css('--ink2') : css('--line')) : 'transparent'; }, drawTicks: show}};
   }
@@ -163,7 +163,7 @@ const MRD = (() => {
           return p.s ? [`${fd(r.draw_date)}: mean allele ratio ${p.s.mean.toFixed(4)}%`, `${p.s.n} of ${p.s.of} variants found`, nat] : [`${fd(r.draw_date)}: no allele file`, nat]; };
       }
       keep(key + '#c', cv, {type: 'scatter', data: {datasets: ds}, plugins: plugins(),
-        options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: {padding: {right: 8}},
+        options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(),
           plugins: {legend: {display: false}, tooltip: {filter: i => i.datasetIndex > 0 && (measure === 'allele' || i.datasetIndex < 4), callbacks: {label: tip}}},
           scales: {x: xAxis(), y: yAx}}});
     }
@@ -289,7 +289,7 @@ const MRD = (() => {
           {data: found.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: rad(+a.allele_ratio), a})), backgroundColor: hi + 'cc', borderColor: hi, borderWidth: 1},
           {data: miss.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: 2.5, a})), backgroundColor: 'transparent', borderColor: nd, borderWidth: 1},
           {data: nofile.map(r => ({x: X(r.draw_date), y: 0, r: 2.5, d: r.draw_date, v: r.value})), backgroundColor: nd, borderColor: nd, pointStyle: 'line', borderWidth: 2, rotation: 90}]},
-          options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: {autoPadding: false, padding: {top: 62, right: 8}}, clip: false,   // no extra room for big bubbles, so the plot keeps the shared edges
+          options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(62), clip: false,   // no extra room for big bubbles, so the plot keeps the shared edges
             plugins: {legend: {display: false}, tooltip: {callbacks: {label: tip}}},
             scales: {x: xAxis(), y: {...yw(YW), reverse: true, min: -0.6, max: shownT().length + 0.6, grid: {color: c => c.tick.value === 0 ? 'transparent' : gridc},
               afterBuildTicks: a => { a.ticks = [0, ...shownT().map(rowOf)].map(v => ({value: v})); }, ticks: {autoSkip: false, callback: () => ''}}}}};
@@ -306,7 +306,7 @@ const MRD = (() => {
           return {type: 'line', label: 'V' + vnum(t), t, data: pts, borderColor: dim ? gridc : isOn ? hi : hi + '73', borderWidth: isOn ? 3 : 1.5, spanGaps: false,
             pointRadius: pts.map(p => p.y === null ? 0 : p.y === FLOOR ? 2 : isOn ? 5 : 3.5), pointBackgroundColor: pts.map(p => p.y === FLOOR ? nd : dim ? gridc : hi), pointBorderWidth: 0, tension: 0, order: isOn ? 0 : 1};
         });
-        cfg = {type: 'line', plugins: plugins(), data: {datasets: ds}, options: {maintainAspectRatio: false, animation: false, layout: {padding: {right: 8}}, interaction: {mode: 'nearest', intersect: false},
+        cfg = {type: 'line', plugins: plugins(), data: {datasets: ds}, options: {maintainAspectRatio: false, animation: false, layout: TLAY(), interaction: {mode: 'nearest', intersect: false},
           onHover: (e, els, c) => { hov(e, els, c); const t = els.length ? c.data.datasets[els[0].datasetIndex].t : null; if (t !== hoverT) { hoverT = t; setTimeout(draw, 0); } },
           plugins: {legend: {display: false}, tooltip: {callbacks: {label: tip}}},
           scales: {x: xAxis(), y: {...yw(YW), type: 'logarithmic', min: 0.0025, max: 1, grid: {color: gridc},
@@ -340,7 +340,7 @@ const MRD = (() => {
             pointRadius: pts.map(p => p.k === 'f' ? 4 : p.k === 'n' ? 3 : 2), pointHoverRadius: pts.map(p => p.k === 'f' ? 6 : 4),
             pointBackgroundColor: pts.map(p => p.k === 'f' ? hi : p.k === 'n' ? css('--card') : nd + '99'),
             pointBorderColor: pts.map(p => p.k === 'f' ? hi : nd), pointBorderWidth: pts.map(p => p.k === 'n' ? 1.5 : 0)}]},
-          options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: {padding: {right: 8}}, interaction: {mode: 'nearest', axis: 'x', intersect: false},
+          options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(), interaction: {mode: 'nearest', axis: 'x', intersect: false},
             plugins: {legend: {display: false}, tooltip: {callbacks: {title: () => '', label: c => { const p = c.raw; return fd(p.a ? p.a.draw_date : p.d) + ': ' + (p.k === 'f' ? pctS(p.y / 100) : p.k === 'n' ? 'not found' : 'no allele file (draw reported ' + p.v + ' MTM/mL)'); }}}},
             scales: {x: xAxis(last), y: {...yw(YW), min: 0, max: sameY ? +(maxAll * 1.1).toFixed(2) : (ownMax > 0 ? undefined : 0.05), suggestedMax: ownMax * 1.15 || 0.05, grid: {color: gridc},
               ticks: {color: css('--muted'), maxTicksLimit: 3, font: {size: 10.5}, callback: v => v === 0 ? '0' : (+v).toPrecision(2).replace(/\.?0+$/, '') + '%'}}}}});

@@ -83,7 +83,7 @@
   const guide = {id: 'ltrGuide', afterDatasetsDraw(c) { if (hoverX == null) return; const {ctx, chartArea: a, scales: {x}} = c, px = x.getPixelForValue(hoverX);
     if (px < a.left || px > a.right) return; ctx.save(); ctx.strokeStyle = css('--muted'); ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); ctx.restore(); }};
   function xAxis() { const TK = ticks();
-    return {type: 'linear', min: 0, max: 100, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
+    return {type: 'linear', min: 0, max: 100, afterFit: tEdge, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
       ticks: {color: css('--muted'), autoSkip: false, maxRotation: 0, callback: (v, i) => TK[i] ? TK[i].label : ''},
       grid: {color: c => { const k = TK[c.index]; return k && (k.year || k.brk) ? (k.brk ? css('--ink2') : css('--line')) : 'transparent'; }}}; }
 
@@ -176,20 +176,23 @@
     }
     fits.forEach(f => { const N = 24, pts = []; for (let i = 0; i <= N; i++) { const t = f.t0 + (f.t1 - f.t0) * i / N; pts.push({x: pos(t), y: f.f(t), fit: f}); }
       ds.push({label: f.label + ' trend', data: pts, parsing: true, borderColor: f.col, borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, showLine: true, fill: false}); });
-    /* trend labels in a column right of the chart, each joined to its line's end by a thin leader */
-    const endLab = {id: 'ltrEnd', afterDatasetsDraw(c) { if (!fits.length) return; const {ctx, chartArea: a, scales: {x, y}} = c, H = c.height;
+    /* trend labels in a column just inside the right edge of the plot (the plot keeps the shared edges, so the scrub line
+       lines up with the other panels), each on a dark backing and joined to its line's end by a thin leader */
+    const endLab = {id: 'ltrEnd', afterDatasetsDraw(c) { if (!fits.length) return; const {ctx, chartArea: a, scales: {x, y}} = c;
       ctx.save(); ctx.font = 'bold 10.5px system-ui'; ctx.textBaseline = 'middle';
       const L = fits.map(f => ({f, px: Math.min(a.right, x.getPixelForValue(pos(f.t1))), ey: y.getPixelForValue(f.f(f.t1)), txt: f.label + ' ' + rateTxt(f.k)}))
-        .filter(o => o.px >= a.left).map(o => Object.assign(o, {py: Math.max(a.top, Math.min(a.bottom, o.ey))})).sort((p, q) => p.py - q.py);
-      const G = 13; for (let i = 1; i < L.length; i++) L[i].py = Math.max(L[i].py, L[i - 1].py + G);
-      const over = L.length ? L[L.length - 1].py - (H - 8) : 0; if (over > 0) L.forEach(o => { o.py -= over; });   // push the stack up if it runs off the bottom
+        .filter(o => o.px >= a.left).map(o => Object.assign(o, {py: Math.max(a.top + 7, Math.min(a.bottom - 7, o.ey)), w: ctx.measureText(o.txt).width})).sort((p, q) => p.py - q.py);
+      const G = 14; for (let i = 1; i < L.length; i++) L[i].py = Math.max(L[i].py, L[i - 1].py + G);
+      const over = L.length ? L[L.length - 1].py - (a.bottom - 7) : 0; if (over > 0) L.forEach(o => { o.py -= over; });   // push the stack up if it runs off the bottom
       for (let i = L.length - 2; i >= 0; i--) L[i].py = Math.min(L[i].py, L[i + 1].py - G);
-      const lx = a.right + 14;
-      L.forEach(o => { ctx.strokeStyle = o.f.col; ctx.globalAlpha = .55; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(o.px, Math.max(a.top, Math.min(a.bottom, o.ey))); ctx.lineTo(lx - 3, o.py); ctx.stroke(); ctx.globalAlpha = 1;
+      const rx = a.right - 4;
+      L.forEach(o => { const lx = rx - o.w;
+        if (o.px < lx - 8) { ctx.strokeStyle = o.f.col; ctx.globalAlpha = .55; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(o.px, Math.max(a.top, Math.min(a.bottom, o.ey))); ctx.lineTo(lx - 5, o.py); ctx.stroke(); }
+        ctx.globalAlpha = .82; ctx.fillStyle = css('--card'); ctx.fillRect(lx - 4, o.py - 7, o.w + 7, 14); ctx.globalAlpha = 1;
         ctx.fillStyle = o.f.col; ctx.fillText(o.txt, lx, o.py); });
       ctx.restore(); }};
     const cfg = {type: 'line', plugins: [txPlugin, guide, endLab].concat(typeof momentPlugin === 'object' ? [momentPlugin] : []), data: {datasets: ds},
-      options: {animation: false, maintainAspectRatio: false, clip: false, layout: {padding: {right: fits.length ? 118 : 0}},
+      options: {animation: false, maintainAspectRatio: false, clip: false, layout: TLAY(),
         onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
         plugins: {legend: {display: false}, tooltip: {displayColors: false, filter: it => !it.raw.fit, callbacks: {
           title: it => it[0] ? fd(it[0].raw.date) : '',

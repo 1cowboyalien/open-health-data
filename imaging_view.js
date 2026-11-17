@@ -28,7 +28,7 @@
   /* ================= Scan dates panel (points on the time axis) ================= */
   function xAxis() {
     const TK = ticks();
-    return {type: 'linear', min: 0, max: 100, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
+    return {type: 'linear', min: 0, max: 100, afterFit: tEdge, afterBuildTicks: a => { a.ticks = TK.map(k => ({value: k.value})); },
       ticks: {color: css('--muted'), autoSkip: false, maxRotation: 0, callback: (v, i) => TK[i] ? TK[i].label : ''},
       grid: {color: c => { const k = TK[c.index]; return k && (k.year || k.brk) ? (k.brk ? css('--ink2') : css('--line')) : 'transparent'; }}};
   }
@@ -50,7 +50,7 @@
         pointBackgroundColor: p => p.raw && p.raw.r.images ? srcColor(p.raw.r.site) : '#fff',
         pointBorderColor: p => p.raw && hasView(p.raw.r.date) ? '#fff' : (p.raw ? srcColor(p.raw.r.site) : '#888'),
         pointBorderWidth: p => p.raw && (hasView(p.raw.r.date) || !p.raw.r.images) ? 2 : 1}]},
-      options: {animation: false, maintainAspectRatio: false, clip: false,
+      options: {animation: false, maintainAspectRatio: false, clip: false, layout: TLAY(),
         onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null);
           ch.canvas.style.cursor = els.length && hasView(ch.data.datasets[0].data[els[0].index].r.date) ? 'pointer' : 'default'; },
         onClick: (e, els, ch) => { if (!els.length) return; const r = ch.data.datasets[0].data[els[0].index].r;
@@ -541,9 +541,11 @@
       afterDatasetsDraw(c) { if (!DOSE || !L.doseNum) return; const {ctx, chartArea: a, scales: {x, y}} = c; ctx.save(); ctx.font = 'bold 10px system-ui'; ctx.textBaseline = 'middle';
         LS.lesions.forEach(l => { const r = rowOf(l.id); if (r == null) return; const yc = y.getPixelForValue(r), rows = doseRows(l.id);
           rows.filter(d => d.targeted && !isWhole(d.course)).forEach(d => { const px = x.getPixelForValue(pos(ms(d.end)));
-            if (px < a.left || px > a.right - 20) return; ctx.fillStyle = CCOL[d.course]; ctx.fillText(Math.round(dval(d)), px + 6, yc - 1); });
-          if (rows.length) { const tot = drun(rows[rows.length - 1]); ctx.fillStyle = heat(tot); ctx.fillText(Math.round(tot), a.right + 6, yc); } });
-        ctx.fillStyle = css('--muted'); ctx.font = '9px system-ui'; ctx.fillText('total', a.right + 4, a.top - 6);
+            if (px < a.left || px > a.right - 56) return; ctx.fillStyle = CCOL[d.course]; ctx.fillText(Math.round(dval(d)), px + 6, yc - 1); });
+          if (rows.length) { const tot = drun(rows[rows.length - 1]), t = String(Math.round(tot)), w = ctx.measureText(t).width;   // total: just inside the right edge
+            ctx.fillStyle = css('--card'); ctx.globalAlpha = .85; ctx.fillRect(a.right - w - 8, yc - 7, w + 6, 14); ctx.globalAlpha = 1;
+            ctx.textAlign = 'right'; ctx.fillStyle = heat(tot); ctx.fillText(t, a.right - 4, yc); ctx.textAlign = 'start'; } });
+        ctx.fillStyle = css('--muted'); ctx.font = '9px system-ui'; ctx.textAlign = 'right'; ctx.fillText('total', a.right - 4, a.top - 1); ctx.textAlign = 'start';
         ctx.restore(); }};
   }
 
@@ -650,7 +652,7 @@
     box.appendChild(cv); body.appendChild(box); box.onmouseleave = () => setHover(null);
     const S = shownL(), row = Object.fromEntries(S.map((l, i) => [l.id, i]));
     const reps = LS.reports.filter(r => row[r.lesion] != null), meas = L.showMeas ? MEAS().filter(m => row[m.lesion] != null && fieldOK(m)) : [];
-    const common = {animation: false, maintainAspectRatio: false, clip: false,
+    const common = {animation: false, maintainAspectRatio: false, clip: false, layout: TLAY(),
       onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
       plugins: {legend: {display: false}, tooltip: {displayColors: false, callbacks: {title: it => fd(it[0].raw.date), label: it => lesTooltip(it.raw)}}}};
     let cfg;
@@ -666,7 +668,7 @@
            pointBorderWidth: p => p.raw && p.raw.r.trend ? 2.2 : 1.4},
           {data: mdata, parsing: true, pointStyle: p => p.raw ? measShape(p.raw.meas) : 'rectRot', pointRadius: p => p.raw ? Math.max(4, Math.min(12, 3 + Math.cbrt(p.raw.meas.enh_mm3) / 2)) : 4,
            pointBackgroundColor: p => p.raw && !p.raw.meas.none ? LCOL[p.raw.lesion] : 'rgba(0,0,0,0)', pointBorderColor: p => p.raw && p.raw.meas.none ? LCOL[p.raw.lesion] : '#fff', pointBorderWidth: 1.5}]},
-        options: Object.assign({}, common, {layout: {padding: {right: DOSE && L.doseNum ? 34 : 0, top: 8}}, scales: {x: xAxis(),
+        options: Object.assign({}, common, {scales: {x: xAxis(),
           y: {min: -0.6, max: S.length - 0.4, reverse: true, afterFit: s => { s.width = YW; }, afterBuildTicks: a => { a.ticks = S.map((_, i) => ({value: i})); },
               ticks: {autoSkip: false, color: c => LCOL[S[c.tick.value] && S[c.tick.value].id] || css('--muted'), font: {weight: 'bold', size: 10}, callback: v => S[v] ? S[v].id : ''},
               grid: {color: css('--line')}}}})};

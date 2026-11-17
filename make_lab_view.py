@@ -10,6 +10,7 @@ lab charts on the same time axis (rows: med_timeline.py; drawing and editing: me
 Changes made in the viewer can be exported to local/med_edits.json; it is built back in here.
 If local/procedures/procedures.json exists, a Procedures section is added (procedures_view.js).
 If local/dna/dna.json exists, a DNA section is added (dna_view.js).
+If local/ask.json exists, Ask features are added (ask_view.js; needs a separate local chat server).
 
 The same test from different hospitals is combined by LOINC code (by name when there's
 no LOINC) and unit; each point keeps its source hospital.
@@ -662,6 +663,7 @@ __MSJS__
 __PROCJS__
 __PATHJS__
 __DNAJS__
+__ASKJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
@@ -695,13 +697,22 @@ dnajs = ""
 if os.path.exists(dna_json):
     dnajs = ("const DNA_DATA=" + open(dna_json).read().strip().replace("</", "<\\/") + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dna_view.js")).read())
+# Ask (chat about the records, drawn by ask_view.js): only if local/ask.json exists, e.g.
+# {"chatServer": "http://127.0.0.1:8820"}. The chat server is separate and not part of this repo;
+# the page shows the Ask features only when that server answers.
+ask_json = os.path.join(os.path.dirname(out), "ask.json")
+askjs = ""
+if os.path.exists(ask_json):
+    askjs = ("const ASK_CONFIG=" + json.dumps(json.load(open(ask_json))).replace("</", "<\\/") + ";\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ask_view.js")).read())
 # Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
 msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__DNAJS__", dnajs))
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__DNAJS__", dnajs).replace("__ASKJS__", askjs))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
       + ("; imaging: local/imaging/imaging.json" if imgjs else "")
       + ("; procedures: local/procedures/procedures.json" if procjs else "")
       + ("; pathology: local/pathology/pathology.json" if pathjs else "")
-      + ("; dna: local/dna/dna.json" if dnajs else ""))
+      + ("; dna: local/dna/dna.json" if dnajs else "")
+      + ("; ask: local/ask.json" if askjs else ""))

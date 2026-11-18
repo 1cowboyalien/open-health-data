@@ -401,11 +401,13 @@ function zStamp(t,z=NAVTZ){if(!z)return localStamp(t);const w=new Date(tzWall(t,
 /* 'YYYY-MM-DDTHH:MM' as clock time in zone z -> UTC ms (two passes, so dates across a DST change get their own offset) */
 function zParse(v,z=NAVTZ){if(!z)return new Date(v).getTime();const m=/^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})/.exec(v);if(!m)return NaN;
  const g=Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5]);return g-tzOff(g-tzOff(g,z),z)}
+/* hover / tooltip times follow the navigator's time zone and say which zone it is */
+function hStamp(t){return zStamp(t)+' '+zAbbr(t)}
 function zAbbr(t,z=NAVTZ){try{return new Intl.DateTimeFormat('en-US',{timeZone:z||undefined,timeZoneName:'short'}).formatToParts(new Date(t)).find(x=>x.type==='timeZoneName').value}catch(e){return ''}}
 function zUtc(t,z=NAVTZ){const o=Math.round((z?tzOff(t,z):-new Date(t).getTimezoneOffset()*6e4)/6e4),h=Math.floor(Math.abs(o)/60),m=Math.abs(o)%60;return 'UTC'+(o<0?'−':'+')+h+(m?':'+String(m).padStart(2,'0'):'')}
 const ZNAMES={'America/New_York':'Eastern','America/Chicago':'Central','America/Denver':'Mountain','America/Phoenix':'Arizona','America/Los_Angeles':'Pacific','America/Anchorage':'Alaska','Pacific/Honolulu':'Hawaii','UTC':'UTC'};
 const zName=z=>z?(ZNAMES[z]?ZNAMES[z]+(z==='UTC'?'':' time'):z.replace(/_/g,' ')):'This browser'+(BROWSER_TZ?' ('+(ZNAMES[BROWSER_TZ]||BROWSER_TZ.replace(/_/g,' '))+')':'');
-const whenText=t=>(W.b-W.a)<=3*DAY?localStamp(t):iso(t);
+const whenText=t=>(W.b-W.a)<=3*DAY?hStamp(t):zStamp(t).slice(0,10);
 function ticks(){const T=[],a=W.a,b=W.b,months=(b-a)/(30.44*DAY),c=compressing();if((b-a)/DAY<=45)return shortTicks(a,b,(b-a)/DAY);
  const step=months>30?3:months>14?2:1;
  for(let d=new Date(Date.UTC(new Date(a).getUTCFullYear(),new Date(a).getUTCMonth(),1));d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){
@@ -441,7 +443,7 @@ function chartSpec(t,opt){
   options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
    onHover:(e,els,c)=>{const xv=c.scales.x.getValueForPixel(e.x);setHover(xv>=0&&xv<=100?xv:null);pointPop(e,els,c,t,pv,x=>x.ts!=null?x.ts:ms(x.date))},
    onClick:(e,els,c)=>pointPop(e,els,c,t,pv,x=>x.ts!=null?x.ts:ms(x.date),true),   // click a reading: pin its box
-   plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const x=pv[c[0].dataIndex];return x.ts!=null?localStamp(x.ts):x.date},label:c=>{const x=pv[c.dataIndex];return valText(x)+' '+t.unit+(x.flag?'  ['+x.flag+']':'')+'  · '+x.src+(x.name!==t.name?' ('+x.name+')':'')}}}},
+   plugins:{legend:{display:false},tooltip:{callbacks:{title:c=>{const x=pv[c[0].dataIndex];return x.ts!=null?hStamp(x.ts):x.date},label:c=>{const x=pv[c.dataIndex];return valText(x)+' '+t.unit+(x.flag?'  ['+x.flag+']':'')+'  · '+x.src+(x.name!==t.name?' ('+x.name+')':'')}}}},
    layout:TLAY(),
    scales:{x:{type:'linear',min:0,max:100,afterFit:tEdge,afterBuildTicks:a=>{a.ticks=TK.map(k=>({value:k.value}))},
      ticks:{display:opt.showX!==false,color:css('--muted'),autoSkip:false,maxRotation:0,callback:(v,i)=>TK[i]?TK[i].label:''},

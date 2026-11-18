@@ -54,7 +54,68 @@
   const togglePin = it => { const k = pkey(it), j = V.pins.indexOf(k); j >= 0 ? V.pins.splice(j, 1) : V.pins.push(k); save(); };
   const result = it => it.c.results[it.s.stain] || '';
   const caption = it => slideName(it.c, it.s) + ' · photo ' + (it.i + 1) + ' of ' + it.s.photos.length;
+  // by-eye review marks per photo: [[kind, text]]; kinds best / art / fat / dup / note
+  const MSYM = {best: '★', art: '⚠', fat: '○', dup: '≈', note: 'ℹ'}, MPRE = {art: 'Artifact: '};
+  const marksOf = it => (it.s.marks && it.s.marks[it.f]) || [];
+  const annOf = it => (it.s.ann && it.s.ann[it.f]) || null;   // teaching labels (Labels mode)
+  const markSym = it => marksOf(it).map(m => MSYM[m[0]] || '').join('') + (annOf(it) ? '🏷' : '');
+  const markText = it => marksOf(it).map(m => (MSYM[m[0]] || '') + ' ' + (MPRE[m[0]] || '') + m[1]).join('\n');
   let BODY = null, focusImg = false;
+  let labSel = -1, labFor = null;   // selected teaching label and the photo it belongs to
+  const LCOL = {tumor: '#ff4d4f', normal: '#22c55e', immune: '#38bdf8', blood: '#fb923c', structure: '#facc15', artifact: '#d4d4d8', measure: '#ffffff'};
+  const LNAME = {tumor: 'Tumor', normal: 'Normal tissue', immune: 'Immune cells', blood: 'Blood', structure: 'Supporting tissue', artifact: 'Artifact (not real)', measure: 'Ruler'};
+  /* Draw an annotation's labels over an <img> inside holder (holder must be position:relative).
+     Shapes are in the 1600-px-wide photo's pixels; badges are HTML so they stay a readable size. */
+  function overlay(holder, img, ann, onPick, onHover) {
+    const NS = 'http://www.w3.org/2000/svg', W = 1600;
+    const ov = document.createElement('div'); ov.className = 'pth-ov';
+    const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('preserveAspectRatio', 'none'); ov.append(svg); holder.append(ov);
+    const els = []; let hover = null;
+    const mk = (tag, at) => { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); return e; };
+    function build() {
+      const H = img.naturalWidth ? W * img.naturalHeight / img.naturalWidth : 900; svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      ann.labels.forEach((L, i) => { const col = LCOL[L.kind] || '#fff', g = mk('g', {}); let bx, by;
+        const sw = {stroke: col, 'stroke-width': 2.5, 'vector-effect': 'non-scaling-stroke', class: 'k'};
+        const halo = at => Object.assign({}, at, {stroke: 'rgba(0,0,0,.55)', 'stroke-width': 5, fill: 'none', class: 'h'});   // dark rim: visible on any stain
+        if (L.line) { const [x1, y1, x2, y2] = L.line, len = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / len * 9, ny = (x2 - x1) / len * 9;
+          const Q = [[x1, y1, x2, y2], [x1 - nx, y1 - ny, x1 + nx, y1 + ny], [x2 - nx, y2 - ny, x2 + nx, y2 + ny]].map(q => ({x1: q[0], y1: q[1], x2: q[2], y2: q[3]}));
+          Q.forEach(q => g.append(mk('line', halo(Object.assign({}, q, sw))))); Q.forEach(q => g.append(mk('line', Object.assign({}, q, sw))));
+          bx = (x1 + x2) / 2; by = Math.max(y1, y2) + 48;   // below the line, so it doesn't hide what it measures
+        } else { const rx = L.rx || L.r, ry = L.ry || L.r;
+          const geo = {cx: L.x, cy: L.y, rx, ry}; g.append(mk('ellipse', halo(Object.assign({}, geo, sw))));
+          const e = mk('ellipse', Object.assign({}, geo, {fill: col, 'fill-opacity': 0.06}, sw));
+          if (L.sure === 'maybe') e.setAttribute('stroke-dasharray', '7 5');
+          g.append(e); bx = L.x - rx * 0.71; by = L.y - ry * 0.71; }
+        const t = mk('title', {}); t.textContent = (L.kind === 'measure' ? '' : (i + 1) + '. ') + L.name; g.append(t);
+        svg.append(g);
+        const b = document.createElement('div'); b.className = 'pth-bdg' + (L.kind === 'measure' ? ' m' : '');
+        b.style.left = Math.max(1, Math.min(99, bx / W * 100)) + '%'; b.style.top = Math.max(2, Math.min(98, by / H * 100)) + '%';
+        if (L.kind !== 'measure') b.style.background = col;
+        b.textContent = L.kind === 'measure' ? L.name : String(i + 1); b.title = L.name;
+        ov.append(b);
+        [g, b].forEach(x => { x.onclick = e => { e.stopPropagation(); onPick(i); }; x.ondblclick = e => e.stopPropagation();
+          x.onmouseenter = () => { hover = i; paint(); if (onHover) onHover(i); }; x.onmouseleave = () => { hover = null; paint(); if (onHover) onHover(null); }; });
+        els.push({g, b}); });
+      paint(); place(); }
+    function paint() { const cur = hover != null ? hover : labSel;
+      els.forEach((x, j) => { const dim = cur >= 0 && j !== cur; x.g.style.opacity = dim ? .3 : 1; x.b.style.opacity = dim ? .45 : 1;
+        x.g.querySelectorAll('.k').forEach(e => e.setAttribute('stroke-width', j === cur ? 5 : 2.5));
+        x.g.querySelectorAll('.h').forEach(e => e.setAttribute('stroke-width', j === cur ? 8 : 5)); }); }
+    function place() { Object.assign(ov.style, {left: img.offsetLeft + 'px', top: img.offsetTop + 'px', width: img.offsetWidth + 'px', height: img.offsetHeight + 'px'}); }
+    new ResizeObserver(place).observe(img);
+    if (img.complete && img.naturalWidth) build(); else img.addEventListener('load', build, {once: true});
+    return {paint, hl: i => { hover = i; paint(); }};
+  }
+  // one label as a list row (side panel / full window)
+  function labelRow(L, i, sel, onPick, onHover) {
+    const r = document.createElement('div'); r.className = 'pth-li' + (sel ? ' on' : '');
+    const n = L.kind === 'measure' ? '↔' : String(i + 1);
+    r.innerHTML = `<span class="pth-bdg s" style="background:${LCOL[L.kind] || '#fff'}">${esc(n)}</span><div><b>${esc(L.name)}</b>${L.sure === 'maybe' ? ' <span class="sub">(a guess)</span>' : ''}` +
+      `<div class="tx">${esc(L.text)}</div></div>`;
+    r.onclick = () => onPick(i); r.onmouseenter = () => onHover(i); r.onmouseleave = () => onHover(null); return r; }
+  // guided tour: the labeled photos in labels.json order
+  const tourGo = (c, d, start) => { const T = c.tour || []; if (!T.length) return; const j = start ? -1 : T.indexOf(V.cur);
+    const n = j < 0 ? 0 : Math.max(0, Math.min(T.length - 1, j + d)); V.labels = true; focusImg = true; go('viewer', {filter: 'all', cur: T[n]}); };
   const redraw = () => { if (BODY && BODY.isConnected) draw(ID, BODY); };
   const go = (mode, extra) => { Object.assign(V, extra || {}); V.mode = mode; save(); redraw(); if (typeof list === 'function') list(); };
 
@@ -130,7 +191,13 @@
       '.pth-lb .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden}' +
       '.pth-lb .stage img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in}' +
       '.pth-lb .stage.z{display:block;overflow:auto}.pth-lb .stage.z img{max-width:none;max-height:none;cursor:zoom-out}' +
-      '.pth-lb .pth-nav{position:fixed}';
+      '.pth-lb .pth-nav{position:fixed}' +
+      '.pth-ov{position:absolute;pointer-events:none}.pth-ov svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.pth-ov svg g{pointer-events:visiblePainted;cursor:pointer}' +
+      '.pth-bdg{position:absolute;transform:translate(-50%,-50%);min-width:20px;height:20px;border-radius:10px;color:#000;font:700 12px/20px system-ui,sans-serif;text-align:center;padding:0 5px;box-sizing:border-box;pointer-events:auto;cursor:pointer;box-shadow:0 0 0 2px rgba(0,0,0,.55)}' +
+      '.pth-bdg.m{background:rgba(0,0,0,.72);color:#fff;font-weight:600;font-size:11px;white-space:nowrap}.pth-bdg.s{position:static;transform:none;display:inline-block;flex:none;box-shadow:none;cursor:inherit}' +
+      '.pth-li{display:flex;gap:6px;align-items:flex-start;padding:4px 5px;border-radius:5px;cursor:pointer;margin:1px 0}.pth-li:hover{background:rgba(127,127,127,.15)}.pth-li.on{background:rgba(127,127,127,.25)}' +
+      '.pth-li .tx{font-size:11.5px;opacity:.85}.pth-lesson{margin:8px 0;padding:6px 8px;border-left:3px solid #38bdf8;background:rgba(56,189,248,.08);font-size:12px}' +
+      '.pth-lb .stage{position:relative}.pth-lb .lcap{padding:6px 14px 10px;font-size:13px;min-height:38px;max-width:1100px}';
     document.head.append(st); }
   const mkBtn = (label, on, tip, fn, cls) => { const b = document.createElement('button'); b.className = 'pth-b' + (on ? ' on' : '') + (cls ? ' ' + cls : ''); b.textContent = label; b.title = tip; b.onclick = fn; return b; };
   const sep = () => { const d = document.createElement('span'); d.className = 'pth-sep'; return d; };
@@ -169,7 +236,7 @@
 
   function drawOverview(body, c) {
     const info = document.createElement('div'); info.className = 'sub'; info.style.cssText = 'font-size:12px;margin-bottom:6px';
-    info.innerHTML = `<b style="color:var(--ink)">${esc(c.title)}</b> · ${esc(fd(c.date))} · ${esc(c.site)} — ${esc(c.diagnosis)}<br>${esc(c.review)}`;
+    info.innerHTML = `<b style="color:var(--ink)">${esc(c.title)}</b> · ${esc(fd(c.date))} · ${esc(c.site)} — ${esc(c.diagnosis)}<br>${esc(c.review)}${c.reviewNote ? '<br><span style="font-size:11px">' + esc(c.reviewNote) + '</span>' : ''}`;
     info.title = 'Source: ' + c.source; body.append(info);
     const tl = document.createElement('div'); tl.className = 'pth-bar';
     tl.append(mkBtn(onLine.has(c.key) ? '✓ Line on the timeline' : '＋ Line on the timeline', onLine.has(c.key),
@@ -177,10 +244,12 @@
     if (c.procedure && window.PROC_SHOW) tl.append(mkBtn('Show in Procedures', false, 'Select this biopsy on the Procedures timeline', () => window.PROC_SHOW(c.procedure)));
     const nk = keyframes.filter(k => k.startsWith(c.key + '/')).length;
     if (nk) { const n = document.createElement('span'); n.className = 'sub'; n.style.fontSize = '11px'; n.textContent = '🔖 ' + nk + ' photo' + (nk > 1 ? 's' : '') + ' saved as keyframes'; tl.append(n); }
+    if ((c.tour || []).length) tl.append(mkBtn('🏷 Guided tour: ' + c.tour.length + ' labeled photos', false,
+      'Step through photos with labels on them (what each cell and structure is), from normal skin to tumor to each stain', () => tourGo(c, 0, true), 'big'));
     body.append(tl);
     const g = document.createElement('div'); g.className = 'pth-grid'; g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(190px,1fr))';
     c.slides.forEach(s => { const st = ST[s.stain] || {label: s.stain, kind: ''}, it = {c, s, f: coverOf(c, s), i: s.photos.indexOf(coverOf(c, s))};
-      const t = document.createElement('div'); t.className = 'pth-tile'; t.title = (st.what || '') + '\nClick: open this slide in the Viewer';
+      const t = document.createElement('div'); t.className = 'pth-tile'; t.title = (s.note ? s.note + '\n\n' : '') + (st.what || '') + '\nClick: open this slide in the Viewer';
       t.innerHTML = `<img loading="lazy" alt="${esc(slideName(c, s))}" src="${url(c, 'thumb', it.f)}">
         <div class="cap" style="font-size:12px"><b>${esc(slideName(c, s))}</b> ${kindTag(st)}<br><span class="pth-res">${esc(c.results[s.stain] || '—')}</span>
         <span class="sub"> · ${s.photos.length} photos</span></div>`;
@@ -201,9 +270,9 @@
     const g = document.createElement('div'); g.className = 'pth-grid';
     g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(' + V.thumb + 'px,1fr))'; g.style.maxHeight = hOf(id, PANEL.h0) + 'px';
     const kind = V.thumb > 240 ? 'full' : 'thumb';
-    L.forEach(it => { const t = document.createElement('div'); t.className = 'pth-tile'; t.title = caption(it) + '\n' + result(it);
+    L.forEach(it => { const t = document.createElement('div'); t.className = 'pth-tile'; t.title = caption(it) + '\n' + result(it) + (marksOf(it).length ? '\n' + markText(it) : '');
       const im = document.createElement('img'); im.loading = 'lazy'; im.alt = caption(it); im.dataset.f = it.f; im.dataset.k = kind; im.src = url(c, kind, it.f);
-      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = (V.filter === 'all' ? slideName(c, it.s) + ' · ' : '') + '#' + (it.i + 1);
+      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = (V.filter === 'all' ? slideName(c, it.s) + ' · ' : '') + '#' + (it.i + 1) + (markSym(it) ? ' ' + markSym(it) : '');
       t.append(im, cap, pinBtn(it)); t.ondblclick = e => { e.preventDefault(); lightbox(L, L.indexOf(it)); };
       t.onclick = () => { focusImg = true; go('viewer', {cur: pkey(it)}); }; g.append(t); });
     body.append(g);
@@ -219,6 +288,18 @@
     ctl.append(mkBtn('⛶ Full window', false, 'Show this photo as big as the window (Esc to close)', () => lightbox(L, k)));
     ctl.append(mkBtn(pinned(it) ? '✓ In Compare' : '＋ Compare', pinned(it), 'Add this photo to Compare, to see it next to others', () => { togglePin(it); redraw(); }));
     ctl.append(keyBtn(it));
+    ctl.append(sep());
+    const ann = annOf(it), lab = V.labels && ann;
+    if (labFor !== pkey(it)) { labSel = -1; labFor = pkey(it); }
+    ctl.append(mkBtn('🏷 Labels' + (V.labels ? ': on' : ''), !!V.labels, ann ? 'Show or hide the teaching labels on this photo: what each structure is (like a pathologist pointing things out)'
+      : 'Show or hide teaching labels (this photo has none: use Tour to go to the labeled ones)', () => { V.labels = !V.labels; save(); redraw(); }));
+    const T = c.tour || [];
+    if (T.length) { const j = T.indexOf(pkey(it));
+      ctl.append(mkBtn('◀', false, 'Previous photo in the guided tour', () => tourGo(c, -1)));
+      ctl.append(mkBtn(j >= 0 ? 'Tour ' + (j + 1) + ' / ' + T.length : 'Guided tour (' + T.length + ')', j >= 0, 'A guided tour of ' + T.length + ' labeled photos: normal skin first, then tumor, then each stain', () => tourGo(c, j < 0 ? 0 : 0)));
+      ctl.lastChild.onclick = () => { if (j < 0) tourGo(c, 0); else { V.labels = !V.labels; save(); redraw(); } };
+      if (j >= 0) ctl.lastChild.title = 'Stop ' + (j + 1) + ' of the guided tour (click to switch labels on or off)';
+      ctl.append(mkBtn('▶', false, 'Next photo in the guided tour', () => tourGo(c, j < 0 ? 0 : 1))); }
     body.append(ctl);
     const main = document.createElement('div'); main.className = 'pth-main'; main.style.height = V.size + 'px';
     const box = document.createElement('div'); box.className = 'pth-img'; box.tabIndex = 0; box.title = '← → previous / next photo · double-click: full window';
@@ -229,10 +310,33 @@
     box.onkeydown = e => { const d = {ArrowLeft: -1, ArrowRight: 1}[e.key]; if (!d) return; e.preventDefault(); e.stopPropagation(); step(d); };
     box.append(img, prev, next);
     const side = document.createElement('div'); side.className = 'pth-side';
+    let ovl = null, rows = [];
+    const pick = i => { labSel = labSel === i ? -1 : i; if (ovl) ovl.paint(); rows.forEach((r, j) => r.classList.toggle('on', j === labSel));
+      if (labSel >= 0 && rows[labSel]) rows[labSel].scrollIntoView({block: 'nearest'}); };
+    const hov = i => { rows.forEach((r, j) => r.style.outline = j === i ? '1px solid var(--line)' : ''); };
+    if (lab) {
+      ovl = overlay(box, img, ann, pick, hov);
+      side.style.flexBasis = '320px';
+      const hd = document.createElement('div');
+      hd.innerHTML = `<h4>${esc(ann.title)}</h4><p style="margin:4px 0 6px">${esc(ann.intro || '')}</p>`;
+      side.append(hd);
+      ann.labels.forEach((L, i) => { const r = labelRow(L, i, i === labSel, pick, h => { if (ovl) ovl.hl(h); }); rows.push(r); side.append(r); });
+      if (ann.lesson) { const ls = document.createElement('div'); ls.className = 'pth-lesson'; ls.innerHTML = '<b>Going deeper</b><br>' + esc(ann.lesson); side.append(ls); }
+      const kinds = [...new Set(ann.labels.map(L => L.kind))], lg = document.createElement('div'); lg.className = 'sub'; lg.style.cssText = 'font-size:11px;margin:6px 0';
+      lg.innerHTML = kinds.map(k => `<span style="color:${LCOL[k]};font-size:14px">●</span> ${esc(LNAME[k] || k)}`).join(' &nbsp;') +
+        '<br>Dashed outline = an educated guess. Labels are a layperson\'s reading of the photo, not a pathologist\'s.';
+      side.append(lg, document.createElement('hr'));
+    } else if (V.labels && T.length) {
+      const n = document.createElement('div'); n.className = 'sub'; n.style.cssText = 'font-size:11px;margin-bottom:6px';
+      n.textContent = 'No labels on this photo. The Tour buttons go to the ' + T.length + ' labeled photos.'; side.append(n);
+    }
+    const sideInfo = document.createElement('div'); side.append(sideInfo);
     const isCover = coverOf(c, it.s) === it.f;
-    side.innerHTML = `<h4>${esc(slideName(c, it.s))} ${kindTag(st)}</h4>
+    sideInfo.innerHTML = `<h4>${esc(slideName(c, it.s))} ${kindTag(st)}</h4>
       <div>Report: <span class="pth-res">${esc(result(it) || '—')}</span></div>
-      <p style="margin:6px 0">${esc(st.what)}</p>
+      ${marksOf(it).length ? '<div style="margin:6px 0;font-weight:600">' + esc(markText(it)).replace(/\n/g, '<br>') + '</div>' : ''}
+      ${it.s.note ? '<p style="margin:6px 0"><b>What you can see:</b> ' + esc(it.s.note) + '</p>' : ''}
+      <p style="margin:6px 0" class="sub">${esc(st.what)}</p>
       <div class="sub">Photo ${it.i + 1} of ${it.s.photos.length} on this slide${V.filter === 'all' ? ' · ' + (k + 1) + ' of ' + L.length + ' in all' : ''}<br>${esc(it.f)}</div>`;
     const acts = document.createElement('div'); acts.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-top:6px';
     acts.append(mkBtn(isCover ? '★ Cover' : '☆ Use as cover', isCover, 'The cover is the photo shown for this slide in the Overview (kept in this browser)', () => {
@@ -266,8 +370,8 @@
     const move = (j, d) => { const k = j + d; if (k < 0 || k >= V.pins.length) return; [V.pins[j], V.pins[k]] = [V.pins[k], V.pins[j]]; save(); redraw(); };
     L.forEach((it, j) => { const cell = document.createElement('div'); cell.className = 'pth-cell';
       const hd = document.createElement('div'); hd.className = 'hd';
-      const t = document.createElement('span'); t.className = 't'; t.innerHTML = `<b>${esc(slideName(it.c, it.s))}</b> · <span class="pth-res">${esc(result(it) || '—')}</span> <span class="sub">#${it.i + 1}</span>`;
-      t.title = caption(it) + '\n' + result(it);
+      const t = document.createElement('span'); t.className = 't'; t.innerHTML = `<b>${esc(slideName(it.c, it.s))}</b> · <span class="pth-res">${esc(result(it) || '—')}</span> <span class="sub">#${it.i + 1} ${markSym(it)}</span>`;
+      t.title = caption(it) + '\n' + result(it) + (marksOf(it).length ? '\n' + markText(it) : '');
       const bt = (label, tip, dis, fn) => { const b = document.createElement('button'); b.className = 'pth-x'; b.textContent = label; b.title = tip; b.disabled = dis; b.onclick = fn; return b; };
       hd.append(t, bt('◀', 'Move left', j === 0, () => move(j, -1)), bt('▶', 'Move right', j === L.length - 1, () => move(j, 1)),
         bt('✕', 'Take out of Compare', false, () => { V.pins.splice(j, 1); save(); redraw(); }));
@@ -281,6 +385,8 @@
   function lightbox(L, k) {
     const ov = document.createElement('div'); ov.className = 'pth-lb'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Slide photo, full window');
     let zoom = false;
+    const nav = (d, side, label) => { const b = document.createElement('button'); b.className = 'pth-nav'; b.style[side] = '10px'; b.textContent = label;
+      b.disabled = k + d < 0 || k + d >= L.length; b.onclick = e => { e.stopPropagation(); stepLb(d); }; return b; };
     function show() {
       const it = L[k]; ov.innerHTML = '';
       const top = document.createElement('div'); top.className = 'top';
@@ -288,14 +394,22 @@
       t.innerHTML = `<b>${esc(slideName(it.c, it.s))}</b> · ${esc(result(it) || '—')} · <span style="opacity:.7">photo ${it.i + 1} of ${it.s.photos.length}${L.length > 1 ? ' · ' + (k + 1) + '/' + L.length + ' here' : ''} · click the photo to see it at full resolution · ← → · Esc</span>`;
       top.append(t, mkBtn(pinned(it) ? '✓ In Compare' : '＋ Compare', pinned(it), 'Add this photo to Compare', () => { togglePin(it); show(); }), keyBtn(it, show));
       const a = document.createElement('a'); a.href = url(it.c, 'full', it.f); a.target = '_blank'; a.rel = 'noopener'; a.className = 'pth-b'; a.textContent = 'Full size ↗';
+      const ann = annOf(it);
+      if (ann) top.append(mkBtn('🏷 Labels' + (V.labels ? ': on' : ''), !!V.labels, 'Show or hide the teaching labels', () => { V.labels = !V.labels; save(); show(); }));
       top.append(a, mkBtn('✕ Close', false, 'Close (Esc)', close));
       const stage = document.createElement('div'); stage.className = 'stage' + (zoom ? ' z' : '');
       const img = document.createElement('img'); img.src = url(it.c, 'full', it.f); img.alt = caption(it);
       img.onclick = e => { e.stopPropagation(); zoom = !zoom; stage.classList.toggle('z', zoom); };
       stage.onclick = e => { if (e.target === stage) close(); };
       stage.append(img);
-      const nav = (d, side, label) => { const b = document.createElement('button'); b.className = 'pth-nav'; b.style[side] = '10px'; b.textContent = label;
-        b.disabled = k + d < 0 || k + d >= L.length; b.onclick = e => { e.stopPropagation(); stepLb(d); }; return b; };
+      if (ann && V.labels) {
+        const cap = document.createElement('div'); cap.className = 'lcap';
+        const say = i => { const L = ann.labels[i]; cap.innerHTML = L ? `<span class="pth-bdg s" style="background:${LCOL[L.kind] || '#fff'};color:#000">${L.kind === 'measure' ? '↔' : i + 1}</span> <b>${esc(L.name)}</b> ${esc(L.text)}`
+          : `<b>${esc(ann.title)}</b> · ${esc(ann.intro || '')} <span style="opacity:.6">(hover or click a number)</span>`; };
+        let lbSel = -1; const o2 = overlay(stage, img, ann, i => { lbSel = lbSel === i ? -1 : i; labSel = lbSel; o2.paint(); say(lbSel); }, i => say(i == null ? lbSel : i));
+        say(-1); ov.append(top, stage, cap);
+        ov.append(nav(-1, 'left', '‹'), nav(1, 'right', '›')); return;
+      }
       ov.append(top, stage, nav(-1, 'left', '‹'), nav(1, 'right', '›'));
     }
     const stepLb = d => { const j = k + d; if (j < 0 || j >= L.length) return; k = j; show(); };

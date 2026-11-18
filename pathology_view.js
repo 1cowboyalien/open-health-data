@@ -12,6 +12,12 @@
                 and per photo (click a row to open that photo). "• Spots" in the Viewer / full window draws a ring on every nucleus
                 the color program found (positions fetched per slide from /pathology/<case>/spots/<stain>_<slide>.json)
      Compare  = the ＋ photos side by side in 1-4 columns (◀ ▶ reorder, × remove); "Covers" fills it with every slide's cover
+     Learn    = a written lesson per slide ("Start here" + one per slide): what the stain is, how to read it, how it is scored, what
+                the report says, textbook examples with links, the slide's own numbers, pitfalls, questions to ask. The text comes
+                from the private data (c.lessons); this file only draws it. The Viewer shows each lesson's short "what to look for".
+   "◧ Tissue map" in the Viewer / full window tints each photo by an estimated "likely tumor / healthy tissue / can't tell" map made
+   by a color program (fetched per slide from /pathology/<case>/masks/<stain>_<slide>.json), with name tags on the biggest patches,
+   a "here:" readout under the pointer, a see-through slider, and a six-class "Tissue types" version.
    ⛶ (or double-click a photo) opens the full-window view: ‹ › / arrow keys, click the photo to see it at full resolution, Esc closes.
    On the timeline: one line per case on every chart (the biopsy date, results in its note; Library tick, on by default), and
    photos saved with 🔖 Keyframe as lines on the case date (group "Saved slide photos"). Both are generated moments, never written
@@ -20,7 +26,8 @@
    View settings, compare picks, cover picks, timeline ticks and keyframes are kept in this browser
    (store 'path.view', 'path.covers', 'path.moments', 'path.keys').
    Data: PATH_DATA = {stains:[{key,label,kind,what}], cases:[{key,title,date,site,review,diagnosis,source,results:{stain:text},
-                      procedure?, slides:[{stain,slide,photos:[file],cover}]}]}, made outside this repo (it holds health data). */
+                      procedure?, lessons?, slides:[{stain,slide,photos:[file],cover, note?, marks?, ann?, auto?, tmap?}]}]},
+         made outside this repo (it holds health data). */
 (() => {
   const P = PATH_DATA;
   const ID = 'path:slides';
@@ -29,7 +36,7 @@
   const PANEL = {title: 'Pathology · slide photos', unit: nSlides + ' slides · ' + nPhotos + ' photos', h0: 560};
   const ST = Object.fromEntries(P.stains.map(s => [s.key, s]));
   const KCOL = {routine: '#a03a8c', IHC: '#9a6a1c', control: '#6b7280'};
-  const MODES = ['overview', 'gallery', 'viewer', 'spots', 'compare'];
+  const MODES = ['overview', 'learn', 'gallery', 'viewer', 'spots', 'compare'];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   const url = (c, kind, f) => '/pathology/' + encodeURIComponent(c.key) + '/' + kind + '/' + encodeURIComponent(f);
   const slideKey = (c, s) => c.key + '/' + s.stain + '_' + s.slide;
@@ -121,6 +128,123 @@
     d.append(n); return d; }
   const spotBtn = (it, after) => mkBtn('• Spots' + (V.spots ? ': on' : ''), !!V.spots, autoOf(it) ? 'Show or hide a ring on every nucleus the color program found (color = class)' : 'No automatic spots for this photo',
     () => { V.spots = !V.spots; save(); after(); });
+  /* Tissue map: an estimated "likely tumor vs the rest" layer per photo, made by a color program outside this repo (tissue.swift:
+     white balance, stain separation, how crowded and how stained the tissue is on a 5-px grid, then rules per stain and hand corrections).
+     The page has only the shares (s.tmap = {rule, photos: {file: [tissue % of the frame, % of the tissue in class 1..6]}}); the map is
+     fetched per slide from /pathology/<case>/masks/<stain>_<slide>.json = {rule, gw, gh, photos: {file: {rle}}} when the layer is on
+     (rle = runs of <class letter a-g><count>, row by row).
+     Classes: 1 likely tumor · 2 support tissue · 3 immune cells · 4 normal structure · 5 can't judge · 6 cell-rich, can't tell.
+     "Cancer vs healthy" shows three groups: tumor (1) · healthy (2, 3, 4) · can't tell (5, 6). */
+  const TRGB = {1: [255, 45, 110], 2: [34, 197, 94], 3: [56, 189, 248], 4: [20, 184, 166], 5: [156, 163, 175], 6: [245, 158, 11]};
+  const TGRP = {1: 't', 2: 'h', 3: 'h', 4: 'h', 5: 'u', 6: 'u'}, GRGB = {t: [255, 45, 110], h: [34, 197, 94], u: [245, 158, 11]};
+  const GNAME = {t: 'Likely tumor', h: 'Healthy tissue (not tumor)', u: "Can't tell"}, GTAG = {t: 'likely tumor', h: 'healthy', u: "can't tell"};
+  const TTAG = {1: 'likely tumor', 2: 'support tissue', 3: 'immune cells', 4: 'normal structure', 5: "can't judge", 6: "cells, can't tell"};
+  const rgb = a => 'rgb(' + a.join(',') + ')';
+  const tRule = s => (s.tmap && s.tmap.rule) || '';
+  const tMarker = rule => rule === 'mem' || rule === 'nuc:pos', tSkin = rule => rule.indexOf('he:skin') === 0;
+  const TNAME = (rule, k) => ({
+    1: rule === 'mem' ? 'Likely tumor: cells carrying the brown stain' : rule === 'nuc:pos' ? 'Likely tumor: areas with brown nuclei'
+      : tSkin(rule) ? "Likely tumor: clusters of large cells in the skin's collagen" : 'Likely tumor: crowded cells (no stain here to confirm it)',
+    2: 'Support tissue: collagen, muscle, vessels, fat walls',
+    3: 'Immune cells: small, very dark, round nuclei',
+    4: 'Normal structure: skin surface, gland or muscle',
+    5: "Can't judge: ink, smear, fold or heat damage",
+    6: tMarker(rule) ? 'Cells without the brown stain: support or immune cells, or tumor cells that did not stain'
+      : "Cell-rich, can't tell: a small vessel, a gland duct or a few tumor cells"})[k];
+  const TSURE = rule => rule === 'mem' ? 'Fairly sure where it is red: the brown stain itself marks the tumor cells. Solid brown blobs with no cell outlines are set aside as "can\'t judge".'
+    : rule === 'nuc:pos' ? 'Fairly sure where it is red: brown nuclei mark tumor cells. Tumor cells whose nuclei did not stain fall under "can\'t tell".'
+    : tSkin(rule) ? 'Moderately sure: it goes by crowding, how dark the nuclei are and patch size, and was then corrected by eye (skin surface, glands). Small patches are left as "can\'t tell".'
+    : 'Least sure: it goes by crowding only. Immune cells and heat-damaged tissue are crowded too, and nothing on this slide marks the tumor.';
+  const THOW = rule => (rule.indexOf('he') === 0 ? 'The program measures how purple (cell-rich) each small patch of tissue is. Pink, cell-poor tissue is support tissue; purple, crowded tissue is cell-rich.'
+      + (tSkin(rule) ? ' On skin, clusters of very dark small round nuclei are called immune cells and a solid sheet at the surface is the skin itself.' : '')
+    : rule === 'mem' ? 'The program measures how much of each small patch is brown (the stain) and how many blue nuclei it has. Brown-rich = likely tumor; blue cell-rich with no brown = can\'t tell; the rest = support tissue.'
+    : rule === 'nuc:pos' ? 'The program measures how much of each small patch is brown nuclei and how many blue nuclei it has. Brown nuclei = likely tumor; blue cell-rich with no brown = can\'t tell; the rest = support tissue.'
+    : 'Nothing is brown on this slide, so the program can only measure how crowded the blue nuclei are. Crowded = likely tumor; sparse = support tissue.')
+    + ' Made by a color program: not a pathologist and not a trained AI model. Use it to find your way around the photo, not as a diagnosis.';
+  const tmOf = it => (it.s.tmap && it.s.tmap.photos[it.f]) || null;
+  const tmGroups = a => ({t: a[1], h: a[2] + a[3] + a[4], u: a[5] + a[6]});
+  const tmAgg = (s, clean) => { const o = [0, 0, 0, 0, 0, 0, 0]; let n = 0;   // slide totals, weighted by how much tissue each photo holds
+    Object.entries((s.tmap || {photos: {}}).photos).forEach(([f, a]) => { if (clean && !isClean(s, f)) return; n++; o[0] += a[0]; for (let k = 1; k < 7; k++) o[k] += a[k] * a[0]; });
+    return {n, a: [n ? o[0] / n : 0].concat(o.slice(1).map(x => o[0] ? x / o[0] : 0))}; };
+  const pc = x => x >= 9.95 || x === 0 ? Math.round(x) + '%' : x < 1 ? '<1%' : x.toFixed(1).replace(/\.0$/, '') + '%';
+  const maskCache = {};
+  const masksFor = (c, s) => maskCache[slideKey(c, s)] || (maskCache[slideKey(c, s)] =
+    fetch('/pathology/' + encodeURIComponent(c.key) + '/masks/' + encodeURIComponent(s.stain + '_' + s.slide) + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
+  function tmapLayer(holder, img, it) {   // the tinted map, name tags on the biggest patches, and a "here:" readout under the pointer
+    const cv = document.createElement('canvas'); cv.className = 'pth-ov pth-tm'; cv.style.opacity = V.tmapOp || .5;
+    const tg = document.createElement('div'); tg.className = 'pth-ov pth-tg';
+    const here = document.createElement('div'); here.className = 'pth-here';
+    holder.append(cv, tg, here);
+    const place = () => [cv, tg].forEach(e => Object.assign(e.style, {left: img.offsetLeft + 'px', top: img.offsetTop + 'px', width: img.offsetWidth + 'px', height: img.offsetHeight + 'px'}));
+    new ResizeObserver(place).observe(img);
+    masksFor(it.c, it.s).then(d => { const m = d && d.photos[it.f]; if (!m) { here.textContent = 'No tissue map for this photo'; here.style.display = 'block'; return; }
+      const w = d.gw, h = d.gh, g = new Uint8Array(w * h), rule = d.rule || tRule(it.s), two = V.tmapMode !== 'detail', hide = new Set((V.tmapHide || []).map(String));
+      const re = /([a-g])(\d+)/g; let x, i = 0; while ((x = re.exec(m.rle))) { const n = +x[2]; g.fill(x[1].charCodeAt(0) - 97, i, i + n); i += n; }
+      const keyOf = k => k ? (two ? TGRP[k] : k) : 0, colOf = k => two ? GRGB[TGRP[k]] : TRGB[k];
+      cv.width = w; cv.height = h; const ctx = cv.getContext('2d'), im = ctx.createImageData(w, h);
+      for (i = 0; i < g.length; i++) { const k = g[i]; if (!k || hide.has(String(keyOf(k)))) continue; const col = colOf(k), q = keyOf(k), X = i % w;
+        const edge = (X > 0 && keyOf(g[i - 1]) !== q) || (X < w - 1 && keyOf(g[i + 1]) !== q) || (i >= w && keyOf(g[i - w]) !== q) || (i < g.length - w && keyOf(g[i + w]) !== q);
+        im.data[i * 4] = col[0]; im.data[i * 4 + 1] = col[1]; im.data[i * 4 + 2] = col[2]; im.data[i * 4 + 3] = edge ? 255 : 150; }
+      ctx.putImageData(im, 0, 0);
+      // name tags: for each kind, the deepest point of its biggest patch (so the tag sits well inside the color)
+      const keys = two ? ['t', 'h', 'u'] : [1, 2, 3, 4, 5, 6], seen = new Uint8Array(w * h), dist = new Int16Array(w * h), st = new Int32Array(w * h);
+      keys.forEach(q => { if (hide.has(String(q))) return; let best = null;
+        for (let s0 = 0; s0 < g.length; s0++) { if (seen[s0] || keyOf(g[s0]) !== q) continue; let n = 0, top = 0; st[top++] = s0; seen[s0] = 1; const cells = [];
+          while (top) { const c = st[--top]; cells.push(c); n++; const X = c % w;
+            if (X > 0 && !seen[c - 1] && keyOf(g[c - 1]) === q) { seen[c - 1] = 1; st[top++] = c - 1; }
+            if (X < w - 1 && !seen[c + 1] && keyOf(g[c + 1]) === q) { seen[c + 1] = 1; st[top++] = c + 1; }
+            if (c >= w && !seen[c - w] && keyOf(g[c - w]) === q) { seen[c - w] = 1; st[top++] = c - w; }
+            if (c < g.length - w && !seen[c + w] && keyOf(g[c + w]) === q) { seen[c + w] = 1; st[top++] = c + w; } }
+          if (!best || n > best.n) best = {n, cells}; }
+        if (!best || best.n < w * h * 0.012) return;
+        for (let c = 0; c < g.length; c++) { const X = c % w; dist[c] = keyOf(g[c]) !== q ? 0 : Math.min(X > 0 ? dist[c - 1] + 1 : 1, c >= w ? dist[c - w] + 1 : 1); }
+        for (let c = g.length - 1; c >= 0; c--) { const X = c % w; if (dist[c]) dist[c] = Math.min(dist[c], X < w - 1 ? dist[c + 1] + 1 : 1, c < g.length - w ? dist[c + w] + 1 : 1); }
+        let at = best.cells[0]; best.cells.forEach(c => { if (dist[c] > dist[at]) at = c; });
+        const b = document.createElement('div'); b.className = 'pth-bdg m'; b.textContent = two ? GTAG[q] : TTAG[q];
+        b.style.cssText = `left:${(at % w + .5) / w * 100}%;top:${(Math.floor(at / w) + .5) / h * 100}%;background:${rgb(two ? GRGB[q] : TRGB[q])};color:#000`;
+        tg.append(b); });
+      place();
+      img.addEventListener('mousemove', e => { const r = img.getBoundingClientRect(), X = Math.floor((e.clientX - r.left) / r.width * w), Y = Math.floor((e.clientY - r.top) / r.height * h);
+        const k = X >= 0 && Y >= 0 && X < w && Y < h ? g[Y * w + X] : 0;
+        here.style.display = 'block'; here.innerHTML = k ? `<span class="pth-chip" style="background:${rgb(colOf(k))}"></span> Here: ${esc(TNAME(rule, k))}` : 'Here: empty (glass, fat or a gap)'; });
+      img.addEventListener('mouseleave', () => { here.style.display = 'none'; }); });
+    if (img.complete) place(); else img.addEventListener('load', place, {once: true});
+  }
+  function tmapBox(it, after) {   // this photo's shares, the legend (click a row to hide it), the two color schemes and the see-through slider
+    const a = tmOf(it); if (!a) return null; const rule = tRule(it.s), two = V.tmapMode !== 'detail', hide = new Set((V.tmapHide || []).map(String)), g = tmGroups(a);
+    const rows = two ? ['t', 'h', 'u'].map(k => [k, GNAME[k], g[k], GRGB[k]]) : [1, 2, 3, 4, 5, 6].map(k => [k, TNAME(rule, k), a[k], TRGB[k]]);
+    const d = document.createElement('div'); d.style.cssText = 'margin:6px 0 8px';
+    d.innerHTML = `<b>Tissue map</b> <span class="sub">${V.tmap ? 'an estimate, not a diagnosis' : 'switch ◧ Tissue map on to see it'}</span>` +
+      `<div class="pth-stk" title="Share of the tissue in this photo">${rows.filter(r => r[2] > 0).map(r => `<span style="width:${r[2]}%;background:${rgb(r[3])}" title="${esc(r[1])}: ${pc(r[2])}"></span>`).join('')}</div>`;
+    const md = document.createElement('div'); md.className = 'pth-bar'; md.style.margin = '4px 0';
+    md.append(mkBtn('Cancer vs healthy', two, "Three colors: likely tumor, healthy tissue, can't tell", () => { V.tmapMode = 'two'; V.tmapHide = []; save(); after(); }),
+      mkBtn('Tissue types', !two, 'Six colors: tumor, support tissue, immune cells, normal structure, can\'t judge, cell-rich can\'t tell', () => { V.tmapMode = 'detail'; V.tmapHide = []; save(); after(); }));
+    d.append(md);
+    d.append(range('See-through', 15, 95, 5, Math.round((V.tmapOp || .5) * 100), 'How strongly the colors cover the photo', v => { V.tmapOp = v / 100; save();
+      document.querySelectorAll('.pth-tm').forEach(e => { e.style.opacity = V.tmapOp; }); }));
+    rows.forEach(([k, name, p, col]) => { if (!p && !two) return; const r = document.createElement('div'); r.className = 'pth-li'; r.style.opacity = hide.has(String(k)) ? .45 : 1;
+      r.innerHTML = `<span class="pth-chip" style="background:${rgb(col)}"></span><div style="flex:1">${esc(name)}</div><b>${pc(p)}</b>`;
+      r.title = 'Click to hide or show this color';
+      r.onclick = () => { const hs = new Set((V.tmapHide || []).map(String)); hs.has(String(k)) ? hs.delete(String(k)) : hs.add(String(k)); V.tmapHide = [...hs]; save(); after(); }; d.append(r); });
+    const n = document.createElement('div'); n.className = 'sub'; n.style.cssText = 'font-size:11px;margin-top:4px';
+    n.innerHTML = `Shares are of the tissue in this photo (tissue fills ${pc(a[0])} of the frame; glass, fat and gaps are left clear).<br><b>How sure:</b> ${esc(TSURE(rule))}<br><b>How it is made:</b> ${esc(THOW(rule))}`;
+    d.append(n); return d; }
+  const tmapBtn = (it, after) => mkBtn('◧ Tissue map' + (V.tmap ? ': on' : ''), !!V.tmap, tmOf(it) ? 'Tint the photo by an estimated map: likely tumor, healthy tissue, can\'t tell (made by a color program)' : 'No tissue map for this photo',
+    () => { V.tmap = !V.tmap; save(); after(); });
+  function photoSay(it) {   // one or two sentences about this photo, from the numbers
+    const a = tmOf(it); if (!a) return ''; const g = tmGroups(a);
+    if (a[0] < 12) return 'Almost no tissue in this photo (' + pc(a[0]) + ' of the frame): mostly empty glass or fat.';
+    const all = Object.values(it.s.tmap.photos).filter(x => x[0] >= 12).map(x => x[1]), below = all.filter(x => x < a[1]).length, rule = tRule(it.s);
+    const kind = g.t >= 60 ? 'Mostly tumor-rich tissue' : g.t >= 25 ? 'A mix of tumor-rich areas and other tissue' : g.t >= 5 ? 'Mostly other tissue and a few tumor-rich patches'
+      : g.u >= 40 ? 'Mostly tissue the map can\'t call either way' : 'Almost no tumor-rich area found by the map';
+    const extra = [];
+    if (a[4] >= 8) extra.push('a normal structure (skin surface, gland or muscle)');
+    if (a[3] >= 2) extra.push('a cluster of immune cells');
+    if (a[6] >= 15) extra.push(tMarker(rule) ? 'a large area of crowded cells without the brown stain' : 'cell-rich patches it can\'t name');
+    if (a[5] >= 5) extra.push('an area that can\'t be judged (ink, smear or fold)');
+    const listed = extra.length < 2 ? extra.join('') : extra.slice(0, -1).join('; ') + '; and ' + extra[extra.length - 1];
+    return `${kind}${extra.length ? ', with ' + listed : ''}. Tissue fills about ${pc(a[0])} of the frame; of that, the map calls ${pc(g.t)} likely tumor, ${pc(g.h)} healthy` +
+      (g.u >= 1 ? ` and ${pc(g.u)} can't tell` : '') + '.' + (g.t >= 1 ? ` More tumor-rich than ${below} of the ${all.length} photos of this slide that show tissue.` : ''); }
   /* Draw an annotation's labels over an <img> inside holder (holder must be position:relative).
      Shapes are in the 1600-px-wide photo's pixels; badges are HTML so they stay a readable size. */
   function overlay(holder, img, ann, onPick, onHover) {
@@ -176,6 +300,128 @@
     r.innerHTML = `<span class="pth-bdg s" style="background:${LCOL[L.kind] || '#fff'}">${esc(n)}</span><div><b>${esc(L.name)}</b>${L.sure === 'maybe' ? ' <span class="sub">(a guess)</span>' : ''}` +
       `<div class="tx">${esc(L.text)}</div></div>`;
     r.onclick = () => onPick(i); r.onmouseenter = () => onHover(i); r.onmouseleave = () => onHover(null); return r; }
+  /* Learn: a written lesson per slide. c.lessons = {about, start: L, slides: {'<stain>_<slide>': L}}, L = {title, lead, look: [..], blocks: [..]}.
+     Blocks: {h} heading · {p} paragraph · {ul: [..]} / {ol: [..]} · {table: {head: [..], rows: [[..]]}} · {note} · {q: [..]} questions for
+     the care team · {see: [[file, caption, layer?]]} the case's own photos (layer 'map' | 'spots' | 'labels' opens the Viewer with it on) ·
+     {ex: [{t, d, u, by, img?, imgs?, see?}]} textbook examples: u = the source page; img = a saved picture under /pathology/ (imgs =
+     several small ones, [[path, caption]]); see = the case's matching photo. With a saved picture the card shows both, and a click
+     opens them side by side, large ·
+     {terms: [[word, meaning]]} · {nums: true} the slide's own numbers · {src: [..]} sources. Text may use **bold** and [label](https://…). */
+  const fmt = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1 ↗</a>');
+  const byFile = (c, f) => { for (const s of c.slides) { const i = s.photos.indexOf(f); if (i >= 0) return {c, s, f, i}; } return null; };
+  const lessonKey = s => s.stain + '_' + s.slide;
+  const lessonOf = (c, s) => (c.lessons && c.lessons.slides && c.lessons.slides[lessonKey(s)]) || null;
+  const openWith = (it, layer) => { if (layer === 'map') V.tmap = true; if (layer === 'spots') V.spots = true; if (layer === 'labels') V.labels = true;
+    focusImg = true; go('viewer', {filter: slideKey(it.c, it.s), cur: pkey(it)}); };
+  const aggSpots = (s, clean) => { const t = {}; let n = 0; const pcts = [];   // automatic spot counts over a slide's photos
+    Object.entries(s.auto.photos).forEach(([f, a]) => { if (clean && !isClean(s, f)) return; n++; for (const k in a.c) t[k] = (t[k] || 0) + a.c[k];
+      const p = posPct(s.auto.mode, a.c), m = posN(s.auto.mode, a.c) + (a.c.n || 0); if (p != null && m >= 20) pcts.push(p); });
+    pcts.sort((x, y) => x - y); return {t, n, pcts}; };
+  function slideNums(c, s) {   // the slide's own numbers: photos, automatic spots, tissue map, and its clearest photos
+    const d = document.createElement('div'), clean = s.photos.filter(f => isClean(s, f)).length;
+    let h = `<ul><li><b>${s.photos.length} photos</b> of this slide; ${clean} are clean (not marked artifact, fat only or a near-copy).</li>`;
+    if (s.auto) { const mode = s.auto.mode, b = aggSpots(s, true), p = posPct(mode, b.t), q = b.pcts;
+      h += '<li>' + (POS[mode] && p != null ? `Spot program, clean photos: <b>${nucOf(b.t).toLocaleString()}</b> nuclei found; <b>${p}%</b> of the round ones ` +
+          (mode === 'ring' ? 'have brown membrane around them' : mode === 'mem' ? 'sit in brown-stained areas' : 'are brown') +
+          (q.length > 2 ? (q[Math.floor(q.length * .1)] === q[Math.ceil(q.length * .9) - 1] ? ` (about the same on nearly every photo)`
+            : ` (most photos fall between ${q[Math.floor(q.length * .1)]}% and ${q[Math.ceil(q.length * .9) - 1]}%)`) : '') + '.'
+        : `Spot program, clean photos: <b>${nucOf(b.t).toLocaleString()}</b> nuclei found, sorted by size only (there is no brown to count on this slide).`) + '</li>'; }
+    if (s.tmap) { const g = tmGroups(tmAgg(s, true).a);
+      h += `<li>Tissue map, clean photos: <b>${pc(g.t)}</b> of the tissue is likely tumor, <b>${pc(g.h)}</b> healthy tissue, <b>${pc(g.u)}</b> can't be told. <span class="sub">${esc(TSURE(tRule(s)))}</span></li>`; }
+    d.innerHTML = h + '<li class="sub">These numbers come from color programs run on photos that were aimed at interesting spots. They are a guide for the eye, not the lab\'s result.</li></ul>';
+    const best = s.photos.filter(f => ((s.marks && s.marks[f]) || []).some(m => m[0] === 'best')).slice(0, 5);
+    if (best.length) { const r = document.createElement('div'); r.className = 'pth-see';
+      best.forEach(f => { const it = byFile(c, f), a = tmOf(it), t = document.createElement('figure');
+        t.innerHTML = `<img loading="lazy" alt="" src="${url(c, 'thumb', f)}"><figcaption><b>#${it.i + 1}</b> ★ clear example${a ? ' · ' + pc(a[1]) + ' likely tumor' : ''}</figcaption>`;
+        t.title = 'Open this photo in the Viewer with the tissue map on'; t.onclick = () => openWith(it, 'map'); r.append(t); });
+      d.append(r); }
+    return d; }
+  function refBox(c, x, it, src) {   // a saved textbook picture, large; with the case's matching photo beside it when the card names one
+    const ov = document.createElement('div'); ov.className = 'pth-lb'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Textbook example');
+    const key = e => { if (e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); close(); };
+    function close() { document.removeEventListener('keydown', key, true); ov.remove(); }
+    const top = document.createElement('div'); top.className = 'top';
+    const t = document.createElement('span'); t.className = 't';
+    t.innerHTML = `<b>${fmt(x.t)}</b> <span style="opacity:.7">· textbook example${it ? ' next to the matching photo from this case' : ''} · Esc closes</span>`;
+    top.append(t);
+    if (it) top.append(mkBtn('Open this case\'s photo in the Viewer', false, 'Open the matching photo in the Viewer, where the layers can be switched on', () => { close(); openWith(it); }));
+    if (x.u) { const a = document.createElement('a'); a.href = x.u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'pth-b'; a.textContent = 'Source page ↗'; top.append(a); }
+    top.append(mkBtn('✕ Close', false, 'Close (Esc)', close));
+    const stage = document.createElement('div'); stage.className = 'pth-ref';
+    const fig = (u, cap) => { const f = document.createElement('figure'); f.innerHTML = `<img alt="" src="${u}"><figcaption>${cap}</figcaption>`; return f; };
+    stage.append(fig('/pathology/' + encodeURI(src), '<b>Textbook</b> · ' + fmt(x.by || '')));
+    if (it) stage.append(fig(url(c, 'full', it.f), '<b>This case</b> · ' + esc(slideName(c, it.s) + ' · photo ' + (it.i + 1) + (result(it) ? ' · report: ' + result(it) : ''))));
+    stage.onclick = e => { if (e.target === stage) close(); };
+    const cap = document.createElement('div'); cap.className = 'lcap'; cap.innerHTML = fmt(x.d || '');
+    ov.append(top, stage, cap);
+    document.addEventListener('keydown', key, true); document.body.append(ov);
+  }
+  function lessonBlocks(el, c, s, blocks) {
+    const add = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; e.innerHTML = html; el.append(e); return e; };
+    const li = a => a.map(x => '<li>' + fmt(x) + '</li>').join('');
+    (blocks || []).forEach(b => {
+      if (b.h) add('h4', '', fmt(b.h));
+      else if (b.p) add('p', '', fmt(b.p));
+      else if (b.ul || b.ol) add(b.ul ? 'ul' : 'ol', '', li(b.ul || b.ol));
+      else if (b.table) add('table', 'pth-tb', '<tr>' + b.table.head.map(x => '<th>' + fmt(x) + '</th>').join('') + '</tr>' +
+        b.table.rows.map(r => '<tr>' + r.map(x => '<td>' + fmt(x) + '</td>').join('') + '</tr>').join(''));
+      else if (b.note) add('div', 'pth-note', fmt(b.note));
+      else if (b.q) add('div', 'pth-q', '<b>Questions to bring to the care team</b><ul>' + li(b.q) + '</ul>');
+      else if (b.terms) add('dl', 'pth-terms', b.terms.map(t => '<dt>' + fmt(t[0]) + '</dt><dd>' + fmt(t[1]) + '</dd>').join(''));
+      else if (b.src) add('div', 'pth-src', '<b>Sources</b><ul>' + li(b.src) + '</ul>');
+      else if (b.see) { const d = add('div', 'pth-see', '');
+        b.see.forEach(([f, cap, layer]) => { const it = byFile(c, f); if (!it) return; const t = document.createElement('figure');
+          t.innerHTML = `<img loading="lazy" alt="" src="${url(c, 'thumb', f)}"><figcaption><b>${esc(slideName(c, it.s))} #${it.i + 1}</b> ${fmt(cap || '')}</figcaption>`;
+          t.title = 'Open this photo in the Viewer' + (layer ? ' with ' + ({map: 'the tissue map', spots: 'the spots', labels: 'the labels'})[layer] + ' on' : '');
+          t.onclick = () => openWith(it, layer); d.append(t); }); }
+      else if (b.ex) { const d = add('div', 'pth-exs', '');
+        b.ex.forEach(x => { const e = document.createElement('div'); e.className = 'pth-ex';
+          const it = x.see && byFile(c, x.see), pics = x.img ? [[x.img, 'Textbook']] : (x.imgs || []);
+          const fig = (src, cap, tip, fn) => { const f = document.createElement('figure'); f.innerHTML = `<img loading="lazy" alt="" src="${src}"><figcaption>${esc(cap)}</figcaption>`; f.title = tip; f.onclick = fn; return f; };
+          if (pics.length) { const pr = document.createElement('div'); pr.className = 'pth-pair' + (x.imgs ? ' sm' : '');   // saved pictures: the textbook one(s), then this case's matching photo
+            pics.forEach(([src, cap]) => pr.append(fig('/pathology/' + encodeURI(src), cap, 'Click: see it large' + (it ? ', next to the matching photo from this case' : ''), () => refBox(c, x, it, src))));
+            if (it && x.img) pr.append(fig(url(c, 'thumb', it.f), 'This case · ' + slideName(c, it.s) + ' #' + (it.i + 1), 'Click: see the two side by side, large', () => refBox(c, x, it, x.img)));
+            e.append(pr); }
+          const tx = document.createElement('div');
+          tx.innerHTML = `<b>${fmt(x.t)}</b><div class="tx">${fmt(x.d || '')}</div>` +
+            `<div class="sub">${x.u ? `<a href="${esc(x.u)}" target="_blank" rel="noopener noreferrer">${pics.length ? 'Source page' : 'Open the example'} ↗</a>` : ''}${x.u && x.by ? ' · ' : ''}${fmt(x.by || '')}</div>`;
+          e.append(tx);
+          if (it) { const bt = mkBtn((pics.length ? 'Open in the Viewer: ' : 'Compare: ') + slideName(c, it.s) + ' #' + (it.i + 1), false, 'Open the matching photo from this case in the Viewer', () => openWith(it)); bt.style.marginTop = '5px'; e.append(bt); }
+          d.append(e); }); }
+      else if (b.nums && s) el.append(slideNums(c, s));
+    });
+  }
+  function drawLearn(body, c) {
+    const LS = c.lessons;
+    if (!LS) { const e = document.createElement('div'); e.className = 'sub'; e.style.cssText = 'padding:24px;text-align:center;font-size:13px'; e.textContent = 'No lessons have been written for this case yet.'; body.append(e); return; }
+    const SL = c.slides.filter(s => lessonOf(c, s)), keys = ['start'].concat(SL.map(lessonKey));
+    if (!keys.includes(V.learn)) V.learn = 'start';
+    const bar = document.createElement('div'); bar.className = 'pth-bar';
+    bar.append(mkBtn('Start here', V.learn === 'start', 'How to look at any slide photo: the colors, the sizes, and what the layers do', () => go('learn', {learn: 'start'})));
+    SL.forEach(s => bar.append(mkBtn(slideName(c, s), V.learn === lessonKey(s), (c.results[s.stain] || '') + ' · the lesson for this slide', () => go('learn', {learn: lessonKey(s)}))));
+    body.append(bar);
+    const s = SL.find(x => lessonKey(x) === V.learn) || null, L = s ? lessonOf(c, s) : LS.start;
+    const wrap = document.createElement('div'); wrap.style.cssText = 'overflow:auto;max-height:' + Math.max(hOf(ID, PANEL.h0), 560) + 'px;padding-right:6px'; body.append(wrap);
+    const el = document.createElement('div'); el.className = 'pth-ln'; wrap.append(el);
+    const hd = document.createElement('div');
+    hd.innerHTML = `<h3>${fmt(L.title)}</h3>` + (s ? `<div class="sub" style="margin-bottom:6px">${esc(slideName(c, s))} ${kindTag(ST[s.stain] || {kind: ''})} · Report: <b style="color:var(--ink)">${esc(c.results[s.stain] || '—')}</b> · ${s.photos.length} photos</div>` : '') +
+      (L.lead ? `<p class="lead">${fmt(L.lead)}</p>` : '');
+    el.append(hd);
+    if (s) { const cover = {c, s, f: coverOf(c, s), i: s.photos.indexOf(coverOf(c, s))}, acts = document.createElement('div'); acts.className = 'pth-bar';
+      acts.append(mkBtn('Open this slide in the Viewer', false, 'The cover photo of this slide, large', () => openWith(cover)));
+      if (s.tmap) acts.append(mkBtn('◧ with the tissue map', false, 'Open it with the tumor / healthy map on', () => openWith(cover, 'map')));
+      if (s.auto) acts.append(mkBtn('• with the spots', false, 'Open it with a ring on every nucleus the program found', () => openWith(cover, 'spots')));
+      el.append(acts);
+      if (L.look && L.look.length) { const lk = document.createElement('div'); lk.innerHTML = '<h4>What to look for</h4><ul>' + L.look.map(x => '<li>' + fmt(x) + '</li>').join('') + '</ul>'; el.append(lk); } }
+    lessonBlocks(el, c, s, L.blocks);
+    const nav = document.createElement('div'); nav.className = 'pth-bar'; nav.style.marginTop = '14px'; const j = keys.indexOf(V.learn);
+    const nm = k => k === 'start' ? 'Start here' : slideName(c, SL.find(x => lessonKey(x) === k));
+    if (j > 0) nav.append(mkBtn('◀ ' + nm(keys[j - 1]), false, 'Previous lesson', () => go('learn', {learn: keys[j - 1]}), 'big'));
+    if (j < keys.length - 1) nav.append(mkBtn('Next: ' + nm(keys[j + 1]) + ' ▶', false, 'Next lesson', () => go('learn', {learn: keys[j + 1]}), 'big'));
+    el.append(nav);
+    if (LS.about) { const fine = document.createElement('div'); fine.className = 'pth-src'; fine.style.marginTop = '10px'; fine.innerHTML = fmt(LS.about); el.append(fine); }
+  }
   // guided tour: the labeled photos in labels.json order
   const tourGo = (c, d, start) => { const T = c.tour || []; if (!T.length) return; const j = start ? -1 : T.indexOf(V.cur);
     const n = j < 0 ? 0 : Math.max(0, Math.min(T.length - 1, j + d)); V.labels = true; focusImg = true; go('viewer', {filter: 'all', cur: T[n]}); };
@@ -264,7 +510,28 @@
       '.pth-sp svg g{pointer-events:none!important}.pth-sp circle{stroke-width:1.8px;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 1px rgba(0,0,0,.9))}' +
       '.pth-tb{border-collapse:collapse;font-size:12px;width:100%}.pth-tb th,.pth-tb td{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}' +
       '.pth-tb th{font-weight:600;font-size:11px;color:var(--muted)}.pth-tb tr.k{cursor:pointer}.pth-tb tr.k:hover{background:rgba(127,127,127,.15)}.pth-tb td.r{text-align:right;white-space:nowrap}' +
-      '.pth-h3{font-size:14px;margin:12px 0 4px}.pth-dt summary{cursor:pointer;padding:3px 0;font-size:12px}';
+      '.pth-h3{font-size:14px;margin:12px 0 4px}.pth-dt summary{cursor:pointer;padding:3px 0;font-size:12px}' +
+      '.pth-tm{image-rendering:auto}.pth-tg .pth-bdg{pointer-events:none;cursor:default;font-size:11px;padding:0 7px}' +
+      '.pth-here{position:absolute;left:8px;bottom:8px;max-width:80%;padding:3px 9px;border-radius:11px;background:rgba(0,0,0,.78);color:#fff;font-size:12px;line-height:1.35;pointer-events:none;z-index:3;display:none}' +
+      '.pth-stk{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:5px 0;background:rgba(127,127,127,.2)}.pth-stk span{display:block;height:100%}' +
+      '.pth-chip{display:inline-block;width:11px;height:11px;border-radius:3px;flex:none;margin-top:3px;vertical-align:-1px}' +
+      '.pth-ln{max-width:900px;font-size:13.5px;line-height:1.55}.pth-ln h3{font-size:20px;margin:4px 0 6px}.pth-ln h4{font-size:15px;margin:18px 0 4px}' +
+      '.pth-ln p{margin:6px 0}.pth-ln .lead{font-size:15px}.pth-ln ul,.pth-ln ol{margin:6px 0;padding-left:22px}.pth-ln li{margin:3px 0}.pth-ln a{color:inherit}' +
+      '.pth-ln .pth-tb{margin:8px 0;font-size:12.5px}.pth-note{margin:10px 0;padding:6px 10px;border-left:3px solid #f59e0b;background:rgba(245,158,11,.1)}' +
+      '.pth-q{margin:10px 0;padding:6px 10px;border-left:3px solid #38bdf8;background:rgba(56,189,248,.08)}.pth-src{font-size:11.5px;color:var(--muted);margin-top:10px}' +
+      '.pth-terms{margin:8px 0;display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:3px 12px}.pth-terms dt{font-weight:600}.pth-terms dd{margin:0}' +
+      '.pth-see{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.pth-see figure{margin:0;width:186px;cursor:pointer;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--card)}' +
+      '.pth-see figure:hover{outline:2px solid var(--ink)}.pth-see img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#ddd}.pth-see figcaption{font-size:11.5px;line-height:1.35;padding:4px 6px}' +
+      '.pth-exs{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));margin:8px 0}.pth-ex{border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--card);font-size:12.5px;line-height:1.45}' +
+      '.pth-ex .tx{margin:3px 0 5px}.pth-look{margin:6px 0;padding-left:18px}.pth-look li{margin:2px 0}' +
+      '.pth-pair{display:flex;gap:6px;margin-bottom:7px}.pth-pair figure{margin:0;flex:1 1 0;min-width:0;cursor:zoom-in;border-radius:4px;overflow:hidden;border:1px solid var(--line);background:#111}' +
+      '.pth-pair figure:hover{outline:2px solid var(--ink)}.pth-pair img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}' +
+      '.pth-pair figcaption{font-size:10.5px;padding:2px 5px;background:var(--card);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.pth-pair.sm img{aspect-ratio:auto}' +
+      '.pth-ref{flex:1;min-height:0;display:flex;gap:12px;align-items:stretch;justify-content:center;padding:0 14px}' +
+      '.pth-ref figure{margin:0;flex:1 1 0;min-width:0;min-height:0;display:flex;flex-direction:column}' +
+      '.pth-ref img{flex:1 1 auto;min-height:0;width:100%;object-fit:contain;object-position:center top}' +
+      '.pth-ref figcaption{order:-1;font-size:12.5px;padding:0 0 6px;opacity:.92;text-align:center}.pth-ref figcaption a{color:inherit}';
     document.head.append(st); }
   const mkBtn = (label, on, tip, fn, cls) => { const b = document.createElement('button'); b.className = 'pth-b' + (on ? ' on' : '') + (cls ? ' ' + cls : ''); b.textContent = label; b.title = tip; b.onclick = fn; return b; };
   const sep = () => { const d = document.createElement('span'); d.className = 'pth-sep'; return d; };
@@ -286,6 +553,7 @@
     const bar = document.createElement('div'); bar.className = 'pth-bar';
     if (P.cases.length > 1) { P.cases.forEach(k => bar.append(mkBtn(fd(k.date) + ' ' + k.title, k.key === c.key, k.site, () => go(V.mode, {caseKey: k.key, filter: 'all', cur: null})))); bar.append(sep()); }
     [['overview', 'Overview', 'One cover photo per slide, with the result'],
+     ['learn', '📖 Learn', 'A written lesson for every slide: what the stain is, how to read it, how it is scored, textbook examples, pitfalls'],
      ['gallery', 'Gallery · ' + c.slides.reduce((a, s) => a + s.photos.length, 0), 'Every photo as thumbnails'],
      ['viewer', 'Viewer', 'One photo large, with a size slider'],
      ['spots', 'Spots list', 'Every labeled spot and the automatic nucleus counts: across all photos and per stain'],
@@ -299,7 +567,7 @@
         () => go(V.mode, {filter: slideKey(c, s), cur: V.mode === 'viewer' ? slideKey(c, s) + '|' + coverOf(c, s) : V.cur}))));
       body.append(f);
     }
-    ({overview: drawOverview, gallery: drawGallery, viewer: drawViewer, spots: drawSpots, compare: drawCompare})[V.mode](body, c, id);
+    ({overview: drawOverview, learn: drawLearn, gallery: drawGallery, viewer: drawViewer, spots: drawSpots, compare: drawCompare})[V.mode](body, c, id);
   }
 
   function drawOverview(body, c) {
@@ -314,6 +582,7 @@
     if (nk) { const n = document.createElement('span'); n.className = 'sub'; n.style.fontSize = '11px'; n.textContent = '🔖 ' + nk + ' photo' + (nk > 1 ? 's' : '') + ' saved as keyframes'; tl.append(n); }
     if ((c.tour || []).length) tl.append(mkBtn('🏷 Guided tour: ' + c.tour.length + ' labeled photos', false,
       'Step through photos with labels on them (what each cell and structure is), from normal skin to tumor to each stain', () => tourGo(c, 0, true), 'big'));
+    if (c.lessons) tl.append(mkBtn('📖 Learn: what each slide shows', false, 'A written lesson for every slide, starting with how to look at any slide photo', () => go('learn', {learn: 'start'}), 'big'));
     body.append(tl);
     const g = document.createElement('div'); g.className = 'pth-grid'; g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(190px,1fr))';
     c.slides.forEach(s => { const st = ST[s.stain] || {label: s.stain, kind: ''}, it = {c, s, f: coverOf(c, s), i: s.photos.indexOf(coverOf(c, s))};
@@ -322,6 +591,8 @@
         <div class="cap" style="font-size:12px"><b>${esc(slideName(c, s))}</b> ${kindTag(st)}<br><span class="pth-res">${esc(c.results[s.stain] || '—')}</span>
         <span class="sub"> · ${s.photos.length} photos</span></div>`;
       t.append(pinBtn(it));
+      if (lessonOf(c, s)) { const lb = document.createElement('button'); lb.className = 'pth-pin'; lb.style.cssText = 'left:4px;right:auto'; lb.textContent = '📖';
+        lb.title = 'Learn: the lesson for this slide'; lb.onclick = e => { e.stopPropagation(); go('learn', {learn: lessonKey(s)}); }; t.append(lb); }
       t.onclick = () => { focusImg = true; go('viewer', {filter: slideKey(c, s), cur: pkey(it)}); }; g.append(t); });
     body.append(g);
   }
@@ -362,6 +633,7 @@
     ctl.append(mkBtn('🏷 Labels' + (V.labels ? ': on' : ''), !!V.labels, ann ? 'Show or hide the teaching labels on this photo: what each structure is (like a pathologist pointing things out)'
       : 'Show or hide teaching labels (this photo has none: use Tour to go to the labeled ones)', () => { V.labels = !V.labels; save(); redraw(); }));
     ctl.append(spotBtn(it, redraw));
+    ctl.append(tmapBtn(it, redraw));
     const T = c.tour || [];
     if (T.length) { const j = T.indexOf(pkey(it));
       ctl.append(mkBtn('◀', false, 'Previous photo in the guided tour', () => tourGo(c, -1)));
@@ -383,6 +655,7 @@
     const pick = i => { labSel = labSel === i ? -1 : i; if (ovl) ovl.paint(); rows.forEach((r, j) => r.classList.toggle('on', j === labSel));
       if (labSel >= 0 && rows[labSel]) rows[labSel].scrollIntoView({block: 'nearest'}); };
     const hov = i => { rows.forEach((r, j) => r.style.outline = j === i ? '1px solid var(--line)' : ''); };
+    if (V.tmap && tmOf(it)) { tmapLayer(box, img, it); side.style.flexBasis = '300px'; }
     if (V.spots && autoOf(it)) spotLayer(box, img, it);
     if (lab) {
       ovl = overlay(box, img, ann, pick, hov);
@@ -400,16 +673,20 @@
       const n = document.createElement('div'); n.className = 'sub'; n.style.cssText = 'font-size:11px;margin-bottom:6px';
       n.textContent = 'No labels on this photo. The Tour buttons go to the ' + T.length + ' labeled photos.'; side.append(n);
     }
+    const tb = V.tmap ? tmapBox(it, redraw) : null; if (tb) side.append(tb, document.createElement('hr'));
     const ab = autoBox(it, redraw); if (ab) side.append(ab, document.createElement('hr'));
     const sideInfo = document.createElement('div'); side.append(sideInfo);
-    const isCover = coverOf(c, it.s) === it.f;
+    const isCover = coverOf(c, it.s) === it.f, LS = lessonOf(c, it.s), say = photoSay(it);
     sideInfo.innerHTML = `<h4>${esc(slideName(c, it.s))} ${kindTag(st)}</h4>
       <div>Report: <span class="pth-res">${esc(result(it) || '—')}</span></div>
       ${marksOf(it).length ? '<div style="margin:6px 0;font-weight:600">' + esc(markText(it)).replace(/\n/g, '<br>') + '</div>' : ''}
+      ${say ? '<p style="margin:6px 0"><b>In this photo:</b> ' + esc(say) + '</p>' : ''}
       ${it.s.note ? '<p style="margin:6px 0"><b>What you can see:</b> ' + esc(it.s.note) + '</p>' : ''}
+      ${LS && LS.look && LS.look.length ? '<div style="margin:6px 0"><b>What to look for on this slide</b><ul class="pth-look">' + LS.look.map(x => '<li>' + fmt(x) + '</li>').join('') + '</ul></div>' : ''}
       <p style="margin:6px 0" class="sub">${esc(st.what)}</p>
       <div class="sub">Photo ${it.i + 1} of ${it.s.photos.length} on this slide${V.filter === 'all' ? ' · ' + (k + 1) + ' of ' + L.length + ' in all' : ''}<br>${esc(it.f)}</div>`;
     const acts = document.createElement('div'); acts.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-top:6px';
+    if (LS) acts.append(mkBtn('📖 Full lesson', false, 'The written lesson for this slide: how the stain works, how it is scored, textbook examples, pitfalls', () => go('learn', {learn: lessonKey(it.s)})));
     acts.append(mkBtn(isCover ? '★ Cover' : '☆ Use as cover', isCover, 'The cover is the photo shown for this slide in the Overview (kept in this browser)', () => {
       covers[slideKey(c, it.s)] = it.f; save(); redraw(); }));
     const a = document.createElement('a'); a.href = url(c, 'full', it.f); a.target = '_blank'; a.rel = 'noopener'; a.className = 'pth-b'; a.textContent = 'Full size ↗';
@@ -438,11 +715,7 @@
     const SL = c.slides.filter(s => s.auto);
 
     // ---- automatic counts: every photo, then per stain ----
-    const agg = (s, clean) => { const t = {}; let n = 0; const pcts = [];
-      Object.entries(s.auto.photos).forEach(([f, a]) => { if (clean && !isClean(s, f)) return; n++; for (const k in a.c) t[k] = (t[k] || 0) + a.c[k];
-        const p = posPct(s.auto.mode, a.c), m = posN(s.auto.mode, a.c) + (a.c.n || 0); if (p != null && m >= 20) pcts.push(p); });
-      pcts.sort((x, y) => x - y); return {t, n, pcts}; };
-    const all = SL.map(s => [s, agg(s, false), agg(s, true)]);
+    const all = SL.map(s => [s, aggSpots(s, false), aggSpots(s, true)]);
     const gN = all.reduce((x, [, a]) => x + nucOf(a.t), 0), gP = all.reduce((x, [, a]) => x + a.n, 0), gC = all.reduce((x, [, , b]) => x + b.n, 0);
     const sumK = (keys, which) => all.reduce((x, r) => x + keys.reduce((y, k) => y + (r[which].t[k] || 0), 0), 0);
     h3('Automatic spots: all photos');
@@ -469,6 +742,27 @@
       'Thin stromal nuclei are left out, but the program cannot tell tumor from normal round cells, and the photos were aimed at interesting areas, so these are rough and not the lab\'s score. ' +
       '"Range per photo" = middle 80% of photos with at least 20 round nuclei. On the negative control any brown is background or artifact (folds, streaks). Rings on H&amp;E are only sorted by size.';
     wrap.append(note);
+
+    // ---- tissue map: per stain ----
+    const TM = c.slides.filter(s => s.tmap);
+    if (TM.length) { h3('Tissue map: per stain');
+      const t2 = document.createElement('table'); t2.className = 'pth-tb';
+      t2.innerHTML = '<tr><th>Slide</th><th>Photos (clean)</th><th>Likely tumor</th><th>Healthy tissue</th><th>Can\'t tell</th><th>Split of the tissue (clean photos)</th><th>How sure</th></tr>';
+      TM.forEach(s => { const a0 = tmAgg(s, false), b = tmAgg(s, true), g = tmGroups(b.a);
+        const tr = document.createElement('tr'); tr.className = 'k'; tr.title = 'Click: open this slide in the Viewer with the tissue map on';
+        tr.innerHTML = `<td><b>${esc(slideName(c, s))}</b></td><td class="r">${a0.n} (${b.n})</td><td class="r"><b>${pc(g.t)}</b></td><td class="r">${pc(g.h)}</td><td class="r">${pc(g.u)}</td>` +
+          `<td style="min-width:130px"><div class="pth-stk">${['t', 'h', 'u'].map(k => `<span style="width:${g[k]}%;background:${rgb(GRGB[k])}" title="${esc(GNAME[k])}: ${pc(g[k])}"></span>`).join('')}</div></td>` +
+          `<td class="sub">${esc(TSURE(tRule(s)).split(':')[0])}</td>`;
+        tr.onclick = () => openWith({c, s, f: coverOf(c, s), i: s.photos.indexOf(coverOf(c, s))}, 'map'); t2.append(tr); });
+      wrap.append(t2);
+      const n2 = document.createElement('div'); n2.className = 'sub'; n2.style.cssText = 'font-size:11px;margin:4px 0';
+      // which slides are which comes from the data (each slide's rule), so no result is written in this file
+      const lab = f => [...new Set(TM.filter(s => f(tRule(s))).map(s => (ST[s.stain] || {label: s.stain}).label))].join(', '), mk = lab(tMarker), cr = lab(r => !tMarker(r));
+      n2.innerHTML = 'How to read it: the tissue map ("◧ Tissue map" in the Viewer) tints every photo as likely tumor, healthy tissue or can\'t tell. Shares are of the tissue on the clean photos (glass, fat and gaps are left out). ' +
+        (mk ? 'On slides where brown marks the tumor (' + esc(mk) + ') red means "has the stain", and crowded cells without it are "can\'t tell". ' : '') +
+        (cr ? 'On slides with nothing brown to go by (' + esc(cr) + ') it can only go by how crowded the cells are. ' : '') +
+        'The photos were aimed at interesting areas, so these are not shares of the whole slide, and the map is a color program\'s estimate with corrections by eye, not a pathologist\'s outline.';
+      wrap.append(n2); }
 
     // ---- named spots (teaching labels) ----
     const named = []; c.slides.forEach(s => Object.entries(s.ann || {}).forEach(([f, an]) => an.labels.forEach((L, i) => named.push({s, f, an, L, i}))));
@@ -499,11 +793,12 @@
       dt.ontoggle = () => { if (dt.open) { V.spOpen = slideKey(c, s); save(); } };
       dt.innerHTML = `<summary><b>${esc(slideName(c, s))}</b> · ${s.photos.length} photos</summary>`;
       const t = document.createElement('table'); t.className = 'pth-tb';
-      t.innerHTML = '<tr><th>Photo</th><th>Marks</th><th>Nuclei</th><th>By class</th><th>Share</th></tr>';
-      s.photos.forEach((f, i) => { const a = s.auto.photos[f]; if (!a) return; const it = {c, s, f, i}, p = posPct(mode, a.c);
+      t.innerHTML = '<tr><th>Photo</th><th>Marks</th><th>Nuclei</th><th>By class</th><th>Share</th><th>Tissue map: likely tumor</th></tr>';
+      s.photos.forEach((f, i) => { const a = s.auto.photos[f]; if (!a) return; const it = {c, s, f, i}, p = posPct(mode, a.c), tm = tmOf(it);
         const tr = document.createElement('tr'); tr.className = 'k'; if (!isClean(s, f)) tr.style.opacity = .55;
         tr.innerHTML = `<td>#${i + 1}</td><td>${esc(markSym(it))}</td><td class="r">${nucOf(a.c)}</td>` +
-          `<td>${Object.keys(cols).map(x => `<span style="color:${cols[x][0]}">○</span>${a.c[x] || 0}`).join(' ')}</td><td class="r">${p != null ? p + '%' : '—'}</td>`;
+          `<td>${Object.keys(cols).map(x => `<span style="color:${cols[x][0]}">○</span>${a.c[x] || 0}`).join(' ')}</td><td class="r">${p != null ? p + '%' : '—'}</td>` +
+          `<td class="r">${tm ? (tm[0] < 12 ? '<span class="sub">little tissue</span>' : pc(tm[1])) : '—'}</td>`;
         tr.title = (marksOf(it).length ? markText(it) + '\n' : '') + 'Click: open this photo with Spots on';
         tr.onclick = () => openAt(slideKey(c, s) + '|' + f); t.append(tr); });
       dt.append(t); wrap.append(dt); });
@@ -553,12 +848,14 @@
       const ann = annOf(it);
       if (ann) top.append(mkBtn('🏷 Labels' + (V.labels ? ': on' : ''), !!V.labels, 'Show or hide the teaching labels', () => { V.labels = !V.labels; save(); show(); }));
       if (autoOf(it)) top.append(spotBtn(it, show));
+      if (tmOf(it)) top.append(tmapBtn(it, show));
       top.append(a, mkBtn('✕ Close', false, 'Close (Esc)', close));
       const stage = document.createElement('div'); stage.className = 'stage' + (zoom ? ' z' : '');
       const img = document.createElement('img'); img.src = url(it.c, 'full', it.f); img.alt = caption(it);
       img.onclick = e => { e.stopPropagation(); zoom = !zoom; stage.classList.toggle('z', zoom); };
       stage.onclick = e => { if (e.target === stage) close(); };
       stage.append(img);
+      if (V.tmap && tmOf(it)) tmapLayer(stage, img, it);
       if (V.spots && autoOf(it)) spotLayer(stage, img, it);
       if (ann && V.labels) {
         const cap = document.createElement('div'); cap.className = 'lcap';
@@ -568,9 +865,15 @@
         say(-1); ov.append(top, stage, cap);
         ov.append(nav(-1, 'left', '‹'), nav(1, 'right', '›')); return;
       }
-      if (V.spots && autoOf(it)) { const a = autoOf(it), mode = it.s.auto.mode, cols = SCLS[mode] || {}, pct = posPct(mode, a.c), cap = document.createElement('div'); cap.className = 'lcap';
-        cap.innerHTML = '<b>Automatic spots:</b> ' + Object.keys(cols).map(k => `<span style="color:${cols[k][0]}">○</span> ${esc(sName(it.s.stain, mode, k))} <b>${a.c[k] || 0}</b>`).join(' &nbsp; ') +
-          (pct != null ? ` &nbsp;·&nbsp; <b>${pct}%</b> ${mode === 'ring' ? 'with brown membrane' : 'brown'}` : '') + ' <span style="opacity:.6">(a color program, not a pathologist)</span>';
+      const lines = [];
+      if (V.tmap && tmOf(it)) { const a = tmOf(it), g = tmGroups(a), two = V.tmapMode !== 'detail';
+        lines.push('<b>Tissue map:</b> ' + (two ? ['t', 'h', 'u'].map(k => `<span class="pth-chip" style="background:${rgb(GRGB[k])}"></span> ${esc(GNAME[k])} <b>${pc(g[k])}</b>`)
+          : [1, 2, 3, 4, 5, 6].filter(k => a[k] > 0).map(k => `<span class="pth-chip" style="background:${rgb(TRGB[k])}"></span> ${esc(TTAG[k])} <b>${pc(a[k])}</b>`)).join(' &nbsp; ') +
+          ' <span style="opacity:.6">of the tissue in this photo · an estimate by a color program, not a diagnosis · move the pointer over the photo</span>'); }
+      if (V.spots && autoOf(it)) { const a = autoOf(it), mode = it.s.auto.mode, cols = SCLS[mode] || {}, pct = posPct(mode, a.c);
+        lines.push('<b>Automatic spots:</b> ' + Object.keys(cols).map(k => `<span style="color:${cols[k][0]}">○</span> ${esc(sName(it.s.stain, mode, k))} <b>${a.c[k] || 0}</b>`).join(' &nbsp; ') +
+          (pct != null ? ` &nbsp;·&nbsp; <b>${pct}%</b> ${mode === 'ring' ? 'with brown membrane' : 'brown'}` : '') + ' <span style="opacity:.6">(a color program, not a pathologist)</span>'); }
+      if (lines.length) { const cap = document.createElement('div'); cap.className = 'lcap'; cap.innerHTML = lines.join('<br>');
         ov.append(top, stage, cap, nav(-1, 'left', '‹'), nav(1, 'right', '›')); return; }
       ov.append(top, stage, nav(-1, 'left', '‹'), nav(1, 'right', '›'));
     }
@@ -595,7 +898,7 @@
   /* Library: Pathology → Slide photos (the panel) + one row per slide (opens that slide in the Viewer) */
   MRD.section = (el, q) => {
     o.section(el, q);
-    const hay = ('pathology slides slide photos gallery compare biopsy stain ihc ' + P.stains.map(s => s.label).join(' ') + ' ' + P.cases.map(c => c.title + ' ' + c.diagnosis).join(' ')).toLowerCase();
+    const hay = ('pathology slides slide photos gallery compare biopsy stain ihc learn lesson tissue map tumor healthy mask spots ' + P.stains.map(s => s.label).join(' ') + ' ' + P.cases.map(c => c.title + ' ' + c.diagnosis).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     const SEC = section(el, 'path', 'Pathology', nSlides + ' slides', true, 'sec', q), s0 = SEC.firstChild;
     s0.insertBefore(groupOnlyBtn('pathology panel', 'grp:path', [ID], soloLab && soloLab.key === 'grp:path', false, () => onlyLab('grp:path', [ID], 'Pathology')), s0.lastChild);

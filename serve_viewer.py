@@ -8,7 +8,8 @@ Usage:
 
 - Serves only local/labs.html (no folder listing, no other files), plus the imaging viewer's files:
   GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
-- Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic nucleus spots).
+- Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic
+  nucleus spots, and <case>/masks/*.json, the automatic tissue maps).
 - GET  /api/edits  -> {"rev": n, "edits": {...}}  from local/med_edits.json (the same file the
   build scripts read, so moments, medication changes and saved ranges survive reloads/rebuilds).
 - POST /api/edits  {"rev": n, "edits": {...}} saves them. If someone saved in between (rev differs)
@@ -255,8 +256,8 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.realpath(os.path.join(base, rel))
             if f.startswith(base + os.sep) and f.lower().endswith(".jpg") and os.path.isfile(f):
                 return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True)
-            if (f.startswith(base + os.sep) and os.path.basename(os.path.dirname(f)) == "spots"
-                    and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots, one file per slide
+            if (f.startswith(base + os.sep) and os.path.basename(os.path.dirname(f)) in ("spots", "masks")
+                    and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots / tissue maps, one file per slide
                 return self.send(200, open(f, "rb").read(), "application/json")
             return self.send(404, {"error": "not found"})
         if path == "/api/edits":

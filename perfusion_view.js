@@ -112,7 +112,16 @@
           ctx.strokeStyle = d.borderColor; ctx.globalAlpha = .5;
           ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y1); ctx.moveTo(px - 3, y0); ctx.lineTo(px + 3, y0); ctx.moveTo(px - 3, y1); ctx.lineTo(px + 3, y1); ctx.stroke(); }); });
       ctx.restore(); }};
-    charts.set(id, new Chart(cv, {type: 'line', plugins: [txPlugin, refLine, rangeBars, guide].concat(typeof momentPlugin === 'object' ? [momentPlugin] : []), data: {datasets: ds},
+    /* perfusion has no projection (none has been tested on the past scans): say so where the projected dates are marked, so the
+       amber date lines of the shared Projection switch (projection_dates.js) are not read as "nothing expected" */
+    const noProj = {id: 'mrpNoProj', afterDatasetsDraw(c) { const P = window.Projection; if (!P || !P.active()) return; const {ctx, chartArea: a, scales: {x}} = c;
+      const x0 = x.getPixelForValue(pos(P.first)); if (!(x0 > a.left && x0 < a.right)) return;
+      ctx.save(); ctx.font = '10px system-ui'; ctx.fillStyle = css('--muted'); ctx.textBaseline = 'top';
+      const L = ['no projection for perfusion:', 'none tested on the past scans'], w = Math.max(...L.map(t => ctx.measureText(t).width));
+      ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = css('--card');   // outlined so the date lines do not cut through the words
+      if (a.right - x0 > w + 8) L.forEach((t, i) => { ctx.strokeText(t, x0 + 5, a.top + 26 + i * 11); ctx.fillText(t, x0 + 5, a.top + 26 + i * 11); });
+      ctx.restore(); }};
+    charts.set(id, new Chart(cv, {type: 'line', plugins: [txPlugin, refLine, rangeBars, guide, noProj].concat(typeof momentPlugin === 'object' ? [momentPlugin] : []), data: {datasets: ds},
       options: {animation: false, maintainAspectRatio: false, clip: 6, layout: TLAY(),
         onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
         plugins: {legend: {display: false}, tooltip: {displayColors: false, callbacks: {
@@ -147,7 +156,8 @@
       '"Normal brain" mixes grey and white matter, so ratios read lower than the usual "vs white matter" figures. Blood-volume maps cover a slab of the head, so a lesion above or below it has no value. <b>Each map is placed through the offset measured between its scan and the T1 of the same visit</b> (a few mm: head movement and, for blood volume, image distortion); where that could not be measured the hover box says so. <b>Thin bars = the value if the map sat 2 mm off in any direction</b>: a long bar means the reading is fragile (small lesion, or next to something bright). ' +
       (kt.length ? 'Vessel leakiness (DCE Ktrans), ' + fd(kt[0].date) + ' only: ' + kt.map(r => r.lesion + ' ' + (r.ktrans_mean / r.ktrans_normal).toFixed(0) + '×').join(', ') + ' normal brain (every enhancing lesion leaks, so compare lesions with each other). ' : '') +
       (PF.viewer_note ? esc_(PF.viewer_note) + ' ' : '') +   // case-specific remarks come from the (private) data file, never from this code
-      'Library → Imaging → Brain MRI → Slice viewer can show these maps as a colour layer (Perfusion).';
+      'Library → Imaging → Brain MRI → Slice viewer can show these maps as a colour layer (Perfusion). ' +
+      '<b>No projection for perfusion</b>: none has been tested against the past scans, so when Projection is on in Lesions over time or Swelling the amber lines here only mark its dates.';
     body.append(note);
   }
 

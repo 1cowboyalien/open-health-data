@@ -13,6 +13,8 @@
               (made by imaging/swelling/stretch_chart.py); IMG_DATA.lesion_series {lesions [{id,name,rgb}], treatments}.
    Projection (button): where the reading is likely to land in 1-3 months, drawn on the shared time axis as far as it runs (navigation
    bar: Future): a dashed LEVEL with a range, not a trend, because carrying the latest trend forward tested worst on the past scans.
+   The switch and the dates (+1, +2, +3 months: amber date lines in every panel) are shared with the other imaging panels
+   (projection_dates.js): on here = on in Lesions over time too.
               IMG_DATA.swelling.projection {base, months [{m,date}], rule, rule_words, typical_band {lo,hi},
                 lesions [{id, last, last_date, level, n, region_ml, cells [{m, date, v, lo, hi, ml, lo_ml, hi_ml}]}], total {...same},
                 backtest {n, place [{key,label,n,typical,mean,within5}], total [...], text, short}, volume_link {n, r, text}, note}
@@ -21,8 +23,10 @@
 (() => {
   const LS = IMG_DATA.lesion_series, SW = IMG_DATA.swelling;
   if (!LS || !SW || !SW.rows || !SW.rows.length || !SW.band) return;
-  const V = Object.assign({total: true, each: true, tx: true, hidden: [], unit: 'pct', proj: false}, store.get('img.swellChart2', {}));
+  const V = Object.assign({total: true, each: true, tx: true, hidden: [], unit: 'pct'}, store.get('img.swellChart2', {}));
+  delete V.proj;   // Projection on/off is one switch for all imaging panels since 2026-11-18 (projection_dates.js), not kept here
   const PR = SW.projection && SW.projection.lesions && SW.projection.lesions.length ? SW.projection : null;
+  const PON = () => !!(PR && window.Projection && Projection.on);
   const save = () => store.set('img.swellChart2', V);
   /* unit: 'pct' = % of each place (compares lesions; the grey band applies) · 'ml' = extra room in mL (amounts add up: the total is the largest line) */
   const ML = () => V.unit === 'ml';
@@ -52,14 +56,15 @@
       B.forEach((b, i) => { const px = x.getPixelForValue(pos(ms(b.date))), py = y.getPixelForValue(b.hi); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
       B.slice().reverse().forEach(b => ctx.lineTo(x.getPixelForValue(pos(ms(b.date))), y.getPixelForValue(b.lo)));
       ctx.closePath(); ctx.fill();
-      if (V.proj && PR) {   // after the last scan: the usual width of that band (middle of all scans), lighter, as a guide for the projected readings
+      if (PON()) {   // after the last scan: the usual width of that band (middle of all scans), lighter, as a guide for the projected readings
         const med = k => { const v = B.map(b => b[k]).sort((p, q) => p - q); return v[Math.floor(v.length / 2)]; };
         const x0 = x.getPixelForValue(pos(ms(B[B.length - 1].date))), y0 = y.getPixelForValue(med('hi')), y1 = y.getPixelForValue(med('lo'));
         if (x0 < a.right) { ctx.fillStyle = 'rgba(150,150,150,0.10)'; ctx.fillRect(x0, y0, a.right - x0, y1 - y0);
           ctx.strokeStyle = 'rgba(150,150,150,0.55)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(a.right, y0); ctx.moveTo(x0, y1); ctx.lineTo(a.right, y1); ctx.stroke(); ctx.setLineDash([]);
           const t = 'usual range of lesion-free places'; ctx.fillStyle = css('--muted'); ctx.font = '10px system-ui'; if (a.right - x0 > ctx.measureText(t).width + 10) ctx.fillText(t, x0 + 5, y1 - 3);
           const r1 = PR.ranges && PR.ranges.place && PR.ranges.place[0], t2 = 'projection: a level, not a trend' + (r1 && !ML() && V.each ? ' · one place ±' + r1.hi + ' points' : '');
-          ctx.fillStyle = '#e0a020'; ctx.font = 'bold 10px system-ui'; if (a.right - x0 > ctx.measureText(t2).width + 10) ctx.fillText(t2, x0 + 5, a.top + 34); } } }
+          ctx.fillStyle = '#e0a020'; ctx.font = 'bold 10px system-ui';
+          if (a.right - x0 > ctx.measureText(t2).width + 10) { ctx.save(); ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = css('--card'); ctx.strokeText(t2, x0 + 5, a.top + 34); ctx.restore(); ctx.fillText(t2, x0 + 5, a.top + 34); } } } }   // outlined so the date lines do not cut through it
     ctx.strokeStyle = css('--ink2'); ctx.globalAlpha = .6; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(a.left, y.getPixelForValue(0)); ctx.lineTo(a.right, y.getPixelForValue(0)); ctx.stroke();
     ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.fillStyle = css('--muted'); ctx.font = '10px system-ui';
     ctx.fillText('0 = same as ' + fd(SW.control) + ' · grey = what lesion-free places read on each scan' + (ML() ? ' (for the total)' : ''), a.left + 4, a.top + 22);
@@ -103,7 +108,7 @@
     bar.append(lab('Show'), btn('Each lesion', V.each, () => { V.each = !V.each; save(); redraw(); }, 'One line per lesion place'),
       btn('Total', V.total, () => { V.total = !V.total; save(); redraw(); }, 'All lesion places together'),
       btn('Treatments', V.tx, () => { V.tx = !V.tx; save(); redraw(); }));
-    if (PR) bar.append(btn('Projection', V.proj, () => { V.proj = !V.proj; save(); redraw(); }, 'Where the reading is likely to land in 1, 2 and 3 months, from how the past scans behaved: a level with a range, not a trend. Our measure, not symptoms.'));
+    if (PR && window.Projection) bar.append(Projection.button('Where the reading is likely to land in 1, 2 and 3 months, from how the past scans behaved: a level with a range, not a trend. Our measure, not symptoms.'));
     body.append(bar);
     body.append(LesionChips.row({ids: IDS, color: l => LCOL[l], name: l => LNAME[l] || '', hidden: V.hidden, badge: chipBadge,
       onChange: h => { V.hidden = h; save(); redraw(); },
@@ -120,8 +125,9 @@
         .map(r => ({x: pos(ms(r.date)), y: val(r), r, lesion: l})));
       ds.push(mk(l, LCOL[l], P)); });
     if (V.total) ds.push(mk('Total', css('--ink'), [Object.assign({}, ctl, {lesion: 'Total'})].concat(SW.totals.filter(r => val(r) != null).map(r => ({x: pos(ms(r.date)), y: val(r), r: Object.assign({total: true}, r), lesion: 'Total'}))), {borderWidth: 3}));
-    /* projection: a dashed level from the scans it is the average of to the last projected month, hollow points with range bars at each month */
-    if (V.proj && PR) {
+    /* projection: a dashed level from the scans it is the average of to the last projected month, hollow points with range bars at each
+       month, on the amber date lines every panel draws (projection_dates.js) */
+    if (PON()) {
       const add = (label, col, P, rowsOf, w) => { const rr = rowsOf.slice().sort((a, b) => ms(a.date) - ms(b.date)), first = rr[Math.max(0, rr.length - P.n)];
         if (!first) return; const lv = ML() ? P.level * P.region_ml / 100 : P.level;
         const pts = [{x: pos(ms(first.date)), y: lv, fit: true}, {x: pos(ms(PR.base)), y: lv, fit: true}]
@@ -153,7 +159,7 @@
               .concat(!r.total && r.outlined === false ? ['lesion not outlined on this scan: its place only'] : [], SW.notes && SW.notes[r.date] ? ['⚠ ' + SW.notes[r.date]] : []); }}}},
         scales: {x: xAxis(), y: {min: Math.floor(lo / st) * st, max: Math.ceil(hi / st) * st, afterFit: s => { s.width = typeof YW === 'number' ? YW : s.width; },
           title: {display: true, text: (ML() ? 'extra room, mL' : '% room') + ' vs ' + fd(SW.control), color: css('--muted')}, ticks: {color: css('--muted'), callback: v => (v > 0 ? '+' : '') + v + (ML() ? '' : '%')}, grid: {color: css('--line')}}}}}));
-    if (V.proj && PR) drawProjection(body);
+    if (PON()) drawProjection(body);
     const note = document.createElement('div'); note.className = 'sub'; note.style.marginTop = '4px';
     note.innerHTML = 'How much more (+, swollen or pushed) or less (−, shrunk) room the brain around each lesion takes than on the normal ' + fd(SW.control) + ' MRI, from a flexible fit of each scan to it. ' +
       'Place = brain within ' + SW.place_mm + ' mm of the lesion\'s position on the ' + (SW.place_scan ? fd(SW.place_scan) : 'baseline') + ' scan, the lesion itself left out, the same region on every scan. ' +
@@ -166,16 +172,12 @@
   /* ---- Projection box: the test behind it, where it is drawn, and the numbers (swelling_projection.py) ---- */
   const esc_ = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   function drawProjection(body) {
-    const u = ML() ? fm : pc, lastT = ms(PR.months[PR.months.length - 1].date), onAxis = X1 >= lastT;
+    const u = ML() ? fm : pc, lastT = ms(PR.months[PR.months.length - 1].date);
     const short = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
     const wrap = document.createElement('div'); wrap.style.cssText = 'margin-top:8px;padding:6px 10px;border:2px solid #e0a020;border-radius:6px;font-size:12px';
     wrap.innerHTML = '<div class="msw-bar" style="margin-bottom:2px"><b style="color:#e0a020">Projection (a level with a range, not a trend)</b> <span class="sub">from the ' + fd(PR.base) + ' scan · the reading ' + esc_(PR.rule_words) + '</span></div>' +
       '<div style="margin:2px 0 6px"><b>How far to trust it:</b> ' + esc_(PR.backtest.text) + '</div>';
-    const where = document.createElement('div'); where.className = 'msw-bar'; where.style.margin = '0 0 4px';
-    if (onAxis) where.innerHTML = '<span class="sub">Drawn on the chart above: dashed lines with hollow points in the tinted part to the right of today.</span>';
-    else { where.innerHTML = '<span class="sub">The timeline stops before the last projected month (' + fd(PR.months[PR.months.length - 1].date) + '): only the start of the dashed lines fits.</span>';
-      if (typeof setFuture === 'function') where.append(btn('Show it on the timeline', false, () => setFuture(Math.max(FUT, futFor(lastT)), true), 'Lengthens the time axis of every panel so it reaches the last projected month (the same as Future in the navigation bar)')); }
-    wrap.append(where);
+    wrap.append(Projection.where());   // on the chart at the amber date lines, or a button that brings the timeline there
     const rows = (V.each ? IDS.filter(l => !V.hidden.includes(l)).map(l => PR.lesions.find(q => q.id === l)).filter(Boolean) : []).concat(V.total && PR.total ? [Object.assign({id: 'Total'}, PR.total)] : []);
     const rng = c => u(ML() ? c.lo_ml : c.lo) + ' to ' + u(ML() ? c.hi_ml : c.hi);
     const same = rows.every(r => r.cells.every(c => rng(c) === rng(r.cells[0])));   // the range did not widen with time: one column

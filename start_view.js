@@ -41,8 +41,10 @@
       ? 'New visitors land on the start view saved ' + when(S.saved) + '.'
       : 'No start view is saved yet: new visitors get the built-in layout.'));
     box.append(row('startViewReset', '⟲ Put this browser back to the start view', () => {
-      for (const k of mine()) localStorage.removeItem(k);
-      location.reload();   // the page then copies the start view in again, as for a new visitor
+      // The marker tells the loader in serve_viewer.py to clear this browser's view settings (also any the page
+      // writes while closing) and copy the start view in, as for a new visitor.
+      localStorage.setItem('startview.reset', '1');
+      location.reload();
     }));
     if (window.START_VIEW_CAN_SAVE) {
       const n = Object.keys(snapshot()).length;

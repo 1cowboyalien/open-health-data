@@ -66,10 +66,15 @@ START = os.path.join(LOCAL, "start_view.json")
 START_JS = os.path.join(HERE, "start_view.js")
 START_SKIP = {"txedits", "txdirty", "open"}   # medication edits are shared separately; "open" is not used any more
 START_MAX = 2_000_000
-# Runs before the viewer's own script: a browser with no saved settings gets the start view.
-START_SEED = ("(function(){var S=window.START_VIEW;if(!S||!S.keys)return;try{for(var i=0;i<localStorage.length;i++)"
-              "if(localStorage.key(i).indexOf('labs.')===0)return;for(var k in S.keys)localStorage.setItem('labs.'+k,"
-              "JSON.stringify(S.keys[k]))}catch(e){}})();")
+# Runs before the viewer's own script. A browser with no saved view settings gets the start view; so does one where
+# "Put this browser back" left the startview.reset marker (the old settings are cleared first, including any the
+# previous page wrote while closing). Medication edits and the page's own "open" key don't count and are kept.
+START_SEED = ("(function(){try{var L=localStorage,skip={'labs.txedits':1,'labs.txdirty':1,'labs.open':1},"
+              "reset=L.getItem('startview.reset'),ks=[],i,k;L.removeItem('startview.reset');"
+              "for(i=0;i<L.length;i++){k=L.key(i);if(k.indexOf('labs.')===0&&!skip[k])ks.push(k)}"
+              "if(ks.length&&!reset)return;for(i=0;i<ks.length;i++)L.removeItem(ks[i]);"
+              "var S=window.START_VIEW;if(!S||!S.keys)return;for(k in S.keys)L.setItem('labs.'+k,JSON.stringify(S.keys[k]))"
+              "}catch(e){}})();")
 
 
 def read_start():

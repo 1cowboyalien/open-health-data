@@ -10,7 +10,7 @@ lab charts on the same time axis (rows: med_timeline.py; drawing and editing: me
 Changes made in the viewer can be exported to local/med_edits.json; it is built back in here.
 If local/procedures/procedures.json exists, a Procedures section is added (procedures_view.js).
 If local/dna/dna.json exists, a DNA section is added (dna_view.js).
-If local/photos/photos_view.json exists, an "Erica's story" photo section is added (photos_view.js).
+If local/photos/photos_view.json exists, a photo story section is added (photos_view.js).
 If local/ask.json exists, Ask features are added (ask_view.js; needs a separate local chat server).
 
 The same test from different hospitals is combined by LOINC code (by name when there's
@@ -834,7 +834,7 @@ procjs = ""
 if os.path.exists(proc_json):
     procjs = ("const PROC_DATA=" + open(proc_json).read().strip().replace("</", "<\\/") + ";\n"
               + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "procedures_view.js")).read())
-# Erica's story (Library → Erica's story): only if local/photos/photos_view.json exists. It is made outside this repo by the
+# Photo story (Library → photo story section): only if local/photos/photos_view.json exists. It is made outside this repo by the
 # private local/photos/build_web.py (dates, chapters, people, notes; no location or camera data); the viewer server serves
 # the website copies from local/photos/{thumb,web}/ and the stories from local/photos/stories/; drawn by photos_view.js.
 photo_json = os.path.join(os.path.dirname(out), "photos", "photos_view.json")

@@ -10,7 +10,7 @@ Usage:
   GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
 - Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic
   nucleus spots, and <case>/masks/*.json, the automatic tissue maps).
-- Photos (Erica's story, photos_view.js): GET /photos/thumb/<id>.jpg and /photos/web/<id>.(jpg|mov|mp4) from local/photos/ only
+- Photos (photo story panels, photos_view.js): GET /photos/thumb/<id>.jpg and /photos/web/<id>.(jpg|mov|mp4) from local/photos/ only
   (website copies made by local/photos/build_web.py, with location and camera data removed). Videos answer byte ranges
   (Safari needs them to play). GET /photos/stories.json = every story in local/photos/stories/<id>.json; a story with
   "family_only": true is left out unless the visitor is this Mac or the home network.
@@ -317,7 +317,7 @@ class Handler(BaseHTTPRequestHandler):
                     and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots / tissue maps, one file per slide
                 return self.send(200, open(f, "rb").read(), "application/json")
             return self.send(404, {"error": "not found"})
-        if path.startswith("/photos/"):   # Erica's photos: website copies in local/photos/{thumb,web}/, and her stories
+        if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
             return self.photos(urllib.parse.unquote(path[len("/photos/"):]))
         if path == "/api/edits":
             with lock:

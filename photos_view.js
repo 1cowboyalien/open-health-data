@@ -1,4 +1,4 @@
-/* Erica's story: her own photos and videos in the Library of the lab viewer (labs.html), put in order by when they were taken.
+/* Photo story (title from the data, e.g. "<name>'s story"): a person's own photos and videos in the Library of the lab viewer (labs.html), put in order by when they were taken.
    Used by make_lab_view.py when local/photos/photos_view.json exists (made by the private local/photos/build_web.py).
    Everything about the photos (dates, chapters, people, notes) comes from PHOTO_DATA, never from this code. The pictures are
    served by serve_viewer.py at /photos/thumb/<id>.jpg and /photos/web/<id>.<ext> (website copies: no location or camera data).
@@ -8,23 +8,24 @@
                      chapters as a band on top; photos too close together share one tile with a count. Click a tile: open it.
      photo:gallery = "Gallery": the "Before & after" intro, then chapter → month, a grid of photos and videos. Click one: open it.
    Full-window view: the photo or video large, ‹ › / arrow keys, Esc closes; its date and how sure it is, the chapter, who is in it,
-   "What was happening" (nearby procedures and hospital stays, if the Procedures panel's data is in the page) and Erica's stories.
+   "What was happening" (nearby procedures and hospital stays, if the Procedures panel's data is in the page) and the stories told about it.
    Graphic photos (level "graphic": wounds, skin changes, nudity): ONE button, "Show graphic photos", off by default, shows or covers
    all of them at once; until it is on, a graphic photo is a covered box and its picture is never requested. Kept per browser
    (store 'photo.graphic').
    Stories: fetched from /photos/stories.json = {stories: {<id>: [{title?, told?, family_only?, turns: [{who, text}]} | {text}]}};
-   the server leaves out family-only stories for visitors outside the home network. Erica's words are shown as she said them.
-   Data: PHOTO_DATA = {chapters: [{from, title, about}], items: [{id, kind: photo|video, ext, t, tz?, sure, src?, chapter, level,
+   the server leaves out family-only stories for visitors outside the home network. The words are shown as they were said.
+   Data: PHOTO_DATA = {title, teller, chapters: [{from, title, about}], items: [{id, kind: photo|video, ext, t, tz?, sure, src?, chapter, level,
                        people?, caption?, note?, w?, h?, seconds?, session?, display?: 'intro', panels?, ask?}]}. */
 (() => {
   const P = PHOTO_DATA;
+  const NAME = P.title || 'Photos', TELLER = P.teller || 'the person', TELLS = TELLER + (TELLER.endsWith('s') ? "'" : "'s");   // the panel name and whose stories they are come from the data
   const IDS = 'photo:strip', IDG = 'photo:gallery';
   const ALL = P.items.slice().sort((a, b) => a.t < b.t ? -1 : a.t > b.t ? 1 : 0);
   const INTRO = ALL.filter(i => i.display === 'intro');
   const TL = ALL.filter(i => i.display !== 'intro');                       // everything on the timeline
   const nPh = ALL.filter(i => i.kind === 'photo').length, nVid = ALL.filter(i => i.kind === 'video').length;
-  const PANELS = {[IDS]: {title: "Erica's story · photos over time", unit: TL.length + ' photos and videos', h0: 150},
-                  [IDG]: {title: "Erica's story · gallery", unit: nPh + ' photos · ' + nVid + ' videos', h0: 620}};
+  const PANELS = {[IDS]: {title: NAME + ' · photos over time', unit: TL.length + ' photos and videos', h0: 150},
+                  [IDG]: {title: NAME + ' · gallery', unit: nPh + ' photos · ' + nVid + ' videos', h0: 620}};
   const CH = P.chapters, CHI = Object.fromEntries(CH.map((c, i) => [c.title, i]));
   const CHCOL = ['#8a8984', '#6b7280', '#c2410c', '#2a78d6', '#b45309', '#7c3aed', '#d4572a', '#1baf7a', '#a83fd0', '#2aa876', '#d42a8a'];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -76,7 +77,7 @@
     bar.append(hint); body.append(bar);
     const box = document.createElement('div'); box.style.cssText = 'position:relative;height:' + hOf(id, PANELS[id].h0) + 'px';
     const cv = document.createElement('canvas'); cv.style.cssText = 'width:100%;height:100%;display:block;cursor:pointer';
-    cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', "Erica's photos on the time axis");
+    cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Photos on the time axis');
     const tip = document.createElement('div'); tip.className = 'photoTip';
     box.append(cv, tip); body.append(box);
     const paint = () => {
@@ -162,7 +163,7 @@
     const size = document.createElement('input'); size.type = 'range'; size.min = 80; size.max = 260; size.value = S.size; size.title = 'Picture size'; size.setAttribute('aria-label', 'Picture size');
     size.oninput = () => { S.size = +size.value; saveS(); body.querySelectorAll('.photoCard').forEach(c => { const b = c.classList.contains('big') ? 1.6 : 1; c.style.width = c.style.height = S.size * b + 'px'; }); };
     bar.append(graphicBtn(), sel_, tog('Only the time window', 'win', 'Show only photos inside the time window of the charts'),
-      tog('💬 With stories', 'stories', "Show only photos Erica has told a story about"), size);
+      tog('💬 With stories', 'stories', 'Show only photos ' + TELLER + ' has told a story about'), size);
     body.append(bar);
     const note = document.createElement('div'); note.className = 'sub photoNote';
     note.textContent = graphic ? 'Graphic photos are shown. Some show surgery wounds, skin changes and nudity.' :
@@ -181,7 +182,7 @@
       box.append(sec);
     }
     if (!its.length) { const e = document.createElement('div'); e.className = 'sub'; e.style.padding = '12px';
-      e.textContent = S.stories ? 'No stories yet. When Erica tells the story of a photo, it will show here.' : 'No photos match.'; box.append(e); }
+      e.textContent = S.stories ? 'No stories yet. When ' + TELLER + ' tells the story of a photo, it will show here.' : 'No photos match.'; box.append(e); }
     const byCh = new Map(); its.forEach(i => { (byCh.get(i.chapter) || byCh.set(i.chapter, []).get(i.chapter)).push(i); });
     [...byCh.entries()].sort((a, b) => (CHI[a[0]] ?? 99) - (CHI[b[0]] ?? 99)).forEach(([ch, list]) => {
       const c = CH[CHI[ch]] || {}, sec = document.createElement('section'); sec.className = 'photoSec';
@@ -207,10 +208,10 @@
   }
   function storyHtml(it) {
     const L = STORIES[it.id] || [];
-    if (!L.length) return '<div class="sub">No stories yet. When Erica tells the story of this photo, her words will appear here, as she said them.</div>';
+    if (!L.length) return '<div class="sub">No stories yet. When ' + esc(TELLER) + ' tells the story of this photo, the words will appear here, as they were said.</div>';
     return L.map(s => '<div class="photoStory">' + (s.title ? '<b>' + esc(s.title) + '</b>' : '') + (s.told ? ' <span class="sub">told ' + esc(s.told) + '</span>' : '') +
       (s.family_only ? ' <span class="sub">· family only</span>' : '') +
-      (s.turns || [{who: 'Erica', text: s.text}]).map(x => '<div class="turn ' + (x.who === 'Erica' ? 'erica' : 'other') + '"><span class="who">' + esc(x.who || '') + '</span>' + esc(x.text || '') + '</div>').join('') + '</div>').join('');
+      (s.turns || [{who: TELLER, text: s.text}]).map(x => '<div class="turn ' + (x.who === TELLER ? 'teller' : 'other') + '"><span class="who">' + esc(x.who || '') + '</span>' + esc(x.text || '') + '</div>').join('') + '</div>').join('');
   }
   function openBox(list, k) {
     const ov = document.createElement('div'); ov.className = 'photoOv'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Photo');
@@ -232,7 +233,7 @@
         (it.src && it.sure !== 'exact' ? '<div class="sub">Date from: ' + esc(it.src) + '</div>' : '') +
         (it.panels ? it.panels.map(p => '<div class="sub"><b>' + esc(p.pos) + ':</b> ' + esc(p.taken || 'date unknown') + (p.note ? ' · ' + esc(p.note) : '') + '</div>').join('') : '') +
         (hp.length ? '<h4>What was happening</h4>' + hp.map(h => '<div class="sub">' + (h.stay ? '' : esc(h.date) + ' (' + (h.d === 0 ? 'same day' : Math.abs(h.d) + ' day' + (Math.abs(h.d) > 1 ? 's ' : ' ') + (h.d > 0 ? 'later' : 'earlier')) + '): ') + esc(h.text) + '</div>').join('') : '') +
-        '<h4>Erica\'s stories</h4>' + storyHtml(it);
+        '<h4>' + esc(TELLS) + ' stories</h4>' + storyHtml(it);
       if (it.display !== 'intro') { const go = document.createElement('button'); go.type = 'button'; go.className = 'photoTog'; go.textContent = 'Show this date on the charts';
         go.title = 'Move every chart to a window around this date'; go.onclick = () => { const t = tOf(it); setWin(Math.max(X0, t - 45 * DAY), Math.min(X1, t + 45 * DAY)); close(); }; side.append(go); }
       const nav = document.createElement('div'); nav.className = 'photoNav';
@@ -273,7 +274,7 @@
 .photoNav{grid-column:1;display:flex;justify-content:center;align-items:center;gap:14px;color:#ddd;padding:8px}
 .photoNav button{font-size:22px;background:transparent;border:1px solid #555;color:#eee;border-radius:8px;padding:0 12px;cursor:pointer}.photoNav button:disabled{opacity:.3}
 .photoStory{border-top:1px solid var(--line);padding:8px 0}.photoStory .turn{margin:6px 0;padding:6px 9px;border-radius:10px;background:var(--bg)}
-.photoStory .turn.erica{background:rgba(42,120,214,.10)}.photoStory .who{display:block;font-size:11px;color:var(--muted);font-weight:600}
+.photoStory .turn.teller{background:rgba(42,120,214,.10)}.photoStory .who{display:block;font-size:11px;color:var(--muted);font-weight:600}
 @media (max-width:760px){.photoOv{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}.photoSide{grid-row:3;grid-column:1}.photoStage img,.photoStage video{max-height:55vh}}`;
   document.head.append(st);
 
@@ -288,13 +289,13 @@
   MRD.refresh = id => { if (!mine(id)) return o.refresh(id); const b = BODIES.get(id); if (!b || !b.body.isConnected) return;
     if (id === IDS) b.paint(); else if (S.win) drawGallery(id, b.body); };
 
-  /* Library: Erica's story → Photos over time, Gallery, and one row per chapter (opens the gallery at that chapter) */
+  /* Library: <title> → Photos over time, Gallery, and one row per chapter (opens the gallery at that chapter) */
   MRD.section = (el, q) => {
     o.section(el, q);
-    const hay = ("erica's story photos pictures videos gallery life family graphic stories " + CH.map(c => c.title).join(' ')).toLowerCase();
+    const hay = (NAME + ' ' + TELLER + " story photos pictures videos gallery life family graphic stories " + CH.map(c => c.title).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
-    const SEC = section(el, 'photo', "Erica's story", ALL.length + ' photos', true, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn('photo panel', 'grp:photo', [IDS, IDG], soloLab && soloLab.key === 'grp:photo', false, () => onlyLab('grp:photo', [IDS, IDG], "Erica's story")), s0.lastChild);
+    const SEC = section(el, 'photo', NAME, ALL.length + ' photos', true, 'sec', q), s0 = SEC.firstChild;
+    s0.insertBefore(groupOnlyBtn('photo panel', 'grp:photo', [IDS, IDG], soloLab && soloLab.key === 'grp:photo', false, () => onlyLab('grp:photo', [IDS, IDG], NAME)), s0.lastChild);
     const row = (label, count, tip, checked, onTick, onName) => {
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = checked; cb.setAttribute('aria-label', 'Show ' + label);
@@ -303,7 +304,7 @@
       const n = document.createElement('span'); n.className = 'n'; n.textContent = count;
       d.append(cb, nm, n); d.onclick = onName || (() => { cb.checked = !cb.checked; onTick(cb.checked); }); return d; };
     SEC.append(row('Photos over time', TL.length, 'Small pictures on the time axis, lined up with every chart', sel.includes(IDS), v => setLabSel([IDS], v)));
-    SEC.append(row('Gallery', ALL.length, 'Every photo and video by chapter and month; click one to open it, with its date and Erica\'s stories', sel.includes(IDG), v => setLabSel([IDG], v)));
+    SEC.append(row('Gallery', ALL.length, 'Every photo and video by chapter and month; click one to open it, with its date and ' + TELLS + ' stories', sel.includes(IDG), v => setLabSel([IDG], v)));
     const G = section(SEC, 'photo:ch', 'Chapters', CH.filter(c => ALL.some(i => i.chapter === c.title)).length, false, 'grp', q);
     CH.filter(c => ALL.some(i => i.chapter === c.title)).forEach(c => { const n = ALL.filter(i => i.chapter === c.title).length;
       const open = () => { S.chapter = c.title; S.win = false; saveS(); if (!sel.includes(IDG)) setLabSel([IDG], true); else redrawAll(); };

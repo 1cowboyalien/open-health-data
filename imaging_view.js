@@ -993,6 +993,7 @@
   }
 
   function drawLesions(id, body) {
+    if (window.Projection) Projection.sync();   // a view without the Projection switch may have replaced one with it: the date lines follow
     if ((L.view === 'volume' || L.view === 'periods') && !window.LesionTrends) L.view = 'timeline';
     if (L.view === 'volume' || L.view === 'periods') return window.LesionTrends.draw(id, body, L.view, lesViewBtns(id, body), () => drawLesions(id, body), LSEL);
     const old = charts.get(id); if (old) { old.destroy(); charts.delete(id); }
@@ -1123,6 +1124,9 @@
   MRD.panel = (id, body) => { if (!mine(id)) return o.panel(id, body); BODIES.set(id, body); (id === IDV ? drawViewer : id === IDL ? drawLesions : id === IDD ? drawDose : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, body); };
   MRD.refresh = id => { if (!mine(id)) return o.refresh(id); if (id === IDV || id === IDD) return;   // the slice viewer doesn't follow the time window
     const b = BODIES.get(id); if (b && b.isConnected) (id === IDL ? drawLesions : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, b); };
+
+  /* one Projection switch for the imaging panels (projection_dates.js): when it changes, redraw the panels that draw a projection */
+  if (window.Projection) Projection.onChange(() => [IDL, IDW].forEach(id => MRD.refresh(id)));
 
   /* Library: Imaging → Brain MRI → Scan dates / Slice viewer */
   MRD.section = (el, q) => {

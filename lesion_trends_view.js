@@ -9,8 +9,9 @@
      'Before first scan' (volume view) = each first-scan lesion carried backwards at the doubling times measured later, to estimate when
                       it became visible; 'Projection' = each lesion on the latest scan carried forward 1-3 months at its latest rate,
                       with how that did on the past scans (both computed by imaging/volumetry/growth_model.py: IMG_DATA.growth).
-                      The projection is drawn on the chart itself as far as the shared time axis runs (navigation bar: Future);
-                      while the axis stops short of it, a small chart of its own shows it and a button lengthens the axis
+                      The projection is drawn on the chart itself, on the shared time axis. Its switch and its dates (+1, +2, +3
+                      months: amber date lines in every panel) are shared with the other imaging panels (projection_dates.js);
+                      switching it on lengthens the axis when it stops short (navigation bar: Future)
    Everything about the patient comes from IMG_DATA.lesion_series and IMG_DATA.growth, never from this code.
    Data used: lesion_series.lesions [{id,name,rgb}], measured [{lesion,date,enh_mm3,axial_mm,field,seq,seq_name,lo,hi,conf,flags,alt?,none?,note?}]
               (lo/hi = likely range, conf = ok|low, flags = cut/shared/faint/tiny, alt = a second series of the same visit; volumetry/quality.py),
@@ -19,13 +20,14 @@
   const LS = IMG_DATA.lesion_series;
   if (!LS || !LS.measured || !LS.measured.length) return;
   const H0 = 380;
-  const V0 = {total: true, scale: 'log', fit: 'window', hidden: [], tx: true, back: false, proj: false, psc: 'full'};   // opens with the total and the fitted trends (doubling times) showing
+  const V0 = {total: true, scale: 'log', fit: 'window', hidden: [], tx: true, back: false, psc: 'full'};   // opens with the total and the fitted trends (doubling times) showing
   const GR = IMG_DATA.growth || {};
   const PJ = GR.projection && GR.projection.lesions && GR.projection.lesions.length ? GR.projection : null;   // forward scenarios
   const BC = GR.backcast || null;                                                                              // start-of-growth estimate
   const V = Object.assign({}, V0, store.get('mrit.view', {}), store.get('img.trends', {}));   // mrit.view = saved while this was the MRI (test) section
   if (V.show) { V.total = V.show !== 'each'; if (V.show === 'total') V.hidden = LS.lesions.map(l => l.id); delete V.show; }   // older saved setting
-  delete V.view;
+  delete V.view; delete V.proj;   // Projection on/off is one switch for all imaging panels since 2026-11-18 (projection_dates.js), not kept here
+  const PON = () => !!(PJ && window.Projection && Projection.on);
   const save = () => store.set('img.trends', V);
   let SEL = null;                                   // the panel's shared lesion selection (set on each draw); without it the choice is kept here
   const setHidden = h => { V.hidden = h; if (SEL) SEL.set(h); save(); };
@@ -141,7 +143,7 @@
     const tog = (key, label, tip) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ltr-b' + (V[key] ? ' on' : ''); b.textContent = label; b.title = tip;
       b.onclick = () => { V[key] = !V[key]; save(); redraw(); }; bar.append(b); };
     if (view !== 'periods' && BC) tog('back', 'Before first scan', 'Estimate of the growth before the first scan with lesions: each lesion carried backwards at the doubling times measured later, down to the size a scan can show. Dotted = an estimate, not a measurement.');
-    if (view !== 'periods' && PJ) tog('proj', 'Projection', 'What each lesion on the latest scan would measure in 1, 2 and 3 months if its latest rate carried on, and how that kind of projection did on the past scans. A scenario, not a forecast.');
+    if (view !== 'periods' && PJ && window.Projection) bar.append(Projection.button('What each lesion on the latest scan would measure in 1, 2 and 3 months if its latest rate carried on, and how that kind of projection did on the past scans. A scenario, not a forecast.'));
     body.append(bar);
     const ids = LS.lesions.filter(l => LS.measured.some(m => m.lesion === l.id && !m.none)).map(l => l.id);
     body.append(LesionChips.row({ids, color: i => LCOL[i], name: i => LNAME[i], hidden: V.hidden, badge: chipBadge,
@@ -268,10 +270,11 @@
         ctx.restore(); }};
     }
     /* Projection on the shared time axis: each lesion's scenario from the latest scan, as far as the axis runs (navigation bar:
-       Future). Dashed, hollow points at +1, +2 and +3 months with their range bars; clipped to the plot. Between two months the
-       line follows the same steady rate (straight on the log scale). The total is the sum of the lesions shown. */
+       Future). Dashed, hollow points at +1, +2 and +3 months with their range bars, on the amber date lines every panel draws
+       (projection_dates.js); clipped to the plot. Between two months the line follows the same steady rate (straight on the log
+       scale). The total is the sum of the lesions shown. */
     let projPlug = null; const measTop = Math.max(0, ...ds.flatMap(d => d.data.map(q => q.fit ? 0 : q.y)));
-    if (V.proj && PJ) {
+    if (PON()) {
       if (!PJ.scenarios.some(q => q.key === V.psc)) V.psc = PJ.scenarios[0].key;
       const tb = ms(PJ.base), rowsP = projRows(S), end = Math.max(X1, W.b);
       const curve = (label, col, now, cells, extra) => {
@@ -292,7 +295,7 @@
         ctx.fillStyle = css('--muted'); ctx.font = '10px system-ui'; ctx.textBaseline = 'bottom';
         const t = 'largest single lesion measured so far (' + fv(PJ.max_seen_mm3) + ')'; if (a.right - x0 > ctx.measureText(t).width + 10) ctx.fillText(t, x0 + 5, py - 2);
         ctx.fillStyle = '#e0a020'; ctx.font = 'bold 10px system-ui'; ctx.textBaseline = 'top';
-        const t2 = 'projection: ' + PJ.scenarios.find(q => q.key === V.psc).label; if (a.right - x0 > ctx.measureText(t2).width + 10) ctx.fillText(t2, x0 + 5, a.top + 13);
+        const t2 = 'projection: ' + PJ.scenarios.find(q => q.key === V.psc).label; if (a.right - x0 > ctx.measureText(t2).width + 10) { ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = css('--card'); ctx.strokeText(t2, x0 + 5, a.top + 24); ctx.fillText(t2, x0 + 5, a.top + 24); }   // under the date labels (+1 mo over its date); outlined so the date lines do not cut through it
         ctx.restore(); }};
     }
     /* range bars: a thin vertical bar from the low to the high end of each point's likely range (seed position), drawn under the points */
@@ -320,6 +323,8 @@
             return [r.lesion + ' ' + (r.v === 0 ? 'nothing found' : fv(r.v)) + ' · ' + r.field + (m.seq_name ? ' ' + m.seq_name : '') + (m.axial_mm ? ' · ' + m.axial_mm + ' mm wide' : ''), LNAME[r.lesion]]
               .concat(m.note ? [m.note] : [], q, st); }}}},
         scales: {x: xAxis(), y: {type: log ? 'logarithmic' : 'linear', min: log ? 5 : 0, max: !log && projPlug ? Math.ceil(Math.max(measTop, PJ.max_seen_mm3) * 1.5 / 1000) * 1000 : undefined,
+          /* log scale with the projection showing: about 26 px of room above the highest point, so the date labels at the top of the plot (+1 mo over its date) stay clear of it */
+          afterDataLimits: s => { if (log && projPlug && projShown && s.max > s.min && s.min > 0) s.max *= Math.pow(s.max / s.min, 26 / Math.max(60, (s.height || 300) - 26)); },
           afterFit: s => { s.width = typeof YW === 'number' ? YW : s.width; },
           title: {display: true, text: 'mm³ (enhancing)', color: css('--muted')},
           ticks: {color: css('--muted'), callback: v => log ? ([5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000].includes(v) ? (v >= 1000 ? v / 1000 + 'k' : v) : '') : v},
@@ -333,7 +338,7 @@
       body.insertAdjacentHTML('beforeend', h + '</table>');
     }
     if (V.back && BC) drawBack(body, S);
-    if (V.proj && PJ) drawProjection(body, S, log);
+    if (PON()) drawProjection(body, S);
     const note = document.createElement('div'); note.className = 'sub'; note.style.marginTop = '4px';
     note.innerHTML = 'Our own measured enhancing volume per lesion (not the reports\' sizes). ● = 1.5T scanner, ▲ = 3T; ' +
       '<b>a dotted stretch joins a 1.5T and a 3T scan, so part of that change may be the scanner</b> (small lesions can differ up to ~2× between scanners). ' +
@@ -342,7 +347,7 @@
       'Scans also differ in sequence type (MPRAGE/BRAVO, plain gradient echo, SPACE/CUBE spin echo): named in the hover box; volumes compare best within one type. Total = sum of the lesions shown on each scan. ' +
       (V.fit === 'window' ? 'Dashed = fitted steady-% trend through the points inside the time window (needs 2+ points); move or zoom the window to fit a different stretch. ' : '') +
       (V.back && BC ? 'Fine dotted lines before the first scan = the estimate described above, not measurements; the grey fan = the same for the total, from the fast to the slow doubling time. ' : '') +
-      (projPlug ? '<b style="color:#e0a020">Dashed lines with hollow points after the latest scan = the projection (a scenario, not a forecast)</b>, drawn as far as the time axis runs (navigation bar: Future)' + (log ? '' : '; on the linear scale lines that leave the top are larger than the scale (switch to Log)') +
+      (projPlug ? '<b style="color:#e0a020">Dashed lines with hollow points after the latest scan = the projection (a scenario, not a forecast)</b>; its hollow points sit on the amber date lines (' + Projection.datesText() + '), which mark the same dates in every panel' + (log ? '' : '; on the linear scale lines that leave the top are larger than the scale (switch to Log)') +
         (projShown && fits.length ? '; while it shows, the fitted trends\' labels are in the table under the chart instead of the right-hand column' : '') + '. ' : '') +
       'Hover a point for the rate since the previous scan (none for scans under ' + MINGAP + ' days apart). Arrows on the chips = latest rate (last treatment period with 2+ scans). Bands: orange = whole-brain radiation, purple = SRS.';
     body.append(note);
@@ -364,9 +369,9 @@
   }
   const esc_ = t => String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 
-  /* ---- Projection: each lesion on the latest scan carried forward 1-3 months (growth_model.py). The lines are on the main chart
-     as far as the shared time axis runs (navigation bar: Future). While the axis stops short of the last projected month, a small
-     4-column chart of its own (latest scan, +1, +2, +3 months) stands in and a button lengthens the axis. Always: the table. ---- */
+  /* ---- Projection: each lesion on the latest scan carried forward 1-3 months (growth_model.py). The lines are on the main chart,
+     on the shared time axis (switching Projection on lengthens the axis when it stops short: projection_dates.js). This box: the
+     scenario buttons, how far to trust it, where it is drawn, and the table. ---- */
   const projRows = S => { const ids = new Set(S.map(l => l.id)); return PJ.lesions.filter(r => !S.length || ids.has(r.id)); };
   /* total of the lesions shown: now and per month (a lesion without a rate counts unchanged), ranges added up */
   function projTotal(rows) { const sum = f => rows.reduce((a, r) => a + f(r), 0);
@@ -378,11 +383,9 @@
       c.hi > c.lo ? ['range ' + fv(c.lo) + ' – ' + fv(c.hi) + ' (from the likely range of the scans behind the rate)'] : [],
       c.beyond ? [WARN + ' larger than any lesion measured so far: steady doubling cannot go on this long'] : [], c.below ? ['under what a scan can show'] : [],
       ['A scenario, not a forecast: ' + (PJ.backtest.short || '')]); }
-  function drawProjection(body, S, log) {
-    const old = charts.get('ltr:proj'); if (old) { old.destroy(); charts.delete('ltr:proj'); }
-    const rows = projRows(S), lastT = ms(PJ.months[PJ.months.length - 1].date), onAxis = X1 >= lastT;
+  function drawProjection(body, S) {
+    const rows = projRows(S);
     if (!PJ.scenarios.some(s => s.key === V.psc)) V.psc = PJ.scenarios[0].key;
-    const sc = PJ.scenarios.find(s => s.key === V.psc);
     const wrap = document.createElement('div'); wrap.style.cssText = 'margin-top:8px;padding:6px 10px;border:2px solid #e0a020;border-radius:6px;font-size:12px';
     const head = document.createElement('div'); head.className = 'ltr-bar';
     head.innerHTML = '<b style="color:#e0a020">Projection (a scenario, not a forecast)</b> <span class="sub">from the ' + fd(PJ.base) + ' scan · if</span>';
@@ -391,48 +394,7 @@
     wrap.append(head);
     const bt = document.createElement('div'); bt.style.cssText = 'margin:2px 0 6px'; bt.innerHTML = '<b>How far to trust it:</b> ' + esc_(PJ.backtest.text); wrap.append(bt);
     const short = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
-    /* where the lines are: on the main chart when the time axis reaches the last projected month, else in a small chart here */
-    const where = document.createElement('div'); where.className = 'ltr-bar'; where.style.margin = '0 0 4px';
-    if (onAxis) where.innerHTML = '<span class="sub">Drawn on the chart above: the dashed lines in the tinted part to the right of today.</span>';
-    else { where.innerHTML = '<span class="sub">The timeline stops before the last projected month (' + fd(PJ.months[PJ.months.length - 1].date) + '), so the projection has a small chart of its own here.</span>';
-      if (typeof setFuture === 'function') { const b = document.createElement('button'); b.type = 'button'; b.className = 'ltr-b'; b.textContent = 'Show it on the timeline';
-        b.title = 'Lengthens the time axis of every panel so it reaches the last projected month (the same as Future in the navigation bar)';
-        b.onclick = () => setFuture(Math.max(FUT, futFor(lastT)), true); where.append(b); } }
-    wrap.append(where);
-    const mini = () => {
-    const box = document.createElement('div'); box.style.cssText = 'position:relative;height:240px;max-width:760px';
-    const cv = document.createElement('canvas'); cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Projected volume of each lesion 1, 2 and 3 months after the latest scan');
-    box.append(cv); wrap.append(box);
-    const labels = [short(PJ.base)].concat(PJ.months.map(m => '+' + m.m + ' mo · ' + short(m.date)));
-    const series = (now, cells) => [{x: labels[0], y: now.v, lo: now.lo, hi: now.hi, mm: now.mm}].concat(cells.map((c, i) => c ? {x: labels[i + 1], y: c.v, lo: c.lo, hi: c.hi, mm: c.mm, c} : {x: labels[i + 1], y: now.v, none: true}));
-    const ds = rows.map(r => ({label: r.id, data: series(r.now, r[V.psc]), parsing: true, borderColor: LCOL[r.id], backgroundColor: LCOL[r.id], borderWidth: 2, borderDash: [6, 4], tension: 0,
-      pointRadius: p => p.dataIndex === 0 ? 4.5 : 4, pointBackgroundColor: p => p.dataIndex === 0 ? LCOL[r.id] : 'rgba(0,0,0,0)', pointBorderColor: LCOL[r.id], pointBorderWidth: 1.6, r}));
-    if (V.total) { const T = projTotal(rows), col = css('--ink');
-      ds.push({label: 'Total', data: series(T.now, T.cells), parsing: true, borderColor: col, backgroundColor: col, borderWidth: 3, borderDash: [6, 4], tension: 0,
-        pointRadius: 4.5, pointBackgroundColor: p => p.dataIndex === 0 ? col : 'rgba(0,0,0,0)', pointBorderColor: col, pointBorderWidth: 1.6, total: true}); }
-    const all = ds.flatMap(d => d.data.map(p => p.hi || p.y)), top = Math.max(...all, PJ.max_seen_mm3);
-    const marks = {id: 'ltrProjMarks', beforeDatasetsDraw(c) { const {ctx, chartArea: a, scales: {x, y}} = c;
-      ctx.save(); ctx.beginPath(); ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top); ctx.clip(); ctx.font = '10px system-ui'; ctx.textBaseline = 'bottom';
-      [[PJ.max_seen_mm3, 'largest single lesion measured so far (' + fv(PJ.max_seen_mm3) + ')'], [PJ.floor_mm3, 'under this a scan shows nothing (about ' + PJ.floor_mm + ' mm)']].forEach(([v, t]) => {
-        if (log && v < 5) return; const py = y.getPixelForValue(v); ctx.strokeStyle = css('--muted'); ctx.setLineDash([1, 3]); ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
-        ctx.setLineDash([]); ctx.fillStyle = css('--muted'); ctx.fillText(t, a.left + 4, py - 2); });
-      ctx.lineWidth = 1.3;   // range bars: what the likely range of the two scans behind the rate allows
-      c.data.datasets.forEach((d, di) => d.data.forEach((p, i) => { if (!i || p.lo == null || !(p.hi > p.lo)) return;
-        const px = x.getPixelForValue(i) + (di - (c.data.datasets.length - 1) / 2) * 5, y0 = y.getPixelForValue(Math.max(p.lo, log ? 5 : 0)), y1 = y.getPixelForValue(p.hi); if (Math.abs(y0 - y1) < 3) return;
-        ctx.strokeStyle = d.borderColor; ctx.globalAlpha = .55; ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y1); ctx.moveTo(px - 3, y0); ctx.lineTo(px + 3, y0); ctx.moveTo(px - 3, y1); ctx.lineTo(px + 3, y1); ctx.stroke(); ctx.globalAlpha = 1; }));
-      ctx.restore(); }};
-    const logTick = v => { const e = Math.pow(10, Math.floor(Math.log10(v) + 1e-9)), m = Math.round(v / e); return [1, 2, 5].includes(m) ? (v >= 1000 ? v / 1000 + 'k' : v) : ''; };
-    charts.set('ltr:proj', new Chart(cv, {type: 'line', plugins: [marks], data: {labels, datasets: ds},
-      options: {animation: false, maintainAspectRatio: false,
-        plugins: {legend: {display: false}, tooltip: {displayColors: false, callbacks: {title: it => it[0] ? it[0].label : '',
-          label: it => { const p = it.raw, d = it.dataset; if (p.none) return [d.label + ': no rate yet (first scan with this lesion), shown unchanged'];
-            return [d.label + ' ' + fv(p.y) + (p.mm ? ' · about ' + p.mm + ' mm wide' : '')].concat(p.hi > p.lo ? ['range ' + fv(p.lo) + ' – ' + fv(p.hi) + (it.dataIndex ? ' (from the likely range of the scans behind the rate)' : '')] : [],
-              p.c && p.c.beyond ? [WARN + ' larger than any lesion measured so far: steady doubling cannot go on this long'] : [], p.c && p.c.below ? ['under what a scan can show'] : []); }}}},
-        scales: {x: {type: 'category', ticks: {color: css('--muted')}, grid: {color: css('--line')}},
-          y: {type: log ? 'logarithmic' : 'linear', min: log ? 5 : 0, max: log ? undefined : top * 1.05, title: {display: true, text: 'mm³ (enhancing)', color: css('--muted')},
-            ticks: {color: css('--muted'), callback: v => log ? logTick(v) : v}, grid: {color: css('--line')}}}}}));
-    };
-    if (!onAxis) mini();
+    wrap.append(Projection.where());   // on the chart at the amber date lines, or a button that brings the timeline there
     // table: latest rate and the three months, selected scenario
     const cell = c => !c ? '<td class="na">—</td>' : `<td${c.beyond ? ' title="Larger than any lesion measured so far: steady doubling cannot go on this long"' : ''}><b>${fv(c.v)}</b>${c.beyond ? ' ' + WARN : ''}` +
       `<small style="display:block;color:var(--muted);font-size:10px">${c.below ? 'under what a scan shows' : 'about ' + c.mm + ' mm wide'}${c.hi > c.lo * 1.05 ? ' · ' + fv(c.lo) + '–' + fv(c.hi) : ''}</small></td>`;

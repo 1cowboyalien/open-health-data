@@ -370,13 +370,47 @@ const YW=64;
 const TLAY=(top=8,bottom=0)=>({autoPadding:false,padding:{left:0,top,right:8,bottom}});
 const tEdge=s=>{s.paddingLeft=0;s.paddingRight=0};
 /* The future part of the axis (Future setting on): a faint tint from today to the right edge of every chart on the shared time
-   axis, recognised by its x scale using tEdge. One global plugin, so every panel (and any new one) gets it without doing anything. */
-Chart.register({id:'futureTint',beforeDatasetsDraw(c){if(!FUT)return;const sx=c.scales.x;if(!sx||sx.options.afterFit!==tEdge||W.b<=NOW)return;
- const a=c.chartArea,px=Math.max(a.left,sx.getPixelForValue(pos(NOW)));if(!(px<a.right))return;const g=c.ctx;g.save();
- g.fillStyle=css('--ink');g.globalAlpha=.055;g.fillRect(px,a.top,a.right-px,a.bottom-a.top);
- if(px>a.left){g.globalAlpha=.55;g.strokeStyle=css('--muted');g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(px+.5,a.top);g.lineTo(px+.5,a.bottom);g.stroke();
-  if(a.bottom-a.top>=44&&a.right-px>40){g.globalAlpha=.85;g.setLineDash([]);g.fillStyle=css('--muted');g.font='9px system-ui';g.textBaseline='top';g.fillText('today →',px+3,a.top+1)}}
- g.restore()}});
+   axis, recognised by its x scale using tEdge. One global plugin, so every panel (and any new one) gets it without doing anything.
+   Dated marks: a module can put dated lines on that same axis with axisMarks(key, list or function returning the list), each
+   {t, label, sub, short, col, ink}: every chart then draws a dashed line (col) at t with the label (ink) on top, so one date sits at one place
+   in every panel (used for the dates a projection is worked out for). The label is two rows (label over sub) in tall plots, one
+   row in low ones, the short form when the marks are close together, and left out when even that does not fit.
+   futureLay(c) works out what to draw for one chart; the lines go under the data and start below their label, the words go
+   over the data with a thin outline in the card colour so a line or point crossing them does not hide them.
+   A list given as a function can change without any chart being redrawn (e.g. it depends on which panels are on the page):
+   axisMarksCheck() repaints, on the next frame, the charts whose marks are out of date. render() and renderWin() call it. */
+const AMARKS=new Map();let amQ=false;
+const amSig=()=>{let s='';AMARKS.forEach((v,k)=>{s+=k+':';(typeof v==='function'?v():v||[]).forEach(m=>{s+=m.t+','})});return s};
+function axisMarks(key,list){if(list)AMARKS.set(key,list);else AMARKS.delete(key);charts.forEach(c=>c.draw())}   // called by modules, after the charts map exists
+function axisMarksCheck(){if(amQ)return;amQ=true;requestAnimationFrame(()=>{amQ=false;const s=amSig();charts.forEach(c=>{if(c.$fut&&c.$fut.sig!==s)c.draw()})})}
+function futureLay(c){const sx=c.scales.x;if(!sx||sx.options.afterFit!==tEdge)return null;
+ const a=c.chartArea,H=a.bottom-a.top,g=c.ctx,L={a,tx:null,today:null,marks:[],sig:amSig()};
+ if(FUT&&W.b>NOW){const px=Math.max(a.left,sx.getPixelForValue(pos(NOW)));if(px<a.right)L.tx=px}
+ AMARKS.forEach(v=>{(typeof v==='function'?v():v||[]).forEach(m=>{if(m.t<W.a||m.t>W.b)return;const x=sx.getPixelForValue(pos(m.t));if(x>a.left+1&&x<a.right-1)L.marks.push({m,x})})});
+ L.marks.sort((p,q)=>p.x-q.x);if(H<44)return L;
+ g.save();const wOf=(t,f)=>{g.font=f;return g.measureText(t).width};
+ /* the longest form that fits between neighbouring marks: label over sub (tall plots), label, short label, nothing */
+ const M=L.marks,gap=M.reduce((s,k,i)=>i?Math.min(s,k.x-M[i-1].x):s,Infinity);
+ const forms=[k=>({l:k.m.label,s:H>=120?k.m.sub:''}),k=>({l:k.m.label,s:''}),k=>({l:k.m.short||'',s:''})];
+ for(const f of forms){const B=M.map(k=>{const o=f(k);return Object.assign(o,{w:Math.max(o.l?wOf(o.l,'bold 9px system-ui'):0,o.s?wOf(o.s,'9px system-ui'):0)})});
+  if(B.every(o=>o.l&&o.w+6<=gap)){M.forEach((k,i)=>{const o=B[i];k.l=o.l;k.s=o.s;k.w=o.w;k.cx=Math.max(a.left+2+o.w/2,Math.min(a.right-2-o.w/2,k.x));k.y0=o.s?22:12});break}}
+ /* today: to the right of its line with an arrow; to the left of it without one when a mark's label is in the way */
+ if(L.tx!=null&&L.tx>a.left){const w=wOf('today →','9px system-ui'),w2=wOf('today','9px system-ui'),free=(x0,x1)=>!M.some(k=>k.l&&k.cx-k.w/2-3<x1&&k.cx+k.w/2+3>x0);
+  if(a.right-L.tx>w+5&&free(L.tx+3,L.tx+3+w))L.today={t:'today →',x:L.tx+3};
+  else if(L.tx-a.left>w2+6&&free(L.tx-3-w2,L.tx-3))L.today={t:'today',x:L.tx-3-w2}}
+ g.restore();return L}
+Chart.register({id:'futureTint',beforeDatasetsDraw(c){const L=futureLay(c);c.$fut=L;if(!L||(L.tx==null&&!L.marks.length))return;const a=L.a,g=c.ctx;g.save();g.lineWidth=1;
+ if(L.tx!=null){g.fillStyle=css('--ink');g.globalAlpha=.055;g.fillRect(L.tx,a.top,a.right-L.tx,a.bottom-a.top);
+  if(L.tx>a.left){g.globalAlpha=.55;g.strokeStyle=css('--muted');g.setLineDash([2,3]);g.beginPath();g.moveTo(L.tx+.5,a.top);g.lineTo(L.tx+.5,a.bottom);g.stroke()}}
+ L.marks.forEach(k=>{g.globalAlpha=.6;g.strokeStyle=k.m.col||css('--muted');g.setLineDash([4,3]);g.beginPath();g.moveTo(Math.round(k.x)+.5,a.top+(k.y0||0));g.lineTo(Math.round(k.x)+.5,a.bottom);g.stroke()});
+ g.restore()},
+ afterDatasetsDraw(c){const L=c.$fut;if(!L||(!L.today&&!L.marks.some(k=>k.l)))return;const a=L.a,g=c.ctx;g.save();g.textBaseline='top';g.textAlign='left';
+  if(L.today){g.globalAlpha=.85;g.fillStyle=css('--muted');g.font='9px system-ui';g.fillText(L.today.t,L.today.x,a.top+1)}
+  g.globalAlpha=1;g.textAlign='center';g.lineJoin='round';g.lineWidth=3;g.strokeStyle=css('--card');
+  const put=(t,x,y)=>{g.strokeText(t,x,y);g.fillText(t,x,y)};
+  L.marks.forEach(k=>{if(!k.l)return;g.fillStyle=k.m.ink||k.m.col||css('--muted');g.font='bold 9px system-ui';put(k.l,k.cx,a.top+1);
+   if(k.s){g.font='9px system-ui';put(k.s,k.cx,a.top+11)}});
+  g.restore()}});
 const MINW=DAY/2;   // shortest window: 12 hours (hospital stays with readings every few hours)
 let W=store.get('window',{a:X0,b:X1});if(W&&W.b>X1&&W.a>=X0&&X1-W.a>=MINW)W.b=X1;   // saved while the Future setting was longer
 if(!(W.a>=X0&&W.b<=X1&&W.b-W.a>=MINW))W={a:X0,b:X1};
@@ -610,11 +644,11 @@ function placeKf(){const k=$('kfCard'),pin=kfPos==null;k.classList.toggle('unpin
 /* redraws keep the page where it is: hold main's height while the charts are rebuilt, then restore the scroll */
 function keepScroll(f){const se=document.scrollingElement,y=se.scrollTop,m=document.querySelector('main');m.style.minHeight=m.offsetHeight+'px';
  try{f()}finally{m.style.minHeight='';se.scrollTop=y}}
-function render(){keepScroll(()=>{charts.forEach(c=>c.destroy());charts.clear();hoverX=null;
+function render(){axisMarksCheck();keepScroll(()=>{charts.forEach(c=>c.destroy());charts.clear();hoverX=null;
  $('single').before($('txCard'));$('findBar').after($('kfCard'));   // park them before the charts are rebuilt, then put them back in their places
  kfSize();renderBand();if(MRD.active())MRD.render();else if(mode==='single')renderSingle();else renderCompare();placeTx();placeKf()})}
 /* only the time window changed (move, zoom, drag, presets): rebuild the Treatment panel, update the lab charts in place */
-function renderWin(){if(!$('ptpop').classList.contains('hide'))hidePop();   // the reading it pointed at has moved
+function renderWin(){axisMarksCheck();if(!$('ptpop').classList.contains('hide'))hidePop();   // the reading it pointed at has moved
  if(MRD.active()){keepScroll(()=>{[...charts.keys()].filter(k=>!k.startsWith('mrd:')).forEach(k=>{charts.get(k).destroy();charts.delete(k)});renderBand();MRD.render()});return}
  const labKeys=mode==='single'?['single']:sel;
  const ok=mode==='single'?(charts.get('single')||{}).$t===cur:sel.every(id=>MRD.isId(id)||(charts.get(id)||{}).$t===id);
@@ -781,10 +815,12 @@ mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.
 img_json = os.path.join(os.path.dirname(out), "imaging", "imaging.json")
 imgjs = ""
 if os.path.exists(img_json):
-    # lesion_chips.js (the lesion buttons every imaging panel shares) first, then lesion_trends_view.js (volume trends, doubling times) and
+    # lesion_chips.js (the lesion buttons every imaging panel shares) and projection_dates.js (the one Projection switch and the
+    # projected scan dates marked in every panel) first, then lesion_trends_view.js (volume trends, doubling times) and
     # perfusion_view.js / swelling_view.js (Perfusion, Swelling by lesion): imaging_view.js draws them
     imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_chips.js")).read() + "\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "projection_dates.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_trends_view.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfusion_view.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "swelling_view.js")).read() + "\n"

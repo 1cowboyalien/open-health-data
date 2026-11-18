@@ -245,6 +245,8 @@ body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 body.viewonly #mAdd,body.viewonly #txAdd,body.viewonly #txImport,body.viewonly .ptpop button:not(.pclose),body.viewonly #mLinks button,body.viewonly .madd{display:none!important}.pmove button{padding:0 7px;font-size:12px}
 .navpin .mcard{margin-top:6px;padding:4px 16px 2px}.mhead{display:flex;align-items:center;gap:8px;font-size:12px}.mhead b{font-size:13px}.mhead .mtbtn{margin-left:auto;display:flex;gap:4px}.mhead .mtbtn button{font-size:11px;padding:1px 7px}
 .mtrack{position:relative;height:64px}
+.kfbar{display:inline-flex;align-items:center;gap:2px;padding-left:8px;margin-left:4px;border-left:1px solid var(--line)}.kfbar button{font-size:11px;padding:1px 7px}.kfbar .pmove{margin-left:4px}
+.mcard.unpinned{padding:8px 16px 6px}.mcard.kffold .mtrack,.mcard.kffold .mstrack{display:none}.mcard.kffold #kfFold{background:var(--accent);border-color:var(--accent);color:#fff}
 #msRow .mhead{margin-top:4px}.mstrack{position:relative;height:74px}
 .msrng{position:relative;display:inline-block;width:150px;height:18px;vertical-align:middle}
 .msrng .trk,.msrng .fill{position:absolute;top:7px;height:4px;border-radius:2px}.msrng .trk{left:0;right:0;background:var(--line)}
@@ -311,7 +313,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
-<div class="card mcard"><div class="mhead"><b>Keyframes</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a keyframe: your own note on the timeline">+ Keyframe</button><button id="mRowK" title="Switch the keyframes (the ones without a concern rating) on or off. Off: greyed out, no lines on the charts, and ◀ ▶ skip them">Keyframes</button><button id="mRowC" title="Switch the rated keyframes (the Concern marks) on or off. Off: greyed out here and on the Concern graph, no lines on the charts, and ◀ ▶ skip them">Concern</button><button id="mLines" title="Show or hide the keyframe lines across all charts">Lines: on</button></span></div>
+<div class="card mcard" id="kfCard"><div class="mhead"><b>Keyframes</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a keyframe: your own note on the timeline">+ Keyframe</button><button id="mRowK" title="Switch the keyframes (the ones without a concern rating) on or off. Off: greyed out, no lines on the charts, and ◀ ▶ skip them">Keyframes</button><button id="mRowC" title="Switch the rated keyframes (the Concern marks) on or off. Off: greyed out here and on the Concern graph, no lines on the charts, and ◀ ▶ skip them">Concern</button><button id="mLines" title="Show or hide the keyframe lines across all charts">Lines: on</button></span><span class="kfbar" role="group" aria-label="Keyframes panel size and place"><button id="kfLess" title="Make the Keyframes and Concern tracks shorter" aria-label="Shorter">−</button><button id="kfMore" title="Make the Keyframes and Concern tracks taller" aria-label="Taller">+</button><button id="kfFold" title="Fold the Keyframes panel to just this bar (click again to open it)" aria-label="Fold the Keyframes panel">▾</button><span class="pmove"><button id="kfTop" title="Pin to the top bar (stays in view while you scroll)" aria-label="Pin Keyframes to the top bar">⤒</button><button id="kfUp" title="Move this panel up (from the first place: pin it to the top bar)" aria-label="Move Keyframes up">↑</button><button id="kfDown" title="Move this panel down, among the charts" aria-label="Move Keyframes down">↓</button><button id="kfBottom" title="Move this panel to the bottom" aria-label="Move Keyframes to the bottom">⤓</button></span></span></div>
 <div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Keyframes: your own notes on the timeline"></canvas></div>
 <div id="msRow" class="hide"><div class="mhead"><b>Concern</b><span class="sub">keyframes you rated 1–10</span>
 <span class="msrng"><span class="trk"></span><span class="fill" id="msFill"></span><input id="msLo" type="range" min="1" max="10" step="0.5" value="1" aria-label="Lowest concern shown" title="Lowest concern shown"><input id="msHi" type="range" min="1" max="10" step="0.5" value="10" aria-label="Highest concern shown" title="Highest concern shown"></span>
@@ -566,11 +568,16 @@ function setH(id,h){heights[id]=Math.max(70,Math.min(600,h));store.set('heights'
    chart panels (sel) with the Treatment panel ('__tx') at txPos; in One test view it is the
    Treatment panel and the Detail panel ('__det'), with txPos 0 or 1. */
 let txPos=store.get('txpos',0);
-function stageOrder(){const o=mode==='compare'?sel.slice():['__det'];o.splice(Math.min(txPos,o.length),0,'__tx');return o}
+/* The Keyframes/Concern card ('__kf'): kfPos null = pinned in the top bar (default), a number = its place
+   in the Stage among the other panels. Its track height and fold live in heights ('__kf', '__kffold'). */
+let kfPos=store.get('kfpos',null);
+function stageOrder(){const o=mode==='compare'?sel.slice():['__det'];o.splice(Math.min(txPos,o.length),0,'__tx');
+ if(kfPos!=null)o.splice(Math.min(kfPos,o.length),0,'__kf');return o}
 /* d: -1 / 1 = one step, 'top' / 'bottom' = to the first / last place */
 function moveStage(key,d){const o=stageOrder(),i=o.indexOf(key),j=d==='top'?0:d==='bottom'?o.length-1:i+d;if(i<0||j<0||j>=o.length||j===i)return;
- o.splice(i,1);o.splice(j,0,key);txPos=o.indexOf('__tx');store.set('txpos',txPos);
- if(mode==='compare'){sel=o.filter(k=>k!=='__tx');store.set('selected',sel)}
+ o.splice(i,1);o.splice(j,0,key);if(kfPos!=null){kfPos=o.indexOf('__kf');store.set('kfpos',kfPos)}
+ const o2=o.filter(k=>k!=='__kf');txPos=o2.indexOf('__tx');store.set('txpos',txPos);
+ if(mode==='compare'){sel=o2.filter(k=>k!=='__tx');store.set('selected',sel)}
  render()}
 function placeTx(){const tc=$('txCard');if(mode==='compare'){const cards=[...$('cmpList').querySelectorAll(':scope > .cmp')],i=Math.min(txPos,cards.length);
   if(i<cards.length)$('cmpList').insertBefore(tc,cards[i]);else $('cmpList').appendChild(tc)}
@@ -581,12 +588,31 @@ function placeTx(){const tc=$('txCard');if(mode==='compare'){const cards=[...$('
   c.querySelector('[data-mv="top"]').disabled=c.querySelector('[data-mv="-1"]').disabled=k<=0;
   c.querySelector('[data-mv="bottom"]').disabled=c.querySelector('[data-mv="1"]').disabled=k>=n-1})}}
 function moveTx(d){moveStage('__tx',d)}
+/* Keyframes card: ⤒ (or ↑ from the first place) pins it to the top bar; ↓ / ⤓ from the top bar put it in the Stage */
+function moveKf(d){if(kfPos==null){if(d===1)kfPos=0;else if(d==='bottom')kfPos=999;else return;store.set('kfpos',kfPos);render();return}
+ const o=stageOrder();if(d==='top'||(d===-1&&o.indexOf('__kf')<=0)){kfPos=null;store.set('kfpos',null);render();return}
+ moveStage('__kf',d)}
+/* heights.__kf = size in % (100 = normal); the Keyframes track sets its own base height when it draws */
+function kfSize(){const c=$('kfCard'),h=heights.__kf||100,fold=!!heights.__kffold;c.classList.toggle('kffold',fold);
+ c.querySelector('.mstrack').style.height=Math.round(74*h/100)+'px';
+ $('kfLess').disabled=fold||h<=50;$('kfMore').disabled=fold||h>=250;$('kfLess').title='Make the Keyframes and Concern tracks shorter (now '+h+'%)'}
+/* redraw only the two tracks (renderBand also rebuilds the Treatment chart, which needs a full render) */
+function kfDraw(){keepScroll(()=>{renderMomentTrack();if(typeof renderConcern==='function')renderConcern()})}
+function kfResize(d){heights.__kf=Math.max(50,Math.min(250,(heights.__kf||100)+d));if(heights.__kf===100)delete heights.__kf;store.set('heights',heights);kfSize();kfDraw()}
+function kfFold(){if(heights.__kffold)delete heights.__kffold;else heights.__kffold=1;store.set('heights',heights);kfSize();if(!heights.__kffold)kfDraw()}
+/* put the card in its place: back in the top bar, or before the Stage element at kfPos (cards are already in order) */
+function placeKf(){const k=$('kfCard'),pin=kfPos==null;k.classList.toggle('unpinned',!pin);
+ if(pin){$('findBar').after(k)}
+ else{const els=mode==='compare'?[...$('cmpList').children].filter(c=>c.classList.contains('cmp')||c.id==='txCard')
+   :[$('txCard'),MRD.active()?$('mrd'):$('single')].sort((a,b)=>a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING?-1:1);
+  const i=Math.min(kfPos,els.length);if(i<els.length)els[i].before(k);else els[els.length-1].after(k)}
+ const o=stageOrder(),i=o.indexOf('__kf');$('kfTop').disabled=$('kfUp').disabled=pin;$('kfBottom').disabled=$('kfDown').disabled=!pin&&i>=o.length-1}
 /* redraws keep the page where it is: hold main's height while the charts are rebuilt, then restore the scroll */
 function keepScroll(f){const se=document.scrollingElement,y=se.scrollTop,m=document.querySelector('main');m.style.minHeight=m.offsetHeight+'px';
  try{f()}finally{m.style.minHeight='';se.scrollTop=y}}
 function render(){keepScroll(()=>{charts.forEach(c=>c.destroy());charts.clear();hoverX=null;
- $('single').before($('txCard'));   // park it before the charts are rebuilt, then put it back in its place
- renderBand();if(MRD.active())MRD.render();else if(mode==='single')renderSingle();else renderCompare();placeTx()})}
+ $('single').before($('txCard'));$('findBar').after($('kfCard'));   // park them before the charts are rebuilt, then put them back in their places
+ kfSize();renderBand();if(MRD.active())MRD.render();else if(mode==='single')renderSingle();else renderCompare();placeTx();placeKf()})}
 /* only the time window changed (move, zoom, drag, presets): rebuild the Treatment panel, update the lab charts in place */
 function renderWin(){if(!$('ptpop').classList.contains('hide'))hidePop();   // the reading it pointed at has moved
  if(MRD.active()){keepScroll(()=>{[...charts.keys()].filter(k=>!k.startsWith('mrd:')).forEach(k=>{charts.get(k).destroy();charts.delete(k)});renderBand();MRD.render()});return}
@@ -732,6 +758,8 @@ $('clr').onclick=()=>{sel=[];store.set('selected',sel);updateBar();list();if(mod
 $('q').oninput=list;
 $('txUp').onclick=()=>moveTx(-1);$('txDown').onclick=()=>moveTx(1);$('detUp').onclick=()=>moveStage('__det',-1);$('detDown').onclick=()=>moveStage('__det',1);
 $('txTop').onclick=()=>moveTx('top');$('txBottom').onclick=()=>moveTx('bottom');$('detTop').onclick=()=>moveStage('__det','top');$('detBottom').onclick=()=>moveStage('__det','bottom');
+$('kfUp').onclick=()=>moveKf(-1);$('kfDown').onclick=()=>moveKf(1);$('kfTop').onclick=()=>moveKf('top');$('kfBottom').onclick=()=>moveKf('bottom');
+$('kfLess').onclick=()=>kfResize(-25);$('kfMore').onclick=()=>kfResize(25);$('kfFold').onclick=kfFold;
 $('collapseAll').onclick=()=>setAllOpen(false);$('expandAll').onclick=()=>setAllOpen(true);
 txInit();
 const LT=D.tests.filter(t=>t.kind!=='vital'),VT=D.tests.filter(t=>t.kind==='vital');

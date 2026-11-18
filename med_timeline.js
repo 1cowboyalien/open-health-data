@@ -330,7 +330,7 @@ function renderMomentTrack(){const cv=$('mtrackc');if(!cv)return;momentControls(
  /* row 1: plain keyframes; row 2 (under it): rated keyframes, the same marks as the Concern graph (its colours, and its 1–10 range) */
  const R=mRows(),two=(E.moments||[]).some(isRated),inW=m=>m.date&&(m.end?dms(m.end):momentT(m))>=W.a&&momentT(m)<=W.b;
  const shown=(E.moments||[]).filter(m=>momentOn(m)&&inW(m)&&(!isRated(m)||typeof msIn!=='function'||msIn(m)));   // a row that is off stays, greyed out
- cv.parentNode.style.height=two?'100px':'64px';
+ cv.parentNode.style.height=Math.round((two?100:64)*(heights.__kf||100)/100)+'px';   // × the panel's size (− / + on its bar)
  const rowV=m=>two?(isRated(m)?-.5:.5):0,colOf=m=>!rowOn(m)?css('--muted'):isRated(m)?msCol(m.concern):MCOL[m.color]||MCOL.red,shp=m=>isRated(m)?'circle':mShape(m),
   rad=m=>isRated(m)?3+m.concern/2.5:mShape(m)==='star'?10:8;
  const band=(y,m)=>{const v=rowV(m);return two?[y.getPixelForValue(v+.5),y.getPixelForValue(v-.5)]:[y.getPixelForValue(1),y.getPixelForValue(-1)]};
@@ -451,17 +451,17 @@ function panelGroup(S,q){const ps=(E.panels||[]).filter(l=>!q||l.name.toLowerCas
    E.panels=E.panels.filter(y=>y.id!==l.id);if(activeR.p===l.id)setActive(undefined,null);saveEdits();list()});
   row.append(nm,d,x);row.onclick=()=>usePanel(l);G.appendChild(row)})}
 const modSettings=()=>typeof MRD!=='undefined'&&MRD.getSettings?JSON.parse(JSON.stringify(MRD.getSettings())):null;   // MRD + Brain MRI display settings
-function viewNow(){const v={mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice()};
+function viewNow(){const v={mode,cur,sel:sel.slice(),txPos,txSel:txSel.slice(),txDose:txDose.slice(),txHidden,hlOn,hlH,heights:Object.assign({},heights),txOrder:txOrder.slice()};if(kfPos!=null)v.kfPos=kfPos;
  const ms=modSettings();if(ms)v.mods=ms;return v}
 const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,k)=>(o[k]=x[k],o),{}):x);
 function panelChanged(l){const v=viewNow(),ref=l.v;if(!ref.txOrder)delete v.txOrder;if(!ref.mods)delete v.mods;/* presets saved before these existed */return canon(v)!==canon(Object.assign({},ref,{mon:undefined}))}
 function layDesc(v){return (v.mode==='compare'?(v.sel||[]).length+' chart(s)':'one test')+', '+(v.txHidden?'Treatment panel hidden':(v.txSel||[]).length+' medication(s)')+((v.txDose||[]).length?', '+v.txDose.length+' dose chart(s)':'')}
 const panelId=id=>BYID[id]||(typeof MRD!=='undefined'&&MRD.isId?MRD.isId(id):D.mrd&&/^mrd:(ot|var)$/.test(id));
-function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(panelId);txPos=v.txPos||0;
+function applyView(v){mode=v.mode==='compare'?'compare':'single';if(BYID[v.cur])cur=v.cur;sel=(v.sel||[]).filter(panelId);txPos=v.txPos||0;kfPos=v.kfPos??null;
  txSel=(v.txSel||[]).slice();txDose=(v.txDose||[]).slice();txHidden=!!v.txHidden;hlOn=v.hlOn!==false;hlH=v.hlH||28;heights=Object.assign({},v.heights||{});soloLab=null;soloMed=null;
  if(v.txOrder)txOrder=v.txOrder.slice();
  if(v.mods&&typeof MRD!=='undefined'&&MRD.setSettings)MRD.setSettings(v.mods);
- [['txorder',txOrder],['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
+ [['txorder',txOrder],['mode',mode],['current',cur],['selected',sel],['txpos',txPos],['kfpos',kfPos],['txsel',txSel],['txdose',txDose],['txhidden',txHidden],['hlon',hlOn],['hlh',hlH],['heights',heights],['sololab',null],['solomed',null]].forEach(([k,x])=>store.set(k,x))}
 function usePanel(l){setActive(undefined,l.id);applyView(l.v);updateBar();list();render()}
 async function savePanel(){if(!canEdit())return;const name=await uiAsk('Name for this Panel preset:','Panels '+((E.panels||[]).length+1));if(name==null||!name.trim())return;
  const l={id:'l'+Date.now().toString(36),name:name.trim(),v:viewNow()};E.panels=(E.panels||[]).concat([l]);setActive(undefined,l.id);saveEdits();list();layBar()}

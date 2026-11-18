@@ -10,6 +10,10 @@ Usage:
   GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
 - Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic
   nucleus spots, and <case>/masks/*.json, the automatic tissue maps).
+- Photos (Erica's story, photos_view.js): GET /photos/thumb/<id>.jpg and /photos/web/<id>.(jpg|mov|mp4) from local/photos/ only
+  (website copies made by local/photos/build_web.py, with location and camera data removed). Videos answer byte ranges
+  (Safari needs them to play). GET /photos/stories.json = every story in local/photos/stories/<id>.json; a story with
+  "family_only": true is left out unless the visitor is this Mac or the home network.
 - GET  /api/edits  -> {"rev": n, "edits": {...}}  from local/med_edits.json (the same file the
   build scripts read, so moments, medication changes and saved ranges survive reloads/rebuilds).
 - POST /api/edits  {"rev": n, "edits": {...}} saves them. If someone saved in between (rev differs)
@@ -201,6 +205,59 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             conn.close()
 
+    def photos(self, rel):
+        base = os.path.realpath(os.path.join(LOCAL, "photos"))
+        if rel == "stories.json":
+            home = usage.is_local_request(self)
+            out = {}
+            sd = os.path.join(base, "stories")
+            for f in sorted(os.listdir(sd)) if os.path.isdir(sd) else []:
+                if not f.endswith(".json"):
+                    continue
+                try:
+                    st = json.load(open(os.path.join(sd, f)))
+                except (OSError, ValueError):
+                    continue
+                keep = [x for x in st.get("stories", []) if home or not x.get("family_only")]
+                if keep:
+                    out[f[:-5]] = keep
+            return self.send(200, {"stories": out, "home": home})
+        sub, _, name = rel.partition("/")
+        f = os.path.realpath(os.path.join(base, rel))
+        ok = (sub in ("thumb", "web") and "/" not in name and f.startswith(os.path.join(base, sub) + os.sep)
+              and os.path.isfile(f))
+        types = {".jpg": "image/jpeg", ".mov": "video/quicktime", ".mp4": "video/mp4"}
+        ext = os.path.splitext(f)[1].lower()
+        if not ok or ext not in types or (sub == "thumb" and ext != ".jpg"):
+            return self.send(404, {"error": "not found"})
+        if ext == ".jpg":
+            return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True)
+        size = os.path.getsize(f)
+        m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+        a, b = 0, size - 1
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                a = int(m.group(1)); b = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            else:
+                a = max(0, size - int(m.group(2)))
+            if a > b:
+                self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
+        self.send_response(206 if m else 200)
+        self.send_header("Content-Type", types[ext])
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(b - a + 1))
+        if m:
+            self.send_header("Content-Range", f"bytes {a}-{b}/{size}")
+        self.send_header("Cache-Control", "private, max-age=86400")
+        self.end_headers()
+        with open(f, "rb") as fh:
+            fh.seek(a); left = b - a + 1
+            while left > 0:
+                chunk = fh.read(min(262144, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk); left -= len(chunk); self._bytes += len(chunk)
+
     def do_GET(self):
         self.logged(self.get)
 
@@ -260,6 +317,8 @@ class Handler(BaseHTTPRequestHandler):
                     and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots / tissue maps, one file per slide
                 return self.send(200, open(f, "rb").read(), "application/json")
             return self.send(404, {"error": "not found"})
+        if path.startswith("/photos/"):   # Erica's photos: website copies in local/photos/{thumb,web}/, and her stories
+            return self.photos(urllib.parse.unquote(path[len("/photos/"):]))
         if path == "/api/edits":
             with lock:
                 rev, edits = read_edits()

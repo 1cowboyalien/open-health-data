@@ -145,10 +145,14 @@
   /* ================= gallery ================= */
   let STORIES = {}, storiesHome = false, storiesLoaded = false;
   fetch('/photos/edits.json').then(r => r.ok ? r.json() : null).then(j => { if (j) { applyEdits(j); if (sel.some(mine)) render(); list(); } }).catch(() => {});
-  function saveEdit(body) {
+  /* the gallery keeps its place: its scroll position survives every redraw (reset only when the filters change),
+     and the page itself does not move when a save redraws the panels */
+  let galScroll = 0, lastDone = null, galWhere = null;
+  window.addEventListener('scroll', () => { if (galWhere) galWhere(); }, {passive: true});
+  function saveEdit(body, what) {
     return fetch('/photos/edits', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
       .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error || r.status)))
-      .then(j => { applyEdits(j); render(); list(); })   // render(): the panel headers show the new counts
+      .then(j => { const y = window.scrollY; applyEdits(j); lastDone = what || null; render(); list(); window.scrollTo(0, y); })   // render(): the panel headers show the new counts
       .catch(err => alert('Not saved: ' + err));
   }
   function editBar(it) {
@@ -156,11 +160,14 @@
     const h = document.createElement('button'); h.type = 'button';
     const hid = HID.has(it.id); h.textContent = hid ? '↩ Restore' : '✕ Hide'; h.className = hid ? 'phRestore' : 'phHide';
     h.title = hid ? 'Put this photo back on the website' : 'Take this photo off the website (the original is not touched; it can be restored)';
-    h.onclick = e => { e.stopPropagation(); saveEdit({id: it.id, hidden: !hid}); };
+    const nm = when(it).text.split(' · ')[0] + ' ' + (it.kind === 'video' ? 'video' : 'photo');
+    h.onclick = e => { e.stopPropagation(); saveEdit({id: it.id, hidden: !hid}, {text: (hid ? '↩ Restored: ' : '✕ Hidden: ') + nm, undo: {id: it.id, hidden: hid}}); };
     const sl = document.createElement('select'); sl.title = 'Label'; sl.setAttribute('aria-label', 'Label');
     ['everyday', 'medical', 'graphic'].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; o.selected = (it.level || 'everyday') === v; sl.append(o); });
     sl.onclick = e => e.stopPropagation();
-    sl.onchange = () => saveEdit({id: it.id, level: sl.value === (it.level0 || 'everyday') ? null : sl.value});
+    sl.onchange = () => { const was = it.level || 'everyday';
+      saveEdit({id: it.id, level: sl.value === (it.level0 || 'everyday') ? null : sl.value},
+        {text: 'Label: ' + nm + ' → ' + sl.value, undo: {id: it.id, level: was === (it.level0 || 'everyday') ? null : was}}); };
     b.append(h, sl); return b;
   }
   fetch('/photos/stories.json').then(r => r.ok ? r.json() : null).then(j => { if (j) { STORIES = j.stories || {}; storiesHome = !!j.home; } storiesLoaded = true;
@@ -189,17 +196,17 @@
     const bar = document.createElement('div'); bar.className = 'photoBar';
     const sel_ = document.createElement('select'); sel_.setAttribute('aria-label', 'Chapter');
     sel_.innerHTML = '<option value="">All chapters</option>' + CH.filter(c => ALL.some(i => i.chapter === c.title)).map(c => '<option' + (S.chapter === c.title ? ' selected' : '') + '>' + esc(c.title) + '</option>').join('');
-    sel_.onchange = () => { S.chapter = sel_.value; saveS(); drawGallery(id, body); };
+    sel_.onchange = () => { S.chapter = sel_.value; saveS(); galScroll = 0; drawGallery(id, body); };
     const tog = (label, key, tip) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'photoTog' + (S[key] ? ' on' : ''); b.textContent = label; b.title = tip;
-      b.setAttribute('aria-pressed', !!S[key]); b.onclick = () => { S[key] = !S[key]; saveS(); drawGallery(id, body); }; return b; };
+      b.setAttribute('aria-pressed', !!S[key]); b.onclick = () => { S[key] = !S[key]; saveS(); galScroll = 0; drawGallery(id, body); }; return b; };
     const size = document.createElement('input'); size.type = 'range'; size.min = 80; size.max = 260; size.value = S.size; size.title = 'Picture size'; size.setAttribute('aria-label', 'Picture size');
     size.oninput = () => { S.size = +size.value; saveS(); body.querySelectorAll('.photoCard').forEach(c => { const b = c.classList.contains('big') ? 1.6 : 1; c.style.width = c.style.height = S.size * b + 'px'; }); };
     if (canEdit) { const eb = document.createElement('button'); eb.type = 'button'; eb.className = 'photoTog' + (edit ? ' on' : '');
       eb.textContent = edit ? '✓ Done editing' : '✎ Edit photos'; eb.title = 'Hide photos from the website, or change their label (this Mac and the home network only)';
-      eb.onclick = () => { edit = !edit; if (!edit) showHidden = false; redrawAll(); }; bar.append(eb);
+      eb.onclick = () => { edit = !edit; if (!edit) showHidden = false; lastDone = null; redrawAll(); }; bar.append(eb);
       if (edit) { const hb = document.createElement('button'); hb.type = 'button'; hb.className = 'photoTog' + (showHidden ? ' on' : '');
         hb.textContent = 'Hidden (' + HID.size + ')'; hb.title = 'Show only the photos taken off the website, to restore one';
-        hb.onclick = () => { showHidden = !showHidden; drawGallery(id, body); }; bar.append(hb); } }
+        hb.onclick = () => { showHidden = !showHidden; galScroll = 0; lastDone = null; drawGallery(id, body); }; bar.append(hb); } }
     bar.append(graphicBtn(), sel_, tog('Only the time window', 'win', 'Show only photos inside the time window of the charts'),
       tog('💬 With stories', 'stories', 'Show only photos ' + TELLER + ' has told a story about'), size);
     body.append(bar);
@@ -212,7 +219,8 @@
     let its = POOL.filter(i => (!S.chapter || i.chapter === S.chapter) && (!S.win || (tOf(i) >= W.a && tOf(i) <= W.b)) && (!S.stories || nStories(i)));
     if (edit) { const n = document.createElement('div'); n.className = 'photoEditNote';
       n.textContent = showHidden ? 'Photos taken off the website. "Restore" puts one back.' :
-        'Editing: every photo is shown, graphic ones too. "Hide" takes a photo off the website for everyone; the original is never touched. Changes are saved at once.'; body.insertBefore(n, box); }
+        'Editing: every photo is shown, graphic ones too. "Hide" takes a photo off the website for everyone; the original is never touched. Changes are saved at once.';
+      body.insertBefore(n, box); }
     if (!S.chapter && !S.win && !S.stories && !showHidden && INTRO.length) {
       const sec = document.createElement('section'); sec.className = 'photoSec';
       sec.innerHTML = '<h3>Before &amp; after</h3>';
@@ -235,6 +243,20 @@
         const grid = document.createElement('div'); grid.className = 'photoGrid'; ml.forEach(it => grid.append(card(it, its, its.indexOf(it)))); sec.append(grid); });
       box.append(sec);
     });
+    // "you are here": a bar pinned to the bottom of the gallery with the chapter and month at the top of the view, and the last change (Undo)
+    const here = document.createElement('div'); here.className = 'photoHere'; const hereT = document.createElement('span'); here.append(hereT);
+    if (edit && lastDone) { const d = document.createElement('span'); d.className = 'done'; d.textContent = lastDone.text;
+      const u = document.createElement('button'); u.type = 'button'; u.textContent = 'Undo';
+      u.onclick = () => saveEdit(lastDone.undo, {text: 'Undone: ' + lastDone.text.replace(/^\S+ /, '')}); here.append(d, u); }
+    box.append(here);
+    const heads = [...box.querySelectorAll('h3,h4')];
+    // the place = the heading above a line 40% down the part of the gallery you can see (the page's pinned panels can cover its top)
+    const where = () => { const r = box.getBoundingClientRect(), v0 = Math.max(r.top, 0), v1 = Math.min(r.bottom, window.innerHeight), top = v0 + (v1 - v0) * 0.4; let ch = '', mo = '';
+      heads.forEach(h => { if (h.getBoundingClientRect().top <= top) { if (h.tagName === 'H3') { ch = h.firstChild.textContent.trim(); mo = ''; } else mo = h.textContent.split(' · ')[0]; } });
+      if (!ch && heads[0]) ch = heads[0].firstChild.textContent.trim();
+      hereT.textContent = '📍 ' + [ch, mo].filter(Boolean).join(' · '); };
+    box.scrollTop = galScroll; box.onscroll = () => { galScroll = box.scrollTop; where(); }; requestAnimationFrame(where);
+    galWhere = () => { if (box.isConnected) where(); };
     BODIES.set(id, {body});
   }
 
@@ -301,7 +323,12 @@
 .photoGBtn{border-color:#b45309;color:#b45309}.photoGBtn.on{background:#b45309;color:#fff}.photoTog.on{background:var(--ink);color:var(--bg)}
 .photoNote{margin:0 0 6px}.photoTip{position:absolute;pointer-events:none;display:none;z-index:5;max-width:230px;background:rgba(0,0,0,.85);color:#fff;font-size:11px;line-height:1.35;padding:5px 7px;border-radius:6px}
 .photoScroll{overflow:auto;padding-right:4px}.photoSec{border-left:3px solid var(--line);padding:2px 0 8px 10px;margin:0 0 14px}
-.photoSec h3{margin:4px 0 2px;font-size:15px}.photoSec h4{margin:10px 0 4px;font-size:12px;color:var(--ink2);font-weight:600}
+.photoSec h3{margin:4px 0 2px;font-size:15px;position:sticky;top:0;z-index:2;background:var(--card);padding:2px 0}
+.photoSec h4{margin:10px 0 4px;font-size:12px;color:var(--ink2);font-weight:600;position:sticky;top:24px;z-index:1;background:var(--card);padding:1px 0}
+.photoHere{position:sticky;bottom:0;z-index:3;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;padding:6px 10px;border-radius:8px;
+ background:var(--ink);color:var(--bg);font-size:13px;box-shadow:0 -2px 8px rgba(0,0,0,.25)}.photoHere .done{font-weight:600;margin-left:auto}
+.photoHere button{font:inherit;font-size:12px;padding:1px 10px;border-radius:8px;border:1px solid var(--bg);background:transparent;color:var(--bg);cursor:pointer}
+.photoDone{display:flex;gap:8px;align-items:center;margin-top:4px;font-weight:600}.photoDone button{font:inherit;font-size:12px;padding:1px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
 .photoGrid{display:flex;flex-wrap:wrap;gap:6px}.photoIntro{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}.photoIntro .sub div{margin-bottom:6px}
 .photoCard{position:relative;padding:0;border:0;border-radius:6px;overflow:hidden;background:var(--line);cursor:pointer;flex:none}
 .photoCard img{width:100%;height:100%;object-fit:cover;display:block}.photoCard.cov{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;

@@ -24,6 +24,11 @@ Usage:
   GET /stats is the report page with a health meter. It and /api/stats answer only this Mac and the
   home network (private addresses), unless local/usage.json has {"statsKey": "..."}: then
   /stats?key=<that key> also works from outside (and remembers it in a cookie).
+- Start view: local/start_view.json {"saved": <UTC time>, "keys": {...}} is the view a new visitor lands on.
+  It is put in the page as window.START_VIEW, and a small script copies it into a browser's saved settings
+  (localStorage "labs.*") when that browser has none yet. start_view.js adds the "Start view" button.
+  POST /api/start-view {"keys": {...}} replaces it: this Mac and the home network only (the previous one is
+  kept as local/start_view.prev.json).
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -57,6 +62,28 @@ STATS_HTML = os.path.join(HERE, "stats_view.html")
 USAGE_CONF = os.path.join(LOCAL, "usage.json")
 NOLOG = ("/stats", "/api/stats", "/api/ping", "/usage.js", "/api/usage")
 ASK_CONF = os.path.join(LOCAL, "ask.json")
+START = os.path.join(LOCAL, "start_view.json")
+START_JS = os.path.join(HERE, "start_view.js")
+START_SKIP = {"txedits", "txdirty", "open"}   # medication edits are shared separately; "open" is not used any more
+START_MAX = 2_000_000
+# Runs before the viewer's own script: a browser with no saved settings gets the start view.
+START_SEED = ("(function(){var S=window.START_VIEW;if(!S||!S.keys)return;try{for(var i=0;i<localStorage.length;i++)"
+              "if(localStorage.key(i).indexOf('labs.')===0)return;for(var k in S.keys)localStorage.setItem('labs.'+k,"
+              "JSON.stringify(S.keys[k]))}catch(e){}})();")
+
+
+def read_start():
+    try:
+        s = json.load(open(START))
+        return s if isinstance(s, dict) and isinstance(s.get("keys"), dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def start_tag(can_save):
+    data = json.dumps(read_start()).replace("</", "<\\/")
+    return (f"<script>window.START_VIEW={data};window.START_VIEW_CAN_SAVE={'true' if can_save else 'false'};"
+            + START_SEED + "</script>").encode()
 ASK_PATHS = ("/", "/review", "/file", "/api/quick-asks", "/api/chat", "/api/conversations",
              "/api/conversation", "/api/review")
 
@@ -182,6 +209,12 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(PAGE):
                 return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
             html, extra = open(PAGE, "rb").read(), []
+            i = html.find(b"<script")   # before the viewer's first script, so the start view is in place when it reads its settings
+            tag = start_tag(usage.is_local_request(self))
+            html = html[:i] + tag + html[i:] if i >= 0 else tag + html
+            i = html.rfind(b"</body>")
+            tag = b'<script src="/start_view.js" defer></script>'
+            html = html[:i] + tag + html[i:] if i >= 0 else html + tag
             if USAGE:
                 if not self._vid:
                     self._vid = usage.new_visitor_id()
@@ -190,6 +223,8 @@ class Handler(BaseHTTPRequestHandler):
                 tag = b'<script src="/usage.js" defer></script>'
                 html = html[:i] + tag + html[i:] if i >= 0 else html + tag
             return self.send(200, html, "text/html; charset=utf-8", headers=extra)
+        if path == "/start_view.js":
+            return self.send(200, open(START_JS, "rb").read(), "text/javascript; charset=utf-8")
         if path == "/usage.js":
             return self.send(200, open(USAGE_JS, "rb").read(), "text/javascript; charset=utf-8")
         if path in ("/stats", "/api/stats", "/api/ping"):
@@ -238,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:  # noqa: BLE001
                 return self.send(400, {"error": "bad"})
             return self.send(200, {"ok": USAGE.events(self, self._vid, body)})
+        if self.path.split("?")[0] == "/api/start-view":
+            return self.save_start()
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -256,6 +293,33 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(409, {"rev": rev, "edits": cur})
             write_edits(rev + 1, edits)
         self.send(200, {"rev": rev + 1})
+
+    def save_start(self):
+        """Replace the start view (this Mac and the home network only)."""
+        if not usage.is_local_request(self):
+            return self.send(403, {"error": "only from this Mac or the home network"})
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > START_MAX:
+            return self.send(413, {"error": "empty or too large"})
+        try:
+            keys = json.loads(self.rfile.read(n))["keys"]
+            if not isinstance(keys, dict) or not keys:
+                raise ValueError("no settings to save")
+            keys = {k: v for k, v in keys.items() if k not in START_SKIP}
+            if not all(re.fullmatch(r"[A-Za-z0-9_.]{1,40}", k) for k in keys):
+                raise ValueError("bad setting name")
+        except Exception as e:  # noqa: BLE001 - any bad input is a 400
+            return self.send(400, {"error": str(e)})
+        new = {"saved": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "keys": keys}
+        with lock:
+            if os.path.exists(START):
+                shutil.copy2(START, os.path.join(LOCAL, "start_view.prev.json"))
+            tmp = START + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(new, f, indent=1)
+            os.replace(tmp, START)
+        print(time.strftime("%H:%M:%S"), self.client_address[0], "saved the start view,", len(keys), "settings")
+        self.send(200, new)
 
     def log_message(self, fmt, *args):  # one short line per save, nothing for page loads
         if self.command == "POST" and self.path.split("?")[0] == "/api/edits":

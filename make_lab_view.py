@@ -172,8 +172,12 @@ def load_mrd():
         v["effect"] = EFF.get(r.get("consequence", ""), r.get("consequence", "").replace("_", " "))
     return {"rows": rd("mrd_tests.tsv"), "alleles": alleles, "vars": vars_}
 mrd = load_mrd()
+# Each hospital's time zone (IANA name) for the navigator's time zone choice, from the private
+# local/site_zones.json ({"<site>": "America/Chicago", ...}); hospital names stay out of this script.
+zones_file = os.path.join(here, "site_zones.json")
+site_zones = json.load(open(zones_file)) if os.path.exists(zones_file) else {}
 data = json.dumps({"tests": tests, "sources": sources, "span": span, "tx": tx, "edits": edits, "halflife": halflife,
-                   "brk": brk, "brkw": COMPRESS_WIDTH, "mrd": mrd}, separators=(",", ":"))
+                   "brk": brk, "brkw": COMPRESS_WIDTH, "mrd": mrd, "siteZones": site_zones}, separators=(",", ":"))
 
 html = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -232,6 +236,7 @@ button:hover{border-color:var(--muted)}button.on{background:var(--accent);border
 .nrow .datebtn{font-weight:600;padding:1px 7px;font-size:12px;min-width:78px}.nrow #wml{font-weight:400;color:var(--ink2);min-width:0}.nrow #saveRange{margin-left:2px}
 .pdlg{left:50%;top:28%;transform:translateX(-50%);z-index:70;font-size:13px;min-width:300px;max-width:440px}.pdlg .pdmsg{white-space:pre-line}.pdlg input{font-size:13px;padding:4px 6px}
 .calpop{position:fixed;z-index:45;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:12px;display:flex;flex-direction:column;gap:6px;min-width:230px}
+.calpop .tzsel{font:inherit;font-size:12px;padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);max-width:260px}
 .calpop input{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}.calpop .bar{justify-content:flex-end}
 body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 .nrow.lay{gap:6px;font-size:12px;flex-wrap:wrap}.nrow.lay button{font-size:12px;padding:1px 8px}.nrow.lay .laychip{border-radius:12px}.nrow.lay .laychip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -381,6 +386,25 @@ function shortTicks(a,b,days){const T=[];
  return T}
 /* local date + time for readings and the hover line in short windows */
 const localStamp=t=>{const d=new Date(t),z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())+' '+z(d.getHours())+':'+z(d.getMinutes())};
+/* ---- Navigator time zone (From / Middle / To and their calendar) ----
+   '' = this browser's zone. Otherwise an IANA zone: typed dates and times are read as clock time in that zone
+   (so a 2 pm visit in Houston is found by typing 14:00 with Central picked), and the labels show it.
+   Offsets come from the browser's own time zone tables (Intl), so daylight saving is handled per date. */
+const BROWSER_TZ=(()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){return ''}})();
+const tzOk=z=>{try{new Intl.DateTimeFormat('en-US',{timeZone:z});return true}catch(e){return false}};
+let NAVTZ=store.get('navTz','');if(NAVTZ&&!tzOk(NAVTZ))NAVTZ='';
+const tzF={},tzFmt=z=>tzF[z]||(tzF[z]=new Intl.DateTimeFormat('en-US',{timeZone:z,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+function tzWall(t,z){const p={};tzFmt(z).formatToParts(new Date(t)).forEach(x=>p[x.type]=x.value);return Date.UTC(+p.year,p.month-1,+p.day,+p.hour%24,+p.minute,+p.second)}
+const tzOff=(t,z)=>tzWall(t,z)-Math.floor(t/1000)*1000;
+function zStamp(t,z=NAVTZ){if(!z)return localStamp(t);const w=new Date(tzWall(t,z)),n=x=>String(x).padStart(2,'0');
+ return w.getUTCFullYear()+'-'+n(w.getUTCMonth()+1)+'-'+n(w.getUTCDate())+' '+n(w.getUTCHours())+':'+n(w.getUTCMinutes())}
+/* 'YYYY-MM-DDTHH:MM' as clock time in zone z -> UTC ms (two passes, so dates across a DST change get their own offset) */
+function zParse(v,z=NAVTZ){if(!z)return new Date(v).getTime();const m=/^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})/.exec(v);if(!m)return NaN;
+ const g=Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5]);return g-tzOff(g-tzOff(g,z),z)}
+function zAbbr(t,z=NAVTZ){try{return new Intl.DateTimeFormat('en-US',{timeZone:z||undefined,timeZoneName:'short'}).formatToParts(new Date(t)).find(x=>x.type==='timeZoneName').value}catch(e){return ''}}
+function zUtc(t,z=NAVTZ){const o=Math.round((z?tzOff(t,z):-new Date(t).getTimezoneOffset()*6e4)/6e4),h=Math.floor(Math.abs(o)/60),m=Math.abs(o)%60;return 'UTC'+(o<0?'−':'+')+h+(m?':'+String(m).padStart(2,'0'):'')}
+const ZNAMES={'America/New_York':'Eastern','America/Chicago':'Central','America/Denver':'Mountain','America/Phoenix':'Arizona','America/Los_Angeles':'Pacific','America/Anchorage':'Alaska','Pacific/Honolulu':'Hawaii','UTC':'UTC'};
+const zName=z=>z?(ZNAMES[z]?ZNAMES[z]+(z==='UTC'?'':' time'):z.replace(/_/g,' ')):'This browser'+(BROWSER_TZ?' ('+(ZNAMES[BROWSER_TZ]||BROWSER_TZ.replace(/_/g,' '))+')':'');
 const whenText=t=>(W.b-W.a)<=3*DAY?localStamp(t):iso(t);
 function ticks(){const T=[],a=W.a,b=W.b,months=(b-a)/(30.44*DAY),c=compressing();if((b-a)/DAY<=45)return shortTicks(a,b,(b-a)/DAY);
  const step=months>30?3:months>14?2:1;
@@ -589,31 +613,43 @@ function renderCompare(){const box=$('cmpList');box.innerHTML='';$('cmpEmpty').c
 
 const wa=$('wa'),wb=$('wb');[wa,wb].forEach(e=>{e.min=0;e.max=NDAYS;e.step=1});
 const wp=$('wp');wp.min=0;wp.step=1;
-function syncWin(){wa.value=Math.round((W.a-X0)/DAY);wb.value=Math.round((W.b-X0)/DAY);const dl=t=>(W.b-W.a)<=3*DAY?localStamp(t):localStamp(t).slice(0,10);$('wal').textContent=dl(W.a);$('wbl').textContent=dl(W.b);$('wml').textContent='Middle: '+dl((W.a+W.b)/2);
+function syncWin(){wa.value=Math.round((W.a-X0)/DAY);wb.value=Math.round((W.b-X0)/DAY);const short=(W.b-W.a)<=3*DAY,dl=t=>(short?zStamp(t):zStamp(t).slice(0,10))+(NAVTZ||short?' '+zAbbr(t):'');$('wal').textContent=dl(W.a);$('wbl').textContent=dl(W.b);$('wml').textContent='Middle: '+dl((W.a+W.b)/2);
  const len=Math.round((W.b-W.a)/DAY);wp.max=Math.max(0,NDAYS-len);wp.value=Math.round((W.a-X0)/DAY);wp.disabled=+wp.max===0;
  const hrs=(W.b-W.a)/36e5;$('wlen').textContent=len>=730?(Math.round(len/36.5)/10)+' yrs':len>=60?Math.round(len/30.44)+' months':hrs<48?Math.round(hrs)+' hours':len+' days';
  $('wIn').disabled=W.b-W.a<=MINW+1;$('wOut').disabled=W.a<=X0&&W.b>=X1}
 function setWin(a,b){a=Math.max(X0,Math.min(a,X1-MINW));b=Math.min(X1,Math.max(b,a+MINW));W={a,b};store.set('window',W);syncWin();renderWin()}
 /* calendar pop-out for From / Middle / To: a date-and-time field that opens the browser's calendar.
    Picking a date applies it at once; Middle moves the window and keeps its length. */
-const toInput=t=>localStamp(t).replace(' ','T');
+const toInput=t=>zStamp(t).replace(' ','T');
 function openCal(which,anchor){const P=$('calPop');P.innerHTML='';P.classList.remove('hide');
  const lbl={a:'Start (From)',m:'Middle: keeps the window length',b:'End (To)'}[which];
- const h=document.createElement('b');h.textContent=lbl;const i=document.createElement('input');i.type='datetime-local';i.min=toInput(X0);i.max=toInput(X1);
- const cur=()=>which==='a'?W.a:which==='b'?W.b:(W.a+W.b)/2;i.value=toInput(cur());
+ const h=document.createElement('b');h.textContent=lbl;const i=document.createElement('input');i.type='datetime-local';
+ const cur=()=>which==='a'?W.a:which==='b'?W.b:(W.a+W.b)/2;
+ /* time zone the typed time is read in (remembered); hospitals' zones from the private site_zones.json */
+ const zs=document.createElement('select');zs.className='tzsel';zs.title='Time zone the date and time are read in. Records happen in different zones: pick the one where the event took place.';
+ const zinfo=document.createElement('div');zinfo.className='sub';zinfo.style.cssText='margin-top:3px;max-width:230px';
+ const fill=()=>{const sites={};Object.entries(D.siteZones||{}).forEach(([s,z])=>{if(tzOk(z))(sites[z]=sites[z]||[]).push(s)});
+  const L=[''].concat(Object.keys(sites),Object.keys(ZNAMES).filter(z=>!sites[z]));if(NAVTZ&&!L.includes(NAVTZ))L.push(NAVTZ);
+  zs.innerHTML='';L.forEach(z=>{const o=document.createElement('option');o.value=z;o.textContent=zName(z)+(sites[z]?' · '+sites[z].join(', '):'');zs.append(o)});
+  const o=document.createElement('option');o.value='?';o.textContent='Other zone…';zs.append(o);zs.value=NAVTZ};
+ const show=()=>{i.min=toInput(X0);i.max=toInput(X1);i.value=toInput(cur());const t=zParse(i.value);zinfo.textContent='Read as '+zAbbr(t)+' ('+zUtc(t)+' on this date)'};
+ zs.onchange=()=>{let z=zs.value;if(z==='?'){z=(prompt('Time zone name (IANA), e.g. Europe/London or Asia/Tokyo:',NAVTZ||BROWSER_TZ)||'').trim();if(!z||!tzOk(z)){if(z)alert('Unknown time zone: '+z);zs.value=NAVTZ;return}}
+  NAVTZ=z===BROWSER_TZ?'':z;store.set('navTz',NAVTZ);fill();show();syncWin()};
+ fill();show();
+ i.oninput=()=>{const t=zParse(i.value);if(isFinite(t))zinfo.textContent='Read as '+zAbbr(t)+' ('+zUtc(t)+' on this date)'};
  /* Middle can only move the window if it is shorter than the whole record; otherwise say so. */
  const note=document.createElement('div');note.className='sub';note.style.cssText='margin-top:6px;max-width:230px';
  const full=()=>W.b-W.a>=X1-X0-DAY;
  const hint=()=>{note.textContent=which==='m'&&full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':''};
- const apply=()=>{const t=new Date(i.value).getTime();if(!isFinite(t))return;const len=W.b-W.a;
+ const apply=()=>{const t=zParse(i.value);if(!isFinite(t))return;const len=W.b-W.a;
   if(which==='a')setWin(t,Math.max(W.b,t+MINW));else if(which==='b')setWin(Math.min(W.a,t-MINW),t);else{const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len)}
-  if(which==='m'&&Math.abs(cur()-t)>DAY)note.textContent=full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':'The window reaches the edge of the record, so the middle stopped at '+localStamp(cur()).slice(0,10)+'.';
+  if(which==='m'&&Math.abs(cur()-t)>DAY)note.textContent=full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':'The window reaches the edge of the record, so the middle stopped at '+zStamp(cur()).slice(0,10)+'.';
   else hint()};
  /* the calendar fires a change for every digit or arrow step: wait until the picking pauses */
- let tmr=0;i.onchange=()=>{clearTimeout(tmr);tmr=setTimeout(apply,350)};
+ let tmr=0;i.onchange=()=>{i.oninput();clearTimeout(tmr);tmr=setTimeout(apply,350)};
  i.onkeydown=e=>{if(e.key==='Enter'){clearTimeout(tmr);apply();closeCal()}};
  const bar=document.createElement('div');bar.className='bar';const done=document.createElement('button');done.type='button';done.textContent='Done';done.className='on';done.onclick=()=>{clearTimeout(tmr);apply();closeCal()};bar.append(done);
- hint();P.append(h,i,note,bar);const r=anchor.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';
+ hint();P.append(h,zs,i,zinfo,note,bar);const r=anchor.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';
  i.focus();try{i.showPicker()}catch(e){}}
 function closeCal(){$('calPop').classList.add('hide')}
 document.addEventListener('mousedown',e=>{if(!$('calPop').classList.contains('hide')&&!e.target.closest('#calPop')&&!e.target.closest('.datebtn'))closeCal()});

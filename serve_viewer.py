@@ -18,6 +18,12 @@ Usage:
   so the viewer's Ask features (ask_view.js) work at whatever address the viewer is reached by. Only the chat
   server's own paths are passed on, with X-Ask-Remote = the visitor's address; answers are streamed back.
   Without local/ask.json, /ask/ is 404.
+- Usage statistics (usage.py): every request is logged to local/usage.sqlite (private), each browser
+  gets a random visitor cookie, and the page reports which panels were used (usage.js, injected
+  when labs.html is served; code names only, never health values or Ask text).
+  GET /stats is the report page with a health meter. It and /api/stats answer only this Mac and the
+  home network (private addresses), unless local/usage.json has {"statsKey": "..."}: then
+  /stats?key=<that key> also works from outside (and remembers it in a cookie).
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -27,10 +33,14 @@ import http.client
 import argparse
 import json
 import os
+import re
 import shutil
 import threading
+import hmac
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import usage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL = os.path.join(HERE, "local")
@@ -41,6 +51,11 @@ IMG_TYPES = (".nii.gz", ".obj")
 KEEP = 300
 MAXBODY = 5_000_000
 lock = threading.Lock()
+USAGE = None   # usage.Usage, set in __main__
+USAGE_JS = os.path.join(HERE, "usage.js")
+STATS_HTML = os.path.join(HERE, "stats_view.html")
+USAGE_CONF = os.path.join(LOCAL, "usage.json")
+NOLOG = ("/stats", "/api/stats", "/api/ping", "/usage.js", "/api/usage")
 ASK_CONF = os.path.join(LOCAL, "ask.json")
 ASK_PATHS = ("/", "/review", "/file", "/api/quick-asks", "/api/chat", "/api/conversations",
              "/api/conversation", "/api/review")
@@ -68,14 +83,48 @@ def write_edits(rev, edits):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def send(self, code, body, ctype="application/json", cache=False):
+    def send(self, code, body, ctype="application/json", cache=False, headers=()):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "private, max-age=86400" if cache else "no-store")
+        for k, v in headers:
+            self.send_header(k, v)
         self.end_headers()
+        self._bytes = getattr(self, "_bytes", 0) + len(data)
         self.wfile.write(data)
+
+    def send_response(self, code, message=None):
+        self._status = code
+        super().send_response(code, message)
+
+    # ---- usage logging around every request ----
+    def logged(self, fn):
+        t0 = time.perf_counter()
+        self._status, self._bytes = 0, 0
+        self._vid = usage.visitor_id(self) if USAGE else ""
+        try:
+            fn()
+        except (BrokenPipeError, ConnectionResetError):
+            self._status = self._status or 499
+        finally:
+            if USAGE and self.path.split("?")[0] not in NOLOG:
+                USAGE.hit(self, self._status, self._bytes, (time.perf_counter() - t0) * 1000, self._vid)
+
+    def stats_allowed(self):
+        """Stats only for this Mac and the home network, or with the key from local/usage.json."""
+        if usage.is_local_request(self):
+            return True, ()
+        key = str(usage.load_conf(USAGE_CONF).get("statsKey") or "")
+        if len(key) < 12:
+            return False, ()
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("key", [""])[0]
+        c = re.search(r"(?:^|;\s*)ohd_sk=([^;]+)", self.headers.get("Cookie") or "")
+        for given in (q, c.group(1) if c else ""):
+            if given and hmac.compare_digest(given.encode(), key.encode()):
+                return True, (("Set-Cookie", f"ohd_sk={key}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict"),)
+        return False, ()
 
     def ask_proxy(self):
         """Pass /ask/... on to the chat server and stream its answer back."""
@@ -100,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return self.send(502, {"error": "the chat server isn't running"})
         self.send_response(r.status)
+        self._bytes = 0
         for k in ("Content-Type", "Content-Length"):
             if r.getheader(k):
                 self.send_header(k, r.getheader(k))
@@ -112,19 +162,46 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 self.wfile.flush()
+                self._bytes += len(chunk)
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
             conn.close()
 
     def do_GET(self):
+        self.logged(self.get)
+
+    def do_POST(self):
+        self.logged(self.post)
+
+    def get(self):
         path = self.path.split("?")[0]
         if path == "/ask" or path.startswith("/ask/"):
             return self.ask_proxy()
         if path in ("/", "/labs.html"):
             if not os.path.exists(PAGE):
                 return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
-            return self.send(200, open(PAGE, "rb").read(), "text/html; charset=utf-8")
+            html, extra = open(PAGE, "rb").read(), []
+            if USAGE:
+                if not self._vid:
+                    self._vid = usage.new_visitor_id()
+                    extra.append(("Set-Cookie", f"ohd_vid={self._vid}; Path=/; Max-Age=63072000; SameSite=Lax"))
+                i = html.rfind(b"</body>")
+                tag = b'<script src="/usage.js" defer></script>'
+                html = html[:i] + tag + html[i:] if i >= 0 else html + tag
+            return self.send(200, html, "text/html; charset=utf-8", headers=extra)
+        if path == "/usage.js":
+            return self.send(200, open(USAGE_JS, "rb").read(), "text/javascript; charset=utf-8")
+        if path in ("/stats", "/api/stats", "/api/ping"):
+            ok, cookie = self.stats_allowed()
+            if not ok or not USAGE:
+                return self.send(404, {"error": "not found"})
+            if path == "/api/ping":
+                return self.send(200, {"t": time.time()})
+            if path == "/api/stats":
+                rng = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("r", ["day"])[0]
+                return self.send(200, USAGE.stats(rng), headers=cookie)
+            return self.send(200, open(STATS_HTML, "rb").read(), "text/html; charset=utf-8", headers=cookie)
         if path.startswith("/imaging/"):   # imaging viewer files: inside local/imaging/, scan/model types only
             rel = urllib.parse.unquote(path[len("/imaging/"):])
             base = os.path.realpath(os.path.join(LOCAL, "imaging"))
@@ -145,9 +222,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"rev": rev, "edits": edits})
         self.send(404, {"error": "not found"})
 
-    def do_POST(self):
+    def post(self):
         if self.path.split("?")[0].startswith("/ask/"):
             return self.ask_proxy()
+        if self.path.split("?")[0] == "/api/usage":
+            n = int(self.headers.get("Content-Length") or 0)
+            if not USAGE or n <= 0 or n > 16000:
+                return self.send(400, {"error": "bad"})
+            try:
+                body = json.loads(self.rfile.read(n))
+                assert isinstance(body, dict)
+            except Exception:  # noqa: BLE001
+                return self.send(400, {"error": "bad"})
+            return self.send(200, {"ok": USAGE.events(self, self._vid, body)})
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -180,4 +267,6 @@ if __name__ == "__main__":
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     print(f"Viewer: http://127.0.0.1:{a.port}/" + ("  (also on this Mac's network address; no login)" if a.lan else ""))
     print("Edits are kept in", EDITS, "| Ctrl+C to stop")
+    USAGE = usage.Usage(os.path.join(LOCAL, "usage.sqlite"))
+    print(f"Usage stats: http://127.0.0.1:{a.port}/stats (this Mac and the home network only)")
     ThreadingHTTPServer((host, a.port), Handler).serve_forever()

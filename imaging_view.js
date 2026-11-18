@@ -198,7 +198,7 @@
     V.R = R; V.el = w;
     R('lo').value = 0; R('hi').value = 1000;
     SCANS.forEach(s => { const o = document.createElement('option'); o.value = s.date; o.textContent = fd(s.date) + ' · ' + (s.viewing ? 'viewing only' : s.lesions.length + ' lesions'); R('scan').appendChild(o); });
-    R('scan').onchange = () => load(R('scan').value);
+    R('scan').onchange = () => load(R('scan').value).catch(() => {});   // a failed load is reported in the viewer (loadFailed)
     R('op').oninput = () => { if (LV() && V.disp.outline !== 'outline') { V.nv.setOpacity(LI(), R('op').value / 100); } };
     R('cut').onclick = () => { V.cut = !V.cut; R('cut').classList.toggle('on', V.cut); applyCut(); };
     w.querySelectorAll('[data-z3]').forEach(b => b.onclick = () => zoom3(+b.dataset.z3));
@@ -254,7 +254,7 @@
       if (!seenM.has(+V.proj.m)) V.proj.m = PB.proj[0].m; if (!seenS.has(V.proj.sc)) V.proj.sc = PB.proj[0].scenario;
       R('projm').value = String(V.proj.m); R('projsc').value = V.proj.sc;
       const go = () => { V.proj.on = R('projon').checked; V.proj.m = +R('projm').value; V.proj.sc = R('projsc').value; store.set('img.proj', V.proj);
-        load(V.proj.on ? PB.date : (V.scan ? V.scan.date : PB.date)); };
+        load(V.proj.on ? PB.date : (V.scan ? V.scan.date : PB.date)).catch(() => {}); };
       R('projon').onchange = go; R('projm').onchange = R('projsc').onchange = () => { if (!R('projon').checked) { V.proj.m = +R('projm').value; V.proj.sc = R('projsc').value; store.set('img.proj', V.proj); return; } go(); }; }
     R('cutflip').onclick = () => { V.disp.cutAz = (V.disp.cutAz + 180) % 360; w.querySelector('[data-o="cutAz"]').value = V.disp.cutAz;
       if (!V.cut) { V.cut = true; R('cut').classList.add('on'); } store.set('img.disp', V.disp); applyCut();
@@ -710,8 +710,23 @@
     /* one load at a time: NiiVue's loads overlap badly (an older scan finishing last replaced the newer one).
        Each pick waits for the load before it; picks that were overtaken while waiting are skipped. */
     const tok = V.loadTok = (V.loadTok || 0) + 1;
-    V.queue = (V.queue || Promise.resolve()).catch(() => {}).then(() => tok === V.loadTok ? loadNow(scan) : null);
-    return V.queue;
+    const p = V.queue = (V.queue || Promise.resolve()).catch(() => {})
+      .then(() => tok === V.loadTok ? loadNow(scan).catch(err => { if (tok === V.loadTok) loadFailed(scan, err); throw err; }) : null);
+    p.catch(() => {});   // reported in the viewer by loadFailed; callers that wait still see the failure
+    return p;
+  }
+  /* A scan that can't be fetched: say which one and why, in words, instead of leaving "loading scan…" up (seen 2026-11-18 on a
+     copy of the site without the scan files: the first pick showed "Error: Not Found", every later pick stayed on "loading scan…").
+     V.scan is cleared so picking the same date again tries again. */
+  function loadFailed(scan, err) {
+    const m = String((err && err.message) || err || ''), st = V.R('status');
+    const why = /not found|404/i.test(m) ? 'the scan file is not on this server'
+      : /failed to fetch|network|load failed|aborted/i.test(m) ? 'the connection to the server dropped'
+      : m ? 'the scan could not be read (' + m + ')' : 'unknown error';
+    V.scan = null; V.loading = null;
+    st.textContent = `Couldn't load the ${fd(scan.date)} scan: ${why}. Pick it again to retry, or choose another date.`;
+    st.dataset.err = '1'; st.style.color = '#e0703a';
+    console.warn('scan load failed', scan.date, err);
   }
   async function loadNow(scan) {
     const NV = await lib();
@@ -727,7 +742,7 @@
       const draw0 = V.nv.drawScene.bind(V.nv), after = () => { try { drawGrid(); } catch (e) { console.warn('bent grid', e); } };
       V.nv.drawScene = function () { const r = draw0.apply(null, arguments); if (r && typeof r.then === 'function') r.then(after, after); else after(); return r; };
     }
-    V.R('status').textContent = 'loading scan…';
+    V.R('status').textContent = 'loading scan…'; delete V.R('status').dataset.err; V.R('status').style.color = '';
     V.doseTok = (V.doseTok || 0) + 1;   // cancel any dose still loading for the previous scan
     await V.nv.loadVolumes([{url: scan.t1c, name: 't1c_' + scan.date + '.nii.gz'}, {url: scan.labels, name: 'lesions_' + scan.date + '.nii.gz', opacity: V.R('op').value / 100}]);   // NiiVue reads the file type from the name
     V.raw = null; V.toned = false; applyTone();   // a fresh image: match its brightness (if on) before anything is drawn from it
@@ -798,12 +813,12 @@
   }
   function openViewer(date) {
     if (!sel.includes(IDV)) setLabSel([IDV], true);
-    setTimeout(() => { load(date); const w = document.querySelector(`.cmp[data-id="${IDV}"]`); if (w) w.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 50);
+    setTimeout(() => { load(date).catch(() => {}); const w = document.querySelector(`.cmp[data-id="${IDV}"]`); if (w) w.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 50);
   }
   function drawViewer(id, body) {
     const w = viewerEl(); body.innerHTML = ''; body.appendChild(w); sizeBox(id);
     if (!SCANS.length) { V.R('status').textContent = 'No measured scans yet.'; return; }
-    if (!V.loading) V.loading = (V.scan ? load(V.scan.date) : (defaultView() ? load(defaultView().date).then(() => recall(defaultView(), true)) : load(SCANS[0].date))).catch(err => { V.R('status').textContent = 'Could not load: ' + err; V.loading = null; });
+    if (!V.loading) V.loading = (V.scan ? load(V.scan.date) : (defaultView() ? load(defaultView().date).then(() => recall(defaultView(), true)) : load(SCANS[0].date))).catch(err => { if (!V.R('status').dataset.err) V.R('status').textContent = 'Could not load: ' + err; V.loading = null; });
   }
 
   /* ================= Lesions over time (Timeline · Lines · Grid) ================= */

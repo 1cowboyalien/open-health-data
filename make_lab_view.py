@@ -271,6 +271,7 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 .nrow button{font-size:12px;padding:2px 8px}.nrow .wbtn,.nrow .wnav{display:inline-flex;align-items:center;gap:3px;margin-left:6px}
 .nrow .wnav input{width:150px;margin:0 2px}.nrow .zl{color:var(--ink2);margin-left:6px}.nrow #wlen{color:var(--ink2);font-weight:500;margin-left:4px;min-width:62px}
 .nrow.win .wl{color:var(--ink2)}.nrow.win input{flex:1;min-width:80px;margin:0}.nrow.win b{font-weight:600;min-width:78px}
+.nrow.win .wfl{width:auto;margin-left:6px}.nrow #wfut{font-size:12px;padding:1px 3px;max-width:190px}.nrow #wfut.on{border-color:var(--accent);color:var(--accent)}
 .nrow .legend{margin:0 0 0 8px;gap:8px;font-size:11px}.nrow #soloBar{margin-left:6px}
 @media (max-width:760px){.navpin{margin:-14px -14px 0;padding:10px 14px}}
 .txh{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}.txh b{font-size:15px;font-weight:600}
@@ -305,6 +306,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <button id="roleBtn" style="margin-left:auto"></button><span id="soloBar" class="bar"></span><span class="sub hide" id="hint"></span></div>
 <div class="nrow win"><span class="wl">From</span><input type="range" id="wa" aria-label="Window start"><button id="wal" class="datebtn" title="Pick the start on a calendar"></button>
 <span class="wl">To</span><input type="range" id="wb" aria-label="Window end"><button id="wbl" class="datebtn" title="Pick the end on a calendar"></button>
+<span class="wl wfl" title="How far the timeline runs past the last data. Use it to see projections and planned dates (keyframes can be dated in the future); every panel gets the same longer axis, so they stay lined up. The part after today is tinted.">Future</span><select id="wfut" aria-label="How far the timeline runs past the last data"></select>
 <button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Presets → Timeline)">☆ Save timeline</button>
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
@@ -351,17 +353,31 @@ const SC={};D.sources.forEach((s,i)=>SC[s]=PAL[i%PAL.length]);
 const srcColor=s=>SC[s.split('+')[0]]||'#888';
 const BYID={};D.tests.forEach(t=>BYID[t.id]=t);
 const ms=d=>Date.parse(d+'T12:00:00Z');const DAY=864e5;
-const X0=ms(D.span[0]);const _e=new Date(ms(D.span[1]));const X1=Date.UTC(_e.getUTCFullYear(),_e.getUTCMonth()+1,1);
+const X0=ms(D.span[0]);const _e=new Date(ms(D.span[1]));const XD=Date.UTC(_e.getUTCFullYear(),_e.getUTCMonth()+1,1);   // XD = end of the data: the 1st of the month after the last entry
+/* Future (navigation bar): the time axis can run past the data, so projections and planned dates fit and every panel keeps the
+   same axis. FUT = whole months added after XD (0 = off), remembered in this browser; X1 = the end of the axis. */
+const FUTMAX=36,futEnd=m=>{const e=new Date(XD);return Date.UTC(e.getUTCFullYear(),e.getUTCMonth()+m,1)};
+let FUT=Math.max(0,Math.min(FUTMAX,Math.round(+store.get('future',0))||0)),X1=futEnd(FUT);
+const NOW=Date.now();
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const BRK=D.brk?ms(D.brk):null,FR=D.brk?D.brkw:0,NDAYS=Math.round((X1-X0)/DAY);
+const BRK=D.brk?ms(D.brk):null,FR=D.brk?D.brkw:0;let NDAYS=Math.round((X1-X0)/DAY);
 const YW=64;
 /* Shared plot edges for every chart on the time axis (labs, treatments, keyframes, MRD, imaging, procedures...):
    y axis YW wide on the left, 8px on the right, no automatic padding for big points or edge tick labels.
    Then the same moment is at the same x in every panel, so the scrub line lines up. Draw extra labels inside the plot. */
 const TLAY=(top=8,bottom=0)=>({autoPadding:false,padding:{left:0,top,right:8,bottom}});
 const tEdge=s=>{s.paddingLeft=0;s.paddingRight=0};
+/* The future part of the axis (Future setting on): a faint tint from today to the right edge of every chart on the shared time
+   axis, recognised by its x scale using tEdge. One global plugin, so every panel (and any new one) gets it without doing anything. */
+Chart.register({id:'futureTint',beforeDatasetsDraw(c){if(!FUT)return;const sx=c.scales.x;if(!sx||sx.options.afterFit!==tEdge||W.b<=NOW)return;
+ const a=c.chartArea,px=Math.max(a.left,sx.getPixelForValue(pos(NOW)));if(!(px<a.right))return;const g=c.ctx;g.save();
+ g.fillStyle=css('--ink');g.globalAlpha=.055;g.fillRect(px,a.top,a.right-px,a.bottom-a.top);
+ if(px>a.left){g.globalAlpha=.55;g.strokeStyle=css('--muted');g.lineWidth=1;g.setLineDash([2,3]);g.beginPath();g.moveTo(px+.5,a.top);g.lineTo(px+.5,a.bottom);g.stroke();
+  if(a.bottom-a.top>=44&&a.right-px>40){g.globalAlpha=.85;g.setLineDash([]);g.fillStyle=css('--muted');g.font='9px system-ui';g.textBaseline='top';g.fillText('today →',px+3,a.top+1)}}
+ g.restore()}});
 const MINW=DAY/2;   // shortest window: 12 hours (hospital stays with readings every few hours)
-let W=store.get('window',{a:X0,b:X1});if(!(W.a>=X0&&W.b<=X1&&W.b-W.a>=MINW))W={a:X0,b:X1};
+let W=store.get('window',{a:X0,b:X1});if(W&&W.b>X1&&W.a>=X0&&X1-W.a>=MINW)W.b=X1;   // saved while the Future setting was longer
+if(!(W.a>=X0&&W.b<=X1&&W.b-W.a>=MINW))W={a:X0,b:X1};
 let mode=store.get('mode','single');
 /* Library (left bar): hide/show, remembered; Chart.js resizes the charts on its own */
 let libHidden=store.get('libhidden',false);
@@ -617,7 +633,29 @@ function syncWin(){wa.value=Math.round((W.a-X0)/DAY);wb.value=Math.round((W.b-X0
  const len=Math.round((W.b-W.a)/DAY);wp.max=Math.max(0,NDAYS-len);wp.value=Math.round((W.a-X0)/DAY);wp.disabled=+wp.max===0;
  const hrs=(W.b-W.a)/36e5;$('wlen').textContent=len>=730?(Math.round(len/36.5)/10)+' yrs':len>=60?Math.round(len/30.44)+' months':hrs<48?Math.round(hrs)+' hours':len+' days';
  $('wIn').disabled=W.b-W.a<=MINW+1;$('wOut').disabled=W.a<=X0&&W.b>=X1}
-function setWin(a,b){a=Math.max(X0,Math.min(a,X1-MINW));b=Math.min(X1,Math.max(b,a+MINW));W={a,b};store.set('window',W);syncWin();renderWin()}
+function setWin(a,b){
+ /* a window that ends past the axis (a saved Timeline preset that looks ahead, opened where Future is off or shorter): lengthen the axis to hold it */
+ if(b>X1+DAY&&b<=futEnd(FUTMAX)+DAY){FUT=futFor(b-DAY);store.set('future',FUT);X1=futEnd(FUT);NDAYS=Math.round((X1-X0)/DAY);[wa,wb].forEach(e=>e.max=NDAYS);futSync()}
+ a=Math.max(X0,Math.min(a,X1-MINW));b=Math.min(X1,Math.max(b,a+MINW));W={a,b};store.set('window',W);syncWin();renderWin()}
+/* Future setting: lengthen or shorten the axis by whole months. A window that reached the old end follows the new end (so the
+   future part shows at once); others keep their dates. Also used by panels that offer "show it on the timeline" (setFuture(n, true)). */
+const wfut=$('wfut');
+function futSync(){const lab=m=>{if(!m)return'off';const e=new Date(futEnd(m)-DAY);return'+'+m+' month'+(m>1?'s':'')+' · to '+MON[e.getUTCMonth()]+' '+e.getUTCFullYear()};
+ const opts=[0,1,2,3,6,12,24];if(!opts.includes(FUT))opts.push(FUT);opts.sort((a,b)=>a-b);wfut.innerHTML='';
+ opts.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=lab(m);wfut.appendChild(o)});
+ const c=document.createElement('option');c.value='date';c.textContent='pick an end date…';wfut.appendChild(c);wfut.value=String(FUT);wfut.classList.toggle('on',FUT>0)}
+function setFuture(m,show){m=Math.max(0,Math.min(FUTMAX,Math.round(m)||0));const atEnd=W.b>=X1-DAY;FUT=m;store.set('future',FUT);X1=futEnd(FUT);NDAYS=Math.round((X1-X0)/DAY);
+ [wa,wb].forEach(e=>e.max=NDAYS);futSync();let a=W.a,b=W.b;if(atEnd||show||b>X1)b=X1;if(b-a<MINW)a=Math.max(X0,b-MINW);setWin(a,b)}
+/* months needed for the axis to reach a date (used by the calendar below and by panels with projections) */
+const futFor=t=>{const d=new Date(t),e=new Date(XD);return Math.max(0,Math.min(FUTMAX,(d.getUTCFullYear()-e.getUTCFullYear())*12+d.getUTCMonth()-e.getUTCMonth()+1))};
+function openFutCal(){const P=$('calPop');P.innerHTML='';P.classList.remove('hide');
+ const h=document.createElement('b');h.textContent='Timeline runs until';const i=document.createElement('input');i.type='date';i.min=iso(XD);i.max=iso(futEnd(FUTMAX)-DAY);i.value=iso(Math.max(XD,X1-DAY));
+ const note=document.createElement('div');note.className='sub';note.style.cssText='margin-top:6px;max-width:230px';note.textContent='The axis ends with the month of this date (at most '+FUTMAX/12+' years past the data).';
+ const apply=()=>{const t=Date.parse(i.value+'T12:00:00Z');if(isFinite(t))setFuture(futFor(t),true)};
+ i.onkeydown=e=>{if(e.key==='Enter'){apply();closeCal()}};
+ const bar=document.createElement('div');bar.className='bar';const done=document.createElement('button');done.type='button';done.textContent='Set';done.className='on';done.onclick=()=>{apply();closeCal()};bar.append(done);
+ P.append(h,i,note,bar);const r=wfut.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';i.focus();try{i.showPicker()}catch(e){}}
+wfut.onchange=()=>{if(wfut.value==='date'){wfut.value=String(FUT);openFutCal()}else setFuture(+wfut.value)};futSync();
 /* calendar pop-out for From / Middle / To: a date-and-time field that opens the browser's calendar.
    Picking a date applies it at once; Middle moves the window and keeps its length. */
 const toInput=t=>zStamp(t).replace(' ','T');
@@ -652,7 +690,7 @@ function openCal(which,anchor){const P=$('calPop');P.innerHTML='';P.classList.re
  hint();P.append(h,zs,i,zinfo,note,bar);const r=anchor.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';
  i.focus();try{i.showPicker()}catch(e){}}
 function closeCal(){$('calPop').classList.add('hide')}
-document.addEventListener('mousedown',e=>{if(!$('calPop').classList.contains('hide')&&!e.target.closest('#calPop')&&!e.target.closest('.datebtn'))closeCal()});
+document.addEventListener('mousedown',e=>{if(!$('calPop').classList.contains('hide')&&!e.target.closest('#calPop')&&!e.target.closest('.datebtn')&&!e.target.closest('#wfut'))closeCal()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCal()});
 $('wal').onclick=e=>openCal('a',e.currentTarget);$('wbl').onclick=e=>openCal('b',e.currentTarget);$('wml').onclick=e=>openCal('m',e.currentTarget);
 $('saveRange').onclick=saveRange;
@@ -685,7 +723,7 @@ document.addEventListener('mouseup',()=>{if(!drag)return;if(drag.moved){document
  const stop=ev=>{ev.stopPropagation();ev.preventDefault()};document.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>document.removeEventListener('click',stop,{capture:true}),0)}
  drag=null});
 document.querySelectorAll('.wbtn button').forEach(btn=>btn.onclick=()=>{const p=btn.dataset.p;
- if(p==='all')setWin(X0,X1);else if(p==='brk')setWin(BRK??X0,X1);else{const e=new Date(X1);setWin(Date.UTC(e.getUTCFullYear(),e.getUTCMonth()-(+p),1),X1)}});
+ if(p==='all')setWin(X0,X1);else if(p==='brk')setWin(BRK??X0,X1);else{const e=new Date(XD);setWin(Date.UTC(e.getUTCFullYear(),e.getUTCMonth()-(+p),1),X1)}});   // last N months of data (plus the future part when Future is on)
 document.querySelectorAll('[data-h]').forEach(btn=>btn.onclick=()=>{const k=cur+'#single';setH(k,hOf(k,340)+(btn.dataset.h==='+'?60:-60));render()});
 $('mSingle').onclick=()=>setMode('single');$('mCompare').onclick=()=>setMode('compare');
 $('clr').onclick=()=>{sel=[];store.set('selected',sel);updateBar();list();if(mode==='compare')render()};
@@ -713,9 +751,13 @@ mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.
 img_json = os.path.join(os.path.dirname(out), "imaging", "imaging.json")
 imgjs = ""
 if os.path.exists(img_json):
-    # lesion_trends_view.js (volume trends, doubling times) first: imaging_view.js draws them in Lesions over time
+    # lesion_chips.js (the lesion buttons every imaging panel shares) first, then lesion_trends_view.js (volume trends, doubling times) and
+    # perfusion_view.js / swelling_view.js (Perfusion, Swelling by lesion): imaging_view.js draws them
     imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_chips.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_trends_view.js")).read() + "\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfusion_view.js")).read() + "\n"
+             + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "swelling_view.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "imaging_view.js")).read())
 # Procedures (Library → Procedures): only if local/procedures/procedures.json exists. It is made outside this repo
 # (procedures, devices, hospital stays, visits, radiation fractions, with their sources); drawn by procedures_view.js.

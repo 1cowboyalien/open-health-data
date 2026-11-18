@@ -9,12 +9,16 @@
 (() => {
   const ROWS = IMG_DATA.brain_mri;
   const SCANS = IMG_DATA.viewer_scans || [];
-  const ID = 'img:brain:dates', IDV = 'img:brain:viewer', IDL = 'img:brain:lesions', IDD = 'img:brain:dose';
+  const ID = 'img:brain:dates', IDV = 'img:brain:viewer', IDL = 'img:brain:lesions', IDD = 'img:brain:dose', IDP = 'img:brain:perf', IDW = 'img:brain:swell';
   const LS = IMG_DATA.lesion_series || {lesions: [], reports: [], measured: [], treatments: [], scans: []};
   const PANELS = {[ID]: {title: 'Brain MRI · Scan dates', unit: ROWS.length + ' scans', h0: 190},
                   [IDV]: {title: 'Brain MRI · Slice viewer', unit: 'our lesion outlines', h0: 520},
                   [IDL]: {title: 'Brain MRI · Lesions over time', unit: 'our volumes (mm³) · trends · report sizes', h0: 380},
-                  [IDD]: {title: 'Brain MRI · Radiation dose by lesion', unit: 'estimated', h0: 260}};
+                  [IDD]: {title: 'Brain MRI · Radiation dose by lesion', unit: 'estimated', h0: 260},
+                  [IDP]: {title: 'Brain MRI · Perfusion by lesion', unit: 'blood volume & flow · × normal brain', h0: 340},
+                  [IDW]: {title: 'Brain MRI · Swelling by lesion', unit: '% room vs the normal control MRI', h0: 360}};
+  const SWELL = !!(window.LesionSwelling && IMG_DATA.swelling && IMG_DATA.swelling.rows.length);   // swelling_view.js (swelling / shrinkage per lesion)
+  const PERF = !!(window.LesionPerfusion && IMG_DATA.perfusion && IMG_DATA.perfusion.rows.length);   // perfusion_view.js (blood flow / volume per lesion)
   const DOSE = IMG_DATA.dose;   // ESTIMATED radiation dose (imaging/radiation_dose), or null
   const NIIVUE = 'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/+esm';   // jsDelivr bundles it as a browser module (unpkg's build file did not import)
   // health systems come from the (private) data file, never from this public code: [{key, short, long}]
@@ -73,7 +77,14 @@
 
   /* ================= Slice viewer panel (NiiVue) ================= */
   const V = {el: null, nv: null, NV: null, scan: null, loading: null, cut: true, radio: store.get('img.radio', true), noseLeft: store.get('img.noseLeft', true),
-             dose: Object.assign({key: '', op: 35, lines: true, blend: 25}, store.get('img.dose', {})),
+             /* every colour layer starts OFF when the viewer opens (radiation too, since 2026-11-18): sliders are remembered, and a saved
+                view switches its layers on only when the user picks it, not when the viewer opens with it */
+             dose: Object.assign({key: '', op: 35, lines: true, blend: 25}, store.get('img.dose', {}), {key: ''}),
+             perf: Object.assign({key: '', min: 130, op: 60}, store.get('img.perf', {}), {key: ''}),   // perfusion layer: map, show-above level (x100), wash %
+             swell: Object.assign({key: '', thr: 0, op: 60}, store.get('img.swell', {}), {key: ''}),   // swelling layer: map, show-beyond level in % (0 = the scan's own normal range), wash %
+             tone: store.get('img.tone', true),   // brightness matched across scan dates (display only)
+             proj: Object.assign({m: 1, sc: 'full'}, store.get('img.proj', {}), {on: false}),   // simulated future scan: months ahead, scenario; always starts off
+             grid: Object.assign({x: 4}, store.get('img.grid', {}), {on: false}),   // bent grid (swelling as movement): how many times larger than real it is drawn; always starts off
              size: store.get('img.size', 0), full: false};   // size: viewer height in px (0 = the panel's height); full: filling the window
   window.__imgViewer = V;   // for testing in the browser console
   if (typeof saveEdits === 'function') { const _save = saveEdits;
@@ -106,6 +117,9 @@
     </style>
     <div class="nvmain"><div class="nvbar">
         <label>Scan <select data-r="scan"></select></label>
+        <span data-r="projbar" style="display:none;padding:1px 6px;border:1px dashed #e0a020;border-radius:6px" title="A simulation, not a scan: the latest scan's images with each lesion outline grown or shrunk to the size it would have if its latest rate carried on. A scenario from our own measurements, not a forecast.">
+          <label style="color:#e0a020"><input type="checkbox" data-r="projon"> Simulate</label>
+          <select data-r="projm" aria-label="How far ahead"></select> <select data-r="projsc" aria-label="Which rate"></select></span>
         <label>Outlines <input data-r="op" type="range" min="0" max="100" value="55" style="width:90px"></label>
         <button type="button" data-r="cut" class="on" title="Cut the 3D view open so the lesions inside show">3D: cut open</button>
         <button type="button" data-r="radio" title="Radiologist view: the patient's right is on the screen's left (as the hospitals show it). Click for neurologist view (patient's left on the left).">L/R: radiologist</button>
@@ -123,8 +137,10 @@
         <span title="Darkest: values at or below this show black">Low <button type="button" data-step="lo" data-d="-25" aria-label="Low down">−</button><input data-r="lo" type="range" min="0" max="1000" style="width:60px"><button type="button" data-step="lo" data-d="25" aria-label="Low up">+</button></span>
         <span title="Mid-tones: − = darker greys, + = brighter greys">Mid <button type="button" data-step="mid" data-d="-10" aria-label="Mid-tones darker">−</button><input data-r="mid" type="range" min="-100" max="100" value="0" style="width:60px"><button type="button" data-step="mid" data-d="10" aria-label="Mid-tones brighter">+</button></span>
         <span title="Brightest: values at or above this show white. Past 100% nothing reaches full white, so the whole image gets darker.">High <button type="button" data-step="hi" data-d="-25" aria-label="High down">−</button><input data-r="hi" type="range" min="0" max="2000" style="width:70px"><button type="button" data-step="hi" data-d="25" aria-label="High up">+</button><span class="sub" data-r="hipct"></span></span>
-        <button type="button" data-r="cauto" title="Reset contrast to the scan's own range">Auto</button>
-        <button type="button" data-r="clesion" title="Darker brain, enhancing lesions stand out">Lesions</button></div>
+        <button type="button" data-r="cauto" title="Reset contrast to the full range">Auto</button>
+        <button type="button" data-r="clesion" title="Darker brain, enhancing lesions stand out">Lesions</button>
+        <label data-r="tonewrap" style="display:none" title="Shows the same tissue at the same grey on every scan date: air black, then fluid, grey matter, white matter and scalp/marrow fat at fixed levels, so scans from different scanners and sequence types look alike and the Low / Mid / High settings carry over from date to date. Display only: our measurements use the scan's own values. It also evens out how bright enhancement looks, so with this on, brightness alone does not mean 'more enhancing'; untick to see the scan's own contrast."><input type="checkbox" data-r="tone"> match brightness across scans</label>
+        <span class="sub" data-r="tonel"></span></div>
       <div class="nvbar" data-r="dosebar" title="ESTIMATED radiation dose from our model of the treatment records, not the hospitals' dose files">
         <span class="sub" style="color:#e0a020">Radiation dose (estimated)</span>
         <select data-r="dose"><option value="">off</option></select>
@@ -132,6 +148,22 @@
         <span title="3D view only: how solid the dose looks (low = see-through cloud; the 3D cut also slices through the dose while it's shown)">3D strength <input data-r="dblend" type="range" min="5" max="100" value="25" style="width:60px"></span>
         <label title="Isodose lines: the prescription dose and 12 Gy (combined: 100 and 60 Gy EQD2)"><input type="checkbox" data-r="dlines" checked> lines</label>
         <span class="sub" data-r="dlegend"></span></div>
+      <div class="nvbar" data-r="perfbar" title="Blood flow / blood volume from the hospital's perfusion maps, as × normal brain on the same scan (our estimate, not a reading)">
+        <span class="sub" style="color:#e05ad0">Perfusion</span>
+        <select data-r="perf"><option value="">off</option><option value="asl">Blood flow (ASL)</option><option value="rcbv">Blood volume (rCBV)</option></select>
+        <span title="Colour only where the map is at least this many times normal brain">show above <input data-r="pmin" type="range" min="50" max="300" step="10" style="width:70px"> <b data-r="pminl"></b></span>
+        <span title="How see-through the colour wash is">wash <input data-r="pop" type="range" min="0" max="100" style="width:60px"></span>
+        <span class="sub" data-r="plegend"></span></div>
+      <div class="nvbar" data-r="swellbar" title="How much more (swollen) or less (shrunk, squeezed) room the brain takes than on the normal control MRI, from a flexible fit (our estimate, not a reading). It shows large effects only and understates them.">
+        <span class="sub" style="color:#ff7a59">Swelling</span>
+        <select data-r="swell"><option value="">off</option></select>
+        <span title="Colour only where the change is beyond this. 'This scan's normal range' = outside what 95% of the lesion-free brain shows on the same scan, the fairest setting: inside it the map cannot tell a change from noise.">show beyond <select data-r="sthr"><option value="0">this scan's normal range</option><option value="5">±5%</option><option value="10">±10%</option><option value="15">±15%</option><option value="20">±20%</option><option value="30">±30%</option></select></span>
+        <span title="How see-through the colour wash is">wash <input data-r="sop" type="range" min="0" max="100" style="width:60px"></span>
+        <span class="sub" data-r="slegend"></span>
+        <span data-r="sgridwrap" style="margin-left:4px;padding-left:8px;border-left:1px solid var(--line)">
+          <label title="The same fit shown as movement: a straight grid laid on the brain as it was on the control MRI, each point moved to where that tissue sits on this scan. Lines spread apart where the tissue takes more room and crowd together where it takes less. Slice views only. Large effects only, like the colour layer."><input type="checkbox" data-r="sgrid"> bent grid</label>
+          <span title="How many times larger than real the movement is drawn. The real movement is a millimetre or two, too small to see at ×1.">movement × <select data-r="sgx"><option value="1">1 (real)</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="12">12</option></select></span>
+          <span class="sub" data-r="sglegend"></span></span></div>
       <div class="nvbar" data-r="views"></div>
       <details class="nvdisp" data-r="disp"><summary>Display options</summary><div class="nvgrid">
         <label>Layout <select data-o="layout">
@@ -156,7 +188,10 @@
         <label>tilt <input type="range" data-o="cutEl" min="-90" max="90" value="20" style="width:60px"></label>
         <label>cut face <select data-o="cutFace"><option value="tint">tinted</option><option value="clear">clear</option></select></label>
       </div></details>
-      <div class="nvbox" data-r="box"><canvas data-r="cv"></canvas></div>
+      <div data-r="simbar" style="display:none;font-size:12px;margin:0 0 4px;padding:5px 9px;border:2px solid #e0a020;border-radius:6px;background:color-mix(in srgb,#e0a020 14%,transparent)"></div>
+      <div data-r="pscale" style="display:none;font-size:11px;color:var(--muted);margin:0 0 3px;line-height:26px"></div>
+      <div data-r="sscale" style="display:none;font-size:11px;color:var(--muted);margin:0 0 3px;line-height:26px"></div>
+      <div class="nvbox" data-r="box"><canvas data-r="cv"></canvas><canvas data-r="gridcv" aria-hidden="true" style="position:absolute;inset:0;pointer-events:none"></canvas></div>
       <div class="sub nvread" data-r="read">Click or drag in a view to move the crosshair; scroll to change slice; right-drag to adjust brightness.</div></div>
     <div class="nvside" data-r="list"></div>`;
     const R = k => w.querySelector(`[data-r="${k}"]`);
@@ -186,6 +221,41 @@
     R('dop').oninput = () => { V.dose.op = +R('dop').value; saveDose(); const w = doseVol('wash'); if (w) { V.nv.setOpacity(V.nv.volumes.indexOf(w), V.dose.op / 100); } };
     R('dblend').value = V.dose.blend; R('dblend').oninput = () => { V.dose.blend = +R('dblend').value; saveDose(); applyDose3D(); };
     R('dlines').onchange = () => { V.dose.lines = R('dlines').checked; saveDose(); applyDose(); };
+    if (!SCANS.some(s => s.perf && s.perf.length)) R('perfbar').style.display = 'none';
+    const pminl = () => { R('pminl').textContent = (V.perf.min / 100).toFixed(1) + '×'; };
+    R('perf').value = V.perf.key; R('pmin').value = V.perf.min; R('pop').value = V.perf.op; pminl();
+    R('perf').onchange = () => { V.perf.key = R('perf').value; savePerf(); applyPerf(); };
+    R('pmin').oninput = () => { V.perf.min = +R('pmin').value; savePerf(); pminl(); const p = perfVol(); if (p) { p.cal_min = V.perf.min; V.nv.updateGLVolume(); } perfLegend(); };
+    R('pop').oninput = () => { V.perf.op = +R('pop').value; savePerf(); const p = perfVol(); if (p) V.nv.setOpacity(V.nv.volumes.indexOf(p), V.perf.op / 100); };
+    // swelling layer: the choices (fine detail, 15 mm average) come from the data
+    const SWK = new Map(); SCANS.forEach(s => (s.swell || []).forEach(x => SWK.set(x.key, x.label)));
+    SWK.forEach((lab, k) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; R('swell').appendChild(o); });
+    if (!SWK.size) R('swellbar').style.display = 'none';
+    R('swell').value = V.swell.key; R('sthr').value = String(V.swell.thr); R('sop').value = V.swell.op;
+    R('swell').onchange = () => { V.swell.key = R('swell').value; saveSwell(); applySwell(); };
+    R('sthr').onchange = () => { V.swell.thr = +R('sthr').value; saveSwell(); swellLevels(); gridLegend(); if (V.nv && V.grid.on) V.nv.drawScene(); };
+    R('sop').oninput = () => { V.swell.op = +R('sop').value; saveSwell(); const p = swellVol(); if (p) V.nv.setOpacity(V.nv.volumes.indexOf(p), V.swell.op / 100); };
+    // bent grid: on/off and how much larger than real the movement is drawn
+    if (!SCANS.some(s => s.grid)) R('sgridwrap').style.display = 'none'; else R('swellbar').style.display = '';
+    R('sgrid').checked = false; R('sgx').value = String(V.grid.x);
+    R('sgrid').onchange = () => { V.grid.on = R('sgrid').checked; applyGrid(); };
+    R('sgx').onchange = () => { V.grid.x = +R('sgx').value; store.set('img.grid', {x: V.grid.x}); gridLegend(); if (V.nv) V.nv.drawScene(); };
+    // brightness matching across scan dates (display only)
+    if (TONE) R('tonewrap').style.display = '';
+    R('tone').checked = !!V.tone;
+    R('tone').onchange = () => { V.tone = R('tone').checked; store.set('img.tone', V.tone); applyTone(); applyContrast(); };
+    // simulated future scan: months ahead and scenario from the data (growth_model.py + make_projection.py)
+    const PB = projBase();
+    if (PB) { R('projbar').style.display = '';
+      const md = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+      const seenM = new Set(), seenS = new Set();
+      PB.proj.forEach(p => { if (!seenM.has(p.m)) { seenM.add(p.m); const o = document.createElement('option'); o.value = p.m; o.textContent = '+' + p.m + ' month' + (p.m > 1 ? 's' : '') + ' (' + md(p.date) + ')'; R('projm').appendChild(o); }
+        if (!seenS.has(p.scenario)) { seenS.add(p.scenario); const o = document.createElement('option'); o.value = p.scenario; o.textContent = p.scenario_label; R('projsc').appendChild(o); } });
+      if (!seenM.has(+V.proj.m)) V.proj.m = PB.proj[0].m; if (!seenS.has(V.proj.sc)) V.proj.sc = PB.proj[0].scenario;
+      R('projm').value = String(V.proj.m); R('projsc').value = V.proj.sc;
+      const go = () => { V.proj.on = R('projon').checked; V.proj.m = +R('projm').value; V.proj.sc = R('projsc').value; store.set('img.proj', V.proj);
+        load(V.proj.on ? PB.date : (V.scan ? V.scan.date : PB.date)); };
+      R('projon').onchange = go; R('projm').onchange = R('projsc').onchange = () => { if (!R('projon').checked) { V.proj.m = +R('projm').value; V.proj.sc = R('projsc').value; store.set('img.proj', V.proj); return; } go(); }; }
     R('cutflip').onclick = () => { V.disp.cutAz = (V.disp.cutAz + 180) % 360; w.querySelector('[data-o="cutAz"]').value = V.disp.cutAz;
       if (!V.cut) { V.cut = true; R('cut').classList.add('on'); } store.set('img.disp', V.disp); applyCut();
       if (V.nv) { const sc = V.nv.scene; V.nv.setRenderAzimuthElevation(((sc.renderAzimuth || 0) + 180) % 360, sc.renderElevation || 15); } };   // turn round to face the new cut
@@ -222,6 +292,29 @@
   function centre2(z) { if (!V.nv) return; if (z === 1) { V.nv.setPan2Dxyzmm([0, 0, 0, 1]); return; }
     const mm = V.nv.frac2mm(V.nv.scene.crosshairPos), c = V.nv.frac2mm([0.5, 0.5, 0.5]);
     V.nv.setPan2Dxyzmm([...[0, 1, 2].map(i => c[i] - z * mm[i]), z]); }
+  /* ---- brightness matching (imaging/viewer_mock/tone.py): the same tissue at the same grey on every scan date. Display only.
+     Each scan carries the knots {x, y} of a piecewise-linear map from its own values to standard levels (air 0 … white matter 1000 …);
+     the map is applied to the loaded image in the browser (a copy of the scan's own values is kept to switch back), and the contrast
+     sliders then work on the fixed range 0…TONE.top, so a setting means the same on every date. A scan without a map (not a T1) keeps its own. ---- */
+  const TONE = IMG_DATA.tone || null;
+  function applyTone() {
+    const v = V.nv && V.nv.volumes[0]; if (!v || !V.scan) return;
+    const T = V.scan.tone, h = v.hdr || {}, plain = (!h.scl_slope || h.scl_slope === 1) && !h.scl_inter && v.img && v.img.BYTES_PER_ELEMENT <= 2;   // whole-number brightness, as our exports are
+    V.R('tonel').textContent = !TONE || !V.tone ? '' : !T ? 'this scan is a different kind: shown with its own contrast' : !plain ? 'not available for this file' : '';
+    const want = !!(V.tone && TONE && T && plain);
+    if (want && !V.toned) {
+      if (!V.raw) { V.raw = v.img.slice(); V.rawStats = {gmin: v.global_min, gmax: v.global_max, rmin: v.robust_min, rmax: v.robust_max}; }
+      const raw = V.raw, img = v.img, x = T.x, y = T.y, n = x.length;
+      let lo = Infinity, hi = -Infinity; for (let i = 0; i < raw.length; i++) { const q = raw[i]; if (q < lo) lo = q; if (q > hi) hi = q; }
+      const lut = new Int16Array(hi - lo + 1); let top = 0;
+      for (let q = lo; q <= hi; q++) { let k = 1; while (k < n - 1 && q > x[k]) k++;   // the segment q falls in (the last one also carries values above the top knot)
+        const m = Math.max(0, Math.min(32767, Math.round(y[k - 1] + (q - x[k - 1]) * (y[k] - y[k - 1]) / (x[k] - x[k - 1])))); lut[q - lo] = m; if (m > top) top = m; }
+      for (let i = 0; i < raw.length; i++) img[i] = lut[raw[i] - lo];
+      v.global_min = 0; v.global_max = top; v.robust_min = 0; v.robust_max = TONE.top; V.toned = true;
+    } else if (!want && V.toned) {
+      v.img.set(V.raw); const s = V.rawStats; v.global_min = s.gmin; v.global_max = s.gmax; v.robust_min = s.rmin; v.robust_max = s.rmax; V.toned = false;
+    }
+  }
   /* ---- contrast: Low / High = black and white points within the scan's range; Mid = gamma ---- */
   function range() { const v = V.nv && V.nv.volumes[0]; if (!v) return [0, 1]; const lo = v.robust_min ?? v.global_min, hi = v.robust_max ?? v.global_max; return [lo, hi]; }
   function setContrast(lo, hi, mid) { V.R('lo').value = lo; V.R('hi').value = hi; V.R('mid').value = mid; applyContrast(); }
@@ -245,10 +338,15 @@
     return {name, date: V.scan.date, mm: Array.from(nv.frac2mm(sc.crosshairPos)).slice(0, 3), disp: Object.assign({}, V.disp),
       pan: Array.from(sc.pan2Dxyzmm || [0, 0, 0, 1]), az: sc.renderAzimuth, el: sc.renderElevation, z3: nv.volScaleMultiplier || 1,
       lo: +V.R('lo').value, hi: +V.R('hi').value, mid: +V.R('mid').value, op: +V.R('op').value, cut: V.cut,
-      radio: V.radio, noseLeft: V.noseLeft, glass: +V.R('glass').value, dose: Object.assign({}, V.dose)};
+      radio: V.radio, noseLeft: V.noseLeft, glass: +V.R('glass').value, dose: Object.assign({}, V.dose), perf: Object.assign({}, V.perf),
+      swell: Object.assign({}, V.swell), grid: Object.assign({}, V.grid), tone: !!V.tone};
   }
-  async function recall(v) {
-    if (!V.scan || V.scan.date !== v.date) await load(v.date);
+  /* opening = the viewer is opening with this view (the default): position, layout and contrast apply, but the colour layers
+     (radiation, perfusion, swelling) stay off until the user picks a view or a layer */
+  async function recall(v, opening) {
+    if (V.proj.on) { V.proj.on = false; V.R('projon').checked = false; }   // a saved view is a real scan, never the simulation
+    if (!V.scan || V.scan.date !== v.date || V.scan.sim) await load(v.date);
+    if (v.tone !== undefined && !!v.tone !== !!V.tone) { V.tone = !!v.tone; store.set('img.tone', V.tone); V.R('tone').checked = V.tone; applyTone(); }
     const nv = V.nv, NV = V.NV;
     V.disp = Object.assign({}, DDEF, v.disp || (v.single ? {layout: 'axial'} : {})); store.set('img.disp', V.disp);
     V.el.querySelectorAll('[data-o]').forEach(c => { const k = c.dataset.o; if (c.type === 'checkbox') c.checked = !!V.disp[k]; else c.value = String(V.disp[k]); });
@@ -257,7 +355,10 @@
     setContrast(v.lo, v.hi, v.mid);
     if (v.radio !== undefined) { V.radio = v.radio; V.noseLeft = v.noseLeft; applyOrient(); }
     if (v.glass !== undefined) { V.R('glass').value = v.glass; applyGlass(); }
-    if (v.dose) { V.dose = Object.assign({}, v.dose); saveDose(); V.R('dose').value = V.dose.key; V.R('dop').value = V.dose.op; V.R('dlines').checked = V.dose.lines; V.R('dblend').value = V.dose.blend ?? 25; await applyDose(); }
+    if (v.perf && !opening) { V.perf = Object.assign({}, v.perf); savePerf(); V.R('perf').value = V.perf.key; V.R('pmin').value = V.perf.min; V.R('pop').value = V.perf.op; V.R('pminl').textContent = (V.perf.min / 100).toFixed(1) + '×'; await applyPerf(); }
+    if (v.swell && !opening) { V.swell = Object.assign({}, v.swell); saveSwell(); V.R('swell').value = V.swell.key; V.R('sthr').value = String(V.swell.thr); V.R('sop').value = V.swell.op; await applySwell(); }
+    if (v.grid && !opening) { V.grid = Object.assign({x: 4}, v.grid); store.set('img.grid', {x: V.grid.x}); V.R('sgrid').checked = !!V.grid.on; V.R('sgx').value = String(V.grid.x); await applyGrid(); }
+    if (v.dose && !opening) { V.dose = Object.assign({}, v.dose); saveDose(); V.R('dose').value = V.dose.key; V.R('dop').value = V.dose.op; V.R('dlines').checked = V.dose.lines; V.R('dblend').value = V.dose.blend ?? 25; await applyDose(); }
     nv.scene.crosshairPos = nv.mm2frac(v.mm);
     nv.volScaleMultiplier = v.z3; nv.setRenderAzimuthElevation(v.az, v.el); nv.setPan2Dxyzmm(v.pan);
     const vals = []; vals[LI()] = {value: LV().getValue(...LV().mm2vox(v.mm))}; readout({values: vals, mm: v.mm});
@@ -371,7 +472,7 @@
      (renderOverlayBlend) and the cut plane also cuts the overlays (isClipAllVolumes); back to normal when dose is off. */
   // the dose map is on the baseline grid: it fits every scan shown aligned onto that grid (not a scan without lesions)
   const doseOK = () => !!(V.scan && V.scan.aligned && V.scan.lesions.length);
-  function applyDose3D() { if (!V.nv) return; const on = !!(DOSE && V.dose.key && doseOK());
+  function applyDose3D() { if (!V.nv) return; const on = !!(DOSE && V.dose.key && doseOK()) || !!perfVol() || !!swellVol();   // the perfusion and swelling layers too
     V.nv.opts.renderOverlayBlend = on ? V.dose.blend / 100 : 1; V.nv.opts.isClipAllVolumes = on; V.nv.updateGLVolume(); V.nv.drawScene(); }
   async function applyDose() {
     if (!V.nv || !DOSE) return; const nv = V.nv;
@@ -395,6 +496,186 @@
     V.R('dlegend').innerHTML = `colour ${lo}→${hi} ${m.unit} (blue→red${tot ? ', dark→bright' : ''})` + (V.dose.lines ? ` · lines: <b style="color:#fff">${m.levels[1]}</b> and <b style="color:#ffe63c">${m.levels[0]}</b> ${m.unit}` : '') +
       ` · <span title="${esc(DOSE.notes[m.key] || (m.key === 'total_gy' ? 'Each course added in plain Gy, not adjusted for dose per session.': 'Each course added as EQD2 (alpha/beta 2, normal brain)'))}">how estimated ⓘ</span>`;
   }
+  /* ---- perfusion layer (imaging/perfusion): blood flow (ASL) or blood volume (rCBV) as × normal brain, ×100, on the baseline grid ---- */
+  function savePerf() { store.set('img.perf', V.perf); }
+  const perfVol = () => V.nv && V.nv.volumes.find(v => v.name && v.name.startsWith('perf_'));
+  const PCM = 'plasma', PMAX = 300;   // colour map and top of the scale (3× normal brain, ×100)
+  /* colour scale drawn from NiiVue's own colour map, so it matches the image: show-above level → 3×, ticks every 0.5× */
+  function perfScale() {
+    const cm = V.nv.colormapFromKey(PCM), lo = V.perf.min, W = 170;
+    const grad = cm.I.map((i, k) => `rgb(${cm.R[k]},${cm.G[k]},${cm.B[k]}) ${(i / 255 * 100).toFixed(1)}%`).join(',');
+    let ticks = lo % 50 ? `<span style="position:absolute;left:0;top:13px;transform:translateX(-50%);font-size:9.5px;color:var(--ink)">${(lo / 100).toFixed(1)}</span>` : '';
+    for (let v = Math.ceil(lo / 50) * 50; v <= PMAX; v += 50) { if (lo % 50 && v - lo < 25) continue; const x = (v - lo) / (PMAX - lo) * W;
+      ticks += `<span style="position:absolute;left:${x}px;top:10px;height:4px;border-left:1px solid var(--muted)"></span>` +
+               `<span style="position:absolute;left:${x}px;top:13px;transform:translateX(-50%);font-size:9.5px;color:var(--muted)">${v / 100}${v === PMAX ? '×+' : ''}</span>`; }
+    return `<span title="Colour = × normal brain on this scan. Below ${(lo / 100).toFixed(1)}×: no colour (move 'show above'). Over 3×: brightest yellow." ` +
+      `style="position:relative;display:inline-block;width:${W}px;height:26px;vertical-align:middle;margin:0 18px 0 6px">` +
+      `<span style="position:absolute;left:0;top:0;width:${W}px;height:10px;border-radius:2px;background:linear-gradient(to right,${grad})"></span>${ticks}</span>`;
+  }
+  function perfLegend() { const m = V.scan && (V.scan.perf || []).find(x => x.key === V.perf.key); if (!m) return;
+    // the scale sits right above the images (pscale); the bar keeps only the reading note
+    const sc = V.R('pscale'); sc.style.display = 'block';
+    sc.innerHTML = `<span style="white-space:nowrap"><b style="color:#e05ad0">${m.key === 'asl' ? 'Blood flow (ASL)' : 'Blood volume (rCBV)'}</b> × normal brain</span>${perfScale()}<span style="white-space:nowrap">no colour below ${(V.perf.min / 100).toFixed(1)}×</span>`;
+    V.R('plegend').innerHTML = 
+      `<span title="Our estimate from the hospital's map, not a reading. ${m.key === 'asl' ? 'Bright stripes along the back and midline can be blood still in the arteries (ASL arterial transit), not tumor.' : 'Veins, sinuses and the brain surface are bright on this map; a lesion against them borrows their value.'} Normal grey matter reads above 1× because normal brain mixes grey and white matter. The map covers ${m.key === 'asl' ? 'most of the head' : 'a slab of the head only'}.">how to read ⓘ</span>`; }
+  async function applyPerf() {
+    if (!V.nv) return; const nv = V.nv;
+    const tok = V.perfTok = (V.perfTok || 0) + 1;
+    for (const v of nv.volumes.filter(v => v.name && v.name.startsWith('perf_'))) nv.removeVolume(v);
+    const m = V.scan && (V.scan.perf || []).find(x => x.key === V.perf.key);
+    V.R('plegend').textContent = V.perf.key && !m ? 'no ' + (V.perf.key === 'asl' ? 'blood-flow' : 'blood-volume') + ' map for this scan (' + SCANS.filter(s => (s.perf || []).some(x => x.key === V.perf.key)).length + ' scans have one)' : '';
+    if (!m) { V.R('pscale').style.display = 'none'; applyDose3D(); nv.drawScene(); return; }
+    const v = await nv.addVolumeFromUrl({url: m.file, name: 'perf_' + m.key + '.nii.gz', colormap: PCM, opacity: V.perf.op / 100, cal_min: V.perf.min, cal_max: PMAX});
+    if (tok !== V.perfTok || !V.scan || !(V.scan.perf || []).includes(m)) { if (nv.volumes.includes(v)) nv.removeVolume(v); nv.drawScene(); return; }
+    nv.moveVolumeToTop(LV()); applyDose3D(); nv.drawScene(); perfLegend();
+  }
+  function perfAt(mm) { const p = perfVol(); if (!p || !mm) return '';
+    const v = p.getValue(...p.mm2vox(mm)); return v > 0 ? ` · ${V.perf.key === 'asl' ? 'flow' : 'blood volume'} here ${(v / 100).toFixed(1)}× normal brain` : ''; }
+  /* ---- swelling layer (imaging/swelling/stretch_layer.py): % more (+) or less (−) room than on the normal control MRI, ×10,
+     on a 2 mm grid in the scan's own space. Two colour maps: warm = more room (swollen), cool = less room (shrunk / squeezed).
+     Colour starts at the 'show beyond' level: by default the scan's own normal range (lo…hi of the lesion-free brain, from the data),
+     because inside that range the map cannot tell a change from noise. Scale top: ±SMAX %. ---- */
+  function saveSwell() { store.set('img.swell', V.swell); }
+  const swellVol = () => V.nv && V.nv.volumes.find(v => v.name && v.name.startsWith('swell_'));
+  const SCMP = 'warm', SCMN = 'winter', SMAX = 40;
+  const swellOf = () => V.scan && (V.scan.swell || []).find(x => x.key === V.swell.key);
+  const swellBand = m => V.swell.thr > 0 ? [-V.swell.thr, V.swell.thr] : [m.lo, m.hi];   // % below / above which colour shows
+  function swellLevels() { const p = swellVol(), m = swellOf(); if (!p || !m) return; const [lo, hi] = swellBand(m);
+    p.cal_min = hi * 10; p.cal_max = SMAX * 10; p.cal_minNeg = -SMAX * 10; p.cal_maxNeg = lo * 10;
+    V.nv.updateGLVolume(); swellLegend(); }
+  function swellScale(lo, hi) {
+    const grad = (key, rev) => { const cm = V.nv.colormapFromKey(key), st = cm.I.map((i, k) => [i / 255 * 100, `rgb(${cm.R[k]},${cm.G[k]},${cm.B[k]})`]);
+      return (rev ? st.map(([p, c]) => [100 - p, c]).reverse() : st).map(([p, c]) => `${c} ${p.toFixed(1)}%`).join(','); };
+    const W = 96, lab = (x, t, a) => `<span style="position:absolute;left:${x}px;top:13px;transform:translateX(${a || '-50%'});font-size:9.5px;color:var(--muted);white-space:nowrap">${t}</span>`;
+    return `<span title="Blue = less room than on the control MRI (shrunk or squeezed), red to yellow = more room (swollen). Nothing is coloured between ${lo}% and +${hi}%." style="position:relative;display:inline-block;width:${2 * W + 46}px;height:26px;vertical-align:middle;margin:0 16px 0 6px">` +
+      `<span style="position:absolute;left:0;top:0;width:${W}px;height:10px;border-radius:2px;background:linear-gradient(to right,${grad(SCMN, true)})"></span>` +
+      `<span style="position:absolute;left:${W}px;top:0;width:46px;height:10px;text-align:center;font-size:9px;line-height:10px;color:var(--muted)">no colour</span>` +
+      `<span style="position:absolute;left:${W + 46}px;top:0;width:${W}px;height:10px;border-radius:2px;background:linear-gradient(to right,${grad(SCMP)})"></span>` +
+      lab(0, '−' + SMAX + '%', '0') + lab(W, lo + '%', '-100%') + lab(W + 46, '+' + hi + '%', '0') + lab(2 * W + 46, '+' + SMAX + '%', '-100%') + `</span>`;
+  }
+  function swellLegend() { const m = swellOf(); if (!m) return; const [lo, hi] = swellBand(m), sc = V.R('sscale'); sc.style.display = 'block';
+    const ctl = IMG_DATA.swelling && IMG_DATA.swelling.control;
+    sc.innerHTML = `<span style="white-space:nowrap"><b style="color:#ff7a59">Swelling</b> · room vs the ${ctl ? fd(ctl) : 'control'} MRI</span>${swellScale(lo, hi)}` +
+      `<span style="white-space:nowrap">${V.swell.thr > 0 ? 'your level: ±' + V.swell.thr + '%' : 'this scan\'s normal range: ' + lo + '% to +' + hi + '%'}</span>`;
+    V.R('slegend').innerHTML = `<span title="${esc((IMG_DATA.swelling && IMG_DATA.swelling.limits) || '')} ${m.key === 'avg' ? 'This map is the average over the brain within 15 mm of each point, the same measure the Swelling-by-lesion chart plots.' : 'This map is the fit itself (about 4 mm detail); it is noisier than the 15 mm average.'} Fluid spaces count too (bigger ventricles read as more room). Our estimate, not a reading.">how to read ⓘ</span>`; }
+  async function applySwell() {
+    if (!V.nv) return; const nv = V.nv;
+    const tok = V.swellTok = (V.swellTok || 0) + 1;
+    for (const v of nv.volumes.filter(v => v.name && v.name.startsWith('swell_'))) nv.removeVolume(v);
+    const m = swellOf();
+    V.R('slegend').textContent = V.swell.key && !m ? 'no swelling map for this scan (' + SCANS.filter(s => (s.swell || []).some(x => x.key === V.swell.key)).length + ' scans have one)' : '';
+    if (!m) { V.R('sscale').style.display = 'none'; applyDose3D(); nv.drawScene(); return; }
+    const [lo, hi] = swellBand(m);
+    const v = await nv.addVolumeFromUrl({url: m.file, name: 'swell_' + m.key + '.nii.gz', colormap: SCMP, colormapNegative: SCMN, opacity: V.swell.op / 100,
+      cal_min: hi * 10, cal_max: SMAX * 10, cal_minNeg: -SMAX * 10, cal_maxNeg: lo * 10});
+    if (tok !== V.swellTok || !V.scan || !(V.scan.swell || []).includes(m)) { if (nv.volumes.includes(v)) nv.removeVolume(v); nv.drawScene(); return; }
+    nv.moveVolumeToTop(LV()); applyDose3D(); swellLevels(); nv.drawScene();
+  }
+  function swellAt(mm) { const p = swellVol(); if (!p || !mm) return '';
+    const v = p.getValue(...p.mm2vox(mm)); return v ? ` · room here ${v > 0 ? '+' : '−'}${Math.abs(v / 10).toFixed(0)}% vs the control MRI` : ''; }
+  /* ---- bent grid (imaging/swelling/grid_layer.py): the same flexible fit as the swelling layers, shown as movement. Each scan has
+     one small file (4 mm grid; five whole-number layers: movement along patient right / front / up in 0.01 mm, room change in % × 10,
+     depth inside the brain outline in 0.1 mm). On every slice view a straight grid is laid on the slice and each point is moved by
+     the in-slice part of the movement, drawn V.grid.x times larger than real; lines are coloured like the colour layer (grey inside
+     the scan's normal range). Drawn as lines on a canvas over NiiVue's, redrawn after every NiiVue draw, from NiiVue's own record
+     of where each slice view sits (screenSlices: checked against canvasPos2frac in all four left/right and nose settings, 2026-11-18). ---- */
+  const GRIDS = new Map();   // file -> Promise of the parsed file
+  async function gridFile(url) {
+    if (!GRIDS.has(url)) GRIDS.set(url, (async () => {
+      const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
+      let buf = await r.arrayBuffer(); const m = new Uint8Array(buf, 0, 2);
+      if (m[0] === 0x1f && m[1] === 0x8b) buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+      const dv = new DataView(buf), dim = i => dv.getInt16(40 + 2 * i, true), nx = dim(1), ny = dim(2), nz = dim(3), nt = dim(4), off = dv.getFloat32(108, true);
+      if (dv.getInt32(0, true) !== 348 || dv.getInt16(70, true) !== 4 || nt < 5) throw new Error('not a grid file');
+      const M = [0, 1, 2].map(i => [0, 1, 2, 3].map(j => dv.getFloat32(280 + 16 * i + 4 * j, true))), [a, b, c] = M;   // voxel -> world, from the header
+      const det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+      const inv = [[(b[1] * c[2] - b[2] * c[1]) / det, (a[2] * c[1] - a[1] * c[2]) / det, (a[1] * b[2] - a[2] * b[1]) / det],
+                   [(b[2] * c[0] - b[0] * c[2]) / det, (a[0] * c[2] - a[2] * c[0]) / det, (a[2] * b[0] - a[0] * b[2]) / det],
+                   [(b[0] * c[1] - b[1] * c[0]) / det, (a[1] * c[0] - a[0] * c[1]) / det, (a[0] * b[1] - a[1] * b[0]) / det]];
+      return {nx, ny, nz, d: new Int16Array(buf, off, nx * ny * nz * nt), inv, t: [a[3], b[3], c[3]]};
+    })().catch(e => { GRIDS.delete(url); throw e; }));
+    return GRIDS.get(url);
+  }
+  const GSC = [0.01, 0.01, 0.01, 0.1, 0.1];
+  /* the file's five values at a world point (trilinear): out = [right, front, up movement in mm, room change %, depth inside the brain mm]; false outside the file */
+  function gridAt(G, mm, out) {
+    const x = mm[0] - G.t[0], y = mm[1] - G.t[1], z = mm[2] - G.t[2], I = G.inv;
+    const fi = I[0][0] * x + I[0][1] * y + I[0][2] * z, fj = I[1][0] * x + I[1][1] * y + I[1][2] * z, fk = I[2][0] * x + I[2][1] * y + I[2][2] * z;
+    if (!(fi >= 0 && fj >= 0 && fk >= 0 && fi <= G.nx - 1 && fj <= G.ny - 1 && fk <= G.nz - 1)) return false;
+    const i = Math.min(G.nx - 2, fi | 0), j = Math.min(G.ny - 2, fj | 0), k = Math.min(G.nz - 2, fk | 0), u = fi - i, v = fj - j, w = fk - k;
+    const sy = G.nx, sz = G.nx * G.ny, n = sz * G.nz, o = i + j * sy + k * sz, d = G.d;
+    const w0 = (1 - u) * (1 - v) * (1 - w), w1 = u * (1 - v) * (1 - w), w2 = (1 - u) * v * (1 - w), w3 = u * v * (1 - w), w4 = (1 - u) * (1 - v) * w, w5 = u * (1 - v) * w, w6 = (1 - u) * v * w, w7 = u * v * w;
+    for (let q = 0; q < 5; q++) { const p = o + q * n;
+      out[q] = (d[p] * w0 + d[p + 1] * w1 + d[p + sy] * w2 + d[p + sy + 1] * w3 + d[p + sz] * w4 + d[p + sz + 1] * w5 + d[p + sz + sy] * w6 + d[p + sz + sy + 1] * w7) * GSC[q]; }
+    return true;
+  }
+  /* line colours: the colour layer's own maps in 12 steps each (so lines and wash agree), grey inside the normal range */
+  let GLUT = null;
+  function gridLut() { if (GLUT) return GLUT;
+    const mk = key => { const cm = V.nv.colormapFromKey(key), n = 12, o = [];
+      for (let q = 0; q < n; q++) { const f = (q + 0.5) / n * 255; let k = 1; while (k < cm.I.length - 1 && cm.I[k] < f) k++;
+        const t = Math.max(0, Math.min(1, (f - cm.I[k - 1]) / Math.max(1, cm.I[k] - cm.I[k - 1]))), mix = ch => Math.round(cm[ch][k - 1] + (cm[ch][k] - cm[ch][k - 1]) * t);
+        o.push(`rgb(${mix('R')},${mix('G')},${mix('B')})`); } return o; };
+    return GLUT = {warm: mk(SCMP), cool: mk(SCMN)}; }
+  const gridBand = () => { if (V.swell.thr > 0) return [-V.swell.thr, V.swell.thr];
+    const f = V.scan && (V.scan.swell || []).find(x => x.key === 'fine'); return f ? [f.lo, f.hi] : [-10, 10]; };   // the grid shows the fit as it is: the 'fine detail' range
+  const GREY = 'rgba(255,255,255,0.55)';
+  const gridColour = (pct, lo, hi, L) => pct > hi ? L.warm[Math.min(11, Math.max(0, Math.floor((pct - hi) / (SMAX - hi) * 12)))]
+    : pct < lo ? L.cool[Math.min(11, Math.max(0, Math.floor((lo - pct) / (SMAX + lo) * 12)))] : GREY;
+  const HV = [[0, 1, 2], [0, 2, 1], [1, 2, 0]];   // per slice view (axial, coronal, sagittal): the world axis that runs across, up, and into the screen
+  function drawGrid() {
+    const cv = V.R && V.R('gridcv'), nv = V.nv; if (!cv || !nv) return;
+    const gl = nv.gl.canvas; if (cv.width !== gl.width || cv.height !== gl.height) { cv.width = gl.width; cv.height = gl.height; }
+    const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+    const G = V.gridData; if (!V.grid.on || !G || !V.scan || G.date !== V.scan.date) return;
+    const tiles = (nv.screenSlices || []).filter(s => s.axCorSag <= 2 && s.AxyzMxy && s.AxyzMxy.length >= 5 && s.fovMM && s.fovMM[0] && s.fovMM[1]);
+    if (!tiles.length) return;
+    const X = V.grid.x, [lo, hi] = gridBand(), L = gridLut(), out = new Float32Array(5), mm = [0, 0, 0];
+    const ppm = Math.abs(tiles[0].leftTopWidthHeight[2] / tiles[0].fovMM[0]);        // screen pixels per mm
+    const S = [4, 6, 8, 10, 12, 16, 20, 24].find(q => q * ppm >= 14) || 24, step = Math.max(1, 2 / ppm);   // squares at least ~14 px; a sample every ~2 px (1 mm at least)
+    if (S !== V.gridStep) { V.gridStep = S; gridLegend(); }
+    g.lineWidth = Math.max(1, (nv.uiData && nv.uiData.dpr) || 1); g.lineJoin = 'round';
+    for (const s of tiles) {
+      const [ih, iv, id] = HV[s.axCorSag], lt = s.leftTopWidthHeight, a = s.AxyzMxy, m0 = s.leftTopMM, f = s.fovMM;
+      const h0 = Math.min(m0[0], m0[0] + f[0]), h1 = Math.max(m0[0], m0[0] + f[0]), v0 = Math.min(m0[1], m0[1] + f[1]), v1 = Math.max(m0[1], m0[1] + f[1]);
+      const px = h => lt[0] + (h - m0[0]) / f[0] * lt[2], py = v => lt[1] + (1 - (v - m0[1]) / f[1]) * lt[3];
+      g.save(); g.beginPath(); g.rect(Math.min(lt[0], lt[0] + lt[2]), lt[1], Math.abs(lt[2]), lt[3]); g.clip();
+      const line = (alongV, cst, t0, t1) => { let open = false, col = '';
+        for (let t = t0; t <= t1; t += step) { const h = alongV ? cst : t, v = alongV ? t : cst;
+          mm[ih] = h; mm[iv] = v; mm[id] = a[2] + a[4] * (v - a[1]) - a[3] * (h - a[0]);      // the point of this slice under that screen position
+          if (!gridAt(G, mm, out) || out[4] <= 0) { if (open) { g.stroke(); open = false; } continue; }   // outside the brain: the line stops
+          const x = px(h + X * out[ih]), y = py(v + X * out[iv]), c = gridColour(out[3], lo, hi, L);
+          if (!open) { g.beginPath(); g.strokeStyle = c; g.moveTo(x, y); col = c; open = true; }
+          else if (c !== col) { g.lineTo(x, y); g.stroke(); g.beginPath(); g.strokeStyle = c; g.moveTo(x, y); col = c; }
+          else g.lineTo(x, y); }
+        if (open) g.stroke(); };
+      for (let h = Math.ceil(h0 / S) * S; h <= h1; h += S) line(true, h, v0, v1);
+      for (let v = Math.ceil(v0 / S) * S; v <= v1; v += S) line(false, v, h0, h1);
+      g.restore();
+    }
+  }
+  function gridLegend() { const lg = V.R('sglegend'), m = V.scan && V.scan.grid; if (!V.grid.on || !m || !V.gridData) return;
+    const ctl = IMG_DATA.swelling && IMG_DATA.swelling.control, [lo, hi] = gridBand();
+    lg.innerHTML = (m.control ? 'the control MRI itself: the grid is straight by definition' :
+      `the ${ctl ? fd(ctl) : 'control'} grid moved with the tissue, drawn ×${V.grid.x}${V.grid.x > 1 ? ' larger than real' : ''} · tissue moved ${m.moved_mm.median} mm typically (1 in 20 places over ${m.moved_mm.p95} mm)`) +
+      ` · squares ${V.gridStep || '–'} mm · <span title="${esc('Each grid point is a piece of brain as it lay on the control MRI, drawn where that piece sits on this scan (only the part of the movement that lies in the slice; the movement is multiplied so it shows). Lines spreading apart = that tissue takes more room than on the control MRI, crowding together = less. Grey lines = inside this scan\'s normal range (' + lo + '% to +' + hi + '%), coloured like the colour layer beyond it. Before drawing, one shift and turn of the whole brain left over from lining the two scans up (' + (m.whole_brain ? m.whole_brain.shift_mm + ' mm, ' + m.whole_brain.turn_deg + '°' : 'small') + ') is taken out. It is the same fit as the colour layer, with the same limits: large effects only, understated about 3×; scanner differences bend the grid a little everywhere. Our estimate, not a reading.')}">how to read ⓘ</span>`; }
+  async function applyGrid() {
+    const lg = V.R('sglegend'), m = V.scan && V.scan.grid; V.gridData = null; V.gridTok = (V.gridTok || 0) + 1; const tok = V.gridTok;
+    if (!V.grid.on) { lg.textContent = ''; drawGrid(); return; }
+    if (!m) { lg.textContent = 'no bent grid for this scan (' + SCANS.filter(s => s.grid).length + ' scans have one)'; drawGrid(); return; }
+    if (typeof DecompressionStream === 'undefined') { lg.textContent = 'this browser cannot unpack the grid file (it needs a browser from 2023 or later)'; drawGrid(); return; }
+    const date = V.scan.date; lg.textContent = 'loading the grid…';
+    try { const G = await gridFile(m.file); if (tok !== V.gridTok || !V.scan || V.scan.date !== date) return;
+      V.gridData = Object.assign({date}, G); V.gridStep = 0; gridLegend(); if (V.nv) V.nv.drawScene(); }
+    catch (e) { if (tok === V.gridTok) { lg.textContent = 'could not load the grid (' + e.message + ')'; drawGrid(); } }
+  }
+  function gridHere(mm) { const G = V.gridData; if (!V.grid.on || !G || !mm || !V.scan || !V.scan.grid || V.scan.grid.control) return '';
+    const o = new Float32Array(5); if (!gridAt(G, mm, o) || o[4] <= 0) return '';
+    return ` · tissue here moved ${Math.hypot(o[0], o[1], o[2]).toFixed(1)} mm since the control MRI`; }
+  /* test with a known answer (browser console): the page must read, at three brain points, the values grid_layer.py wrote for them */
+  V.gridCheck = async () => { const m = V.scan && V.scan.grid; if (!m) return null; const G = await gridFile(m.file), o = new Float32Array(5); let mmErr = 0, pctErr = 0, n = 0;
+    (m.probe || []).forEach(p => { if (!gridAt(G, p.slice(0, 3), o)) return; n++; for (let q = 0; q < 3; q++) mmErr = Math.max(mmErr, Math.abs(o[q] - p[3 + q])); pctErr = Math.max(pctErr, Math.abs(o[3] - p[6])); });
+    return {date: V.scan.date, points: n, worst_mm: +mmErr.toFixed(3), worst_pct: +pctErr.toFixed(2), ok: n === (m.probe || []).length && mmErr <= 0.02 && pctErr <= 0.2}; };
   function doseAt(mm) { const w = doseVol('wash'); if (!w || !mm) return '';
     const m = DOSE.maps.find(x => x.key === V.dose.key); const v = w.getValue(...w.mm2vox(mm)); return ` · dose here ≈ ${(v / 10).toFixed(1)} ${m.unit} (estimated)`; }
   function sizeBox(id) { if (!V.el) return; const box = V.R('box');
@@ -403,10 +684,29 @@
     V.R('size').value = h; V.R('sizel').textContent = V.full ? 'full window' : V.size ? h + ' px' : 'panel height';
     if (V.nv) requestAnimationFrame(() => V.nv.resizeListener()); }
   async function lib() { if (!V.NV) { V.R('status').textContent = 'loading NiiVue…'; V.NV = await import(NIIVUE); } return V.NV; }
+  /* ---- simulated future scan (volumetry/growth_model.py + viewer_mock/make_projection.py): the latest measured scan's images with
+     each outline grown or shrunk to its projected size. It is a 'scan' object like the real ones (same images, other outlines and
+     volumes, marked sim), so everything else in the viewer works on it unchanged. ---- */
+  function projBase() { return SCANS.find(s => s.proj && s.proj.length) || null; }
+  const SIMS = new Map();
+  function simScan(base) { const p = base.proj.find(x => x.m === +V.proj.m && x.scenario === V.proj.sc) || base.proj[0];
+    if (!SIMS.has(p.key)) SIMS.set(p.key, Object.assign({}, base, {labels: p.labels, lesions: p.lesions, sim: p, real: base, note: ''}));
+    return SIMS.get(p.key); }
+  function simBanner() { const b = V.R('simbar'), s = V.scan && V.scan.sim; if (!s) { b.style.display = 'none'; return; }
+    const G = (IMG_DATA.growth && IMG_DATA.growth.projection) || {};
+    b.style.display = 'block';
+    b.innerHTML = `<b style="color:#e0a020">SIMULATION, not a scan.</b> These are the ${fd(V.scan.date)} images; each outline is drawn at the size it would have on <b>${fd(s.date)}</b> ` +
+      `(+${s.m} month${s.m > 1 ? 's' : ''}) if <b>${esc(s.scenario_label)}</b>. ${esc((G.backtest && (G.backtest.short || G.backtest.text)) || '')} ` +
+      `<span class="sub" title="${esc((G.backtest && G.backtest.text) || '')} ${esc(G.note || '')}">how it was tested ⓘ</span> · A scenario, not a forecast. Untick Simulate for the real outlines.`; }
   async function load(date) {
-    const scan = SCANS.find(s => s.date === date) || SCANS[0]; if (!scan) return;
+    const real = SCANS.find(s => s.date === date) || SCANS[0]; if (!real) return;
+    if (V.proj.on && !(real.proj && real.proj.length)) { V.proj.on = false; V.R('projon').checked = false; }   // the simulation exists for the latest measured scan only
+    const scan = V.proj.on ? simScan(real) : real;
     if (V.scan === scan && V.nv) return;
-    V.scan = scan; V.R('scan').value = scan.date;
+    /* switching between the real outlines and a simulation of the same scan: stay where the user is looking */
+    V.keep = V.nv && V.scan && V.scan.date === scan.date ? {mm: Array.from(V.nv.frac2mm(V.nv.scene.crosshairPos)).slice(0, 3), pan: Array.from(V.nv.scene.pan2Dxyzmm || [0, 0, 0, 1]),
+      az: V.nv.scene.renderAzimuth, el: V.nv.scene.renderElevation} : null;
+    V.scan = scan; V.R('scan').value = scan.date; V.picked = null;   // picked: the lesion the user chose while this scan was loading
     /* one load at a time: NiiVue's loads overlap badly (an older scan finishing last replaced the newer one).
        Each pick waits for the load before it; picks that were overtaken while waiting are skipped. */
     const tok = V.loadTok = (V.loadTok || 0) + 1;
@@ -417,14 +717,21 @@
     const NV = await lib();
     if (!V.nv) {
       V.nv = new NV.Niivue({backColor: [0, 0, 0, 1], show3Dcrosshair: true, multiplanarShowRender: NV.SHOW_RENDER.ALWAYS,
-        crosshairColor: [1, 1, 1, 0.55], dragAndDropEnabled: false, isColorbar: false, loadingText: 'loading scan…'});
+        crosshairColor: [1, 1, 1, 0.55], dragAndDropEnabled: false, isColorbar: false, loadingText: 'loading scan…',
+        /* slices in head (world) space, not along the scan's own grid: the follow-up scans sit on the baseline grid, which is
+           tilted ~9° front-to-back, and in grid space the crosshair landed up to ~15 mm from the lesion it marks (seen 2026-11-17) */
+        isSliceMM: true});
       await V.nv.attachToCanvas(V.R('cv'));
       V.nv.onLocationChange = d => readout(d);
+      /* the bent grid lies on its own canvas over NiiVue's: redraw it after every NiiVue draw (NiiVue calls this.drawScene for every change) */
+      const draw0 = V.nv.drawScene.bind(V.nv), after = () => { try { drawGrid(); } catch (e) { console.warn('bent grid', e); } };
+      V.nv.drawScene = function () { const r = draw0.apply(null, arguments); if (r && typeof r.then === 'function') r.then(after, after); else after(); return r; };
     }
     V.R('status').textContent = 'loading scan…';
     V.doseTok = (V.doseTok || 0) + 1;   // cancel any dose still loading for the previous scan
     await V.nv.loadVolumes([{url: scan.t1c, name: 't1c_' + scan.date + '.nii.gz'}, {url: scan.labels, name: 'lesions_' + scan.date + '.nii.gz', opacity: V.R('op').value / 100}]);   // NiiVue reads the file type from the name
-    const L = scan.lesions, max = Math.max(...L.map(l => l.n));
+    V.raw = null; V.toned = false; applyTone();   // a fresh image: match its brightness (if on) before anything is drawn from it
+    const L = scan.lesions, max = Math.max(0, ...L.map(l => l.n));
     const cm = {R: [0], G: [0], B: [0], A: [0], I: [0], labels: ['']};
     for (let n = 1; n <= max; n++) { const l = L.find(x => x.n === n);
       cm.R.push(l ? l.rgb[0] : 0); cm.G.push(l ? l.rgb[1] : 0); cm.B.push(l ? l.rgb[2] : 0); cm.A.push(l ? 255 : 0); cm.I.push(n);
@@ -435,35 +742,59 @@
     await V.nv.loadMeshes(L.filter(l => l.mesh).map(l => ({url: l.mesh, name: l.id + '.obj', rgba255: [...l.rgb, 255]})));
     V.nv.setMeshThicknessOn2D(V.disp.les2d === 'shiny' ? Infinity : 0);
     applyDisplay(); V.nv.setRenderAzimuthElevation(110, 15);
-    lesionList(scan); V.R('status').textContent = '';
-    applyContrast(); applyOrient(); applyGlass(); viewsBar(); await applyDose();
-    const big = L.slice().sort((a, b) => b.enh - a.enh)[0]; if (big) jump(big);
+    lesionList(scan); simBanner(); V.R('status').textContent = '';
+    if (!L.length) V.R('read').textContent = 'Click or drag in a view to move the crosshair; scroll to change slice; right-drag to adjust brightness.';   // not the previous scan's lesion
+    applyContrast(); applyOrient(); applyGlass(); viewsBar(); await applyDose(); await applyPerf(); await applySwell(); await applyGrid();
+    const big = L.slice().sort((a, b) => b.enh - a.enh)[0]; const pk = V.picked && scan.lesions.includes(V.picked) ? V.picked : null;
+    if (pk) jump(pk, true);   // a lesion picked during loading wins (loading the images resets the crosshair, so go there again now)
+    else if (V.keep && V.scan === scan) { const k = V.keep; V.nv.scene.crosshairPos = V.nv.mm2frac(k.mm); V.nv.setRenderAzimuthElevation(k.az, k.el); V.nv.setPan2Dxyzmm(k.pan); V.nv.drawScene();
+      const here = scan.lesions.find(l => Math.hypot(l.ras[0] - k.mm[0], l.ras[1] - k.mm[1], l.ras[2] - k.mm[2]) < 12);   // same place as before: mark the lesion there, if any
+      V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', !!here && e.dataset.id === here.id));
+      if (here) say(here); else V.R('read').textContent = 'Click or drag in a view to move the crosshair; scroll to change slice; right-drag to adjust brightness.'; }
+    else if (big) jump(big, true);
+    V.keep = null;
   }
   const volOf = l => (typeof L !== 'undefined' && L.rule === 'old' && l.enh_old != null) ? l.enh_old : l.enh;   // outline rule switch
   function lesionList(scan) {   // (not 'list': that name is the viewer's own Library function)
     const box = V.R('list'); const tot = scan.lesions.reduce((a, l) => a + volOf(l), 0);
     if (!scan.lesions.length) { box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)}${scan.field ? ' · ' + scan.field + ' scanner' : ''} · ${esc(scan.note || 'no lesions outlined')}</div>`; return; }
     const fld = scan.field ? (scan.field === '3T' ? ` · <b style="color:#e0a020" title="3T shows enhancement more strongly than 1.5T; our edge rule corrects most of it, small lesions can still differ">3T scanner ▲</b>` : ' · 1.5T scanner ◆') : '';
+    if (scan.sim) {   // simulation: today's volume -> projected volume for each lesion, with what the projection cannot say
+      const s = scan.sim, f2 = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + ' cm³' : Math.round(v) + ' mm³', now = scan.lesions.reduce((a, l) => a + l.now, 0);
+      const G = (IMG_DATA.growth && IMG_DATA.growth.projection) || {}, mx = G.max_seen_mm3;
+      box.innerHTML = `<div style="padding:3px 5px;font-size:12px"><b style="color:#e0a020">Simulated ${fd(s.date)}</b> <span class="sub">(+${s.m} mo · ${esc(s.scenario_label)})</span><br>` +
+        `<span class="sub">total ${f2(now)} → <b>${f2(tot)}</b> · today → then</span></div>` +
+        scan.lesions.map(l => { const tag = l.no_rate ? 'no rate yet (first scan with it): shown unchanged' : l.below ? 'under what a scan can show' : l.beyond ? 'larger than any lesion measured so far' + (mx ? ' (' + f2(mx) + ')' : '') + ': steady doubling cannot go on this long' : '';
+          return `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · today ${l.now.toLocaleString()} mm³, ${l.now_mm} mm wide → ${l.enh.toLocaleString()} mm³` + (l.lo != null && l.hi > l.lo ? ` (${l.lo.toLocaleString()}–${l.hi.toLocaleString()} from the range of the two scans)` : '') + `, about ${l.axial} mm wide${tag ? '. ' + tag : ''}. Click to go there.">
+          <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span class="sub" style="white-space:nowrap">${f2(l.now)} →</span><span class="v" style="color:${l.enh > l.now * 1.15 ? '#e34948' : l.enh < l.now * 0.87 ? '#1baf7a' : 'var(--muted)'}"><b>${f2(l.enh)}</b> · ${l.axial} mm${l.beyond ? ' ⚠' : ''}</span></div>`; }).join('');
+      box.querySelectorAll('.nvles').forEach(e => e.onclick = () => { const l = V.scan && V.scan.lesions.find(x => x.id === e.dataset.id); if (l) jump(l); });
+      return;
+    }
     box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines${typeof L !== 'undefined' && L.rule === 'old' ? ', old 1.45× rule' : ''})${fld}</div>` +
       scan.lesions.map(l => `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ · longest axial ${l.axial} mm. Click to go there.">
         <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(volOf(l) / 1000).toFixed(2)} cm³</span></div>`).join('');
-    box.querySelectorAll('.nvles').forEach(e => e.onclick = () => jump(scan.lesions.find(l => l.id === e.dataset.id)));
+    box.querySelectorAll('.nvles').forEach(e => e.onclick = () => { const l = V.scan && V.scan.lesions.find(x => x.id === e.dataset.id); if (l) jump(l); });   // the scan shown/loading now, not the one this list was made for
   }
-  function jump(l) {
+  function jump(l, auto) {
+    if (!auto) V.picked = l;
     if (!V.nv || !l) return;
     V.nv.scene.crosshairPos = V.nv.mm2frac(l.ras);
     if (zoomOf2() > 1) centre2(zoomOf2());   // zoomed in: bring the lesion to the middle, or it can be off-screen
     V.nv.drawScene();
     V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', e.dataset.id === l.id));
-    V.R('read').innerHTML = `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ enhancing · longest axial ${l.axial} mm`;
+    say(l);
+  }
+  function say(l) {   // the line under the images for one lesion (real or simulated)
+    V.R('read').innerHTML = (V.scan && V.scan.sim ? `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · <b style="color:#e0a020">simulated</b> ${l.enh.toLocaleString()} mm³, about ${l.axial} mm wide (today ${l.now.toLocaleString()} mm³, ${l.now_mm} mm)`
+      : `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ enhancing · longest axial ${l.axial} mm`) + perfAt(l.ras) + swellAt(l.ras) + gridHere(l.ras);
   }
   function readout(d) {
     const li = V.nv ? LI() : 1, v = d && d.values && d.values[li] ? Math.round(d.values[li].value) : 0;
     const l = V.scan && V.scan.lesions.find(x => x.n === v);
     V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', !!l && e.dataset.id === l.id));
     const mm = d && d.mm ? ' · position ' + d.mm.slice(0, 3).map(x => x.toFixed(0)).join(', ') + ' mm' : '';
-    V.R('read').innerHTML = (l ? `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ enhancing${mm}`
-                             : `No lesion outline here${mm}`) + (d && d.mm ? doseAt(d.mm) : '');
+    V.R('read').innerHTML = (l ? `<b style="color:rgb(${l.rgb})">${l.id}</b> ${esc(l.name)} · ${V.scan.sim ? '<b style="color:#e0a020">simulated</b> ' : ''}${volOf(l).toLocaleString()} mm³${V.scan.sim ? '' : ' enhancing'}${mm}`
+                             : `No lesion outline here${mm}`) + (d && d.mm ? doseAt(d.mm) + perfAt(d.mm) + swellAt(d.mm) + gridHere(d.mm) : '');
   }
   function openViewer(date) {
     if (!sel.includes(IDV)) setLabSel([IDV], true);
@@ -472,11 +803,11 @@
   function drawViewer(id, body) {
     const w = viewerEl(); body.innerHTML = ''; body.appendChild(w); sizeBox(id);
     if (!SCANS.length) { V.R('status').textContent = 'No measured scans yet.'; return; }
-    if (!V.loading) V.loading = (V.scan ? load(V.scan.date) : (defaultView() ? load(defaultView().date).then(() => recall(defaultView())) : load(SCANS[0].date))).catch(err => { V.R('status').textContent = 'Could not load: ' + err; V.loading = null; });
+    if (!V.loading) V.loading = (V.scan ? load(V.scan.date) : (defaultView() ? load(defaultView().date).then(() => recall(defaultView(), true)) : load(SCANS[0].date))).catch(err => { V.R('status').textContent = 'Could not load: ' + err; V.loading = null; });
   }
 
   /* ================= Lesions over time (Timeline · Lines · Grid) ================= */
-  const L = {view: store.get('img.lesView2', 'volume'), hidden: new Set(store.get('img.lesHidden', [])),
+  const L = {view: store.get('img.lesView2', 'volume'), hidden: new Set(store.get('img.lesHidden', (store.get('img.trends', {}).hidden || []))),   // (before 2026-11-18 the volume views kept their own selection)
              showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true), field: store.get('img.lesField', 'all'), rule: store.get('img.lesRule', 'new'),
              doseNum: store.get('img.lesDoseNum', true), doseStrip: store.get('img.lesDoseStrip', true)};
   /* ---- radiation dose per lesion (ESTIMATED): unit switch shared by Lesions over time and Radiation dose by lesion ---- */
@@ -506,6 +837,16 @@
   const TREND = {up: {c: '#e34948', t: 'grew'}, down: {c: '#1baf7a', t: 'shrank'}, stable: {c: '#8a8984', t: 'stable'},
                  mixed: {c: '#eda100', t: 'mixed'}, new: {c: '#e34948', t: 'new'}, '': {c: 'transparent', t: ''}};
   const shownL = () => LS.lesions.filter(l => !L.hidden.has(l.id));
+  /* one lesion selection for every view of the panel (volume trends and doubling times included: lesion_trends_view.js gets it as `sel`) */
+  const setHiddenL = h => { L.hidden = new Set(h); store.set('img.lesHidden', [...L.hidden]); };
+  const LSEL = {get: () => [...L.hidden], set: setHiddenL};
+  /* the badge on a lesion's button in the report views: the size the latest report gave, coloured by the trend it stated */
+  const LASTREP = LS.reports.reduce((m, r) => r.date > m ? r.date : m, '');
+  const reportBadge = lid => { const r = LS.reports.filter(x => x.lesion === lid).sort((a, b) => a.date < b.date ? 1 : -1)[0]; if (!r) return null;
+    const tr = TREND[r.trend || ''].t, stale = r.date < LASTREP;
+    return {text: r.kind === 'resolved' ? 'resolved' : r.kind === 'punctate' ? 'punctate' : r.kind === 'nonenhancing' ? 'non-enhancing' : r.mm != null ? r.mm + ' mm' : (tr || 'mentioned'),
+      dir: r.trend === 'up' || r.trend === 'new' ? 'up' : r.trend === 'down' || r.kind === 'resolved' ? 'down' : 'flat', weak: !!r.ambiguous, stale,
+      tip: (stale ? 'Not mentioned in the latest report (' + fd(LASTREP) + ')\n' : '') + 'Latest report that mentions it (' + fd(r.date) + '): ' + (tr || 'no trend given') + (r.ambiguous ? '\n⚠ the report wording fits more than one of our lesions' : '')}; };
   const txFor = id => LS.treatments.filter(t => t.lesions.includes(id));
   const sizeR = mm => mm == null ? 3.5 : mm === 0 ? 3 : Math.max(3.5, Math.min(13, 2.5 + Math.sqrt(mm) * 2.4));
   const lbtn = (label, title, on, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; if (on) b.className = 'on'; b.onclick = fn; return b; };
@@ -535,7 +876,8 @@
     return {id: 'lesDose',
       beforeDatasetsDraw(c) { if (!DOSE || !L.doseStrip) return; const {ctx, chartArea: a, scales: {x, y}} = c; ctx.save(); ctx.beginPath(); ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top); ctx.clip();
         LS.lesions.forEach(l => { const r = rowOf(l.id); if (r == null) return; const yc = y.getPixelForValue(r), rows = doseRows(l.id); if (!rows.length) return;
-          rows.forEach((d, i) => { const x0 = x.getPixelForValue(pos(ms(d.end))), nx = rows[i + 1] ? x.getPixelForValue(pos(ms(rows[i + 1].end))) : a.right;
+          const xe = typeof FUT === 'number' && FUT && W.b > NOW ? Math.min(a.right, x.getPixelForValue(pos(NOW))) : a.right;   // dose so far: up to today, not into the future part of the axis
+          rows.forEach((d, i) => { const x0 = x.getPixelForValue(pos(ms(d.end))), nx = rows[i + 1] ? x.getPixelForValue(pos(ms(rows[i + 1].end))) : xe;
             ctx.fillStyle = heat(drun(d)); ctx.globalAlpha = 0.85; ctx.fillRect(x0, yc + 9, Math.max(0, nx - x0), 4); }); });
         ctx.restore(); },
       afterDatasetsDraw(c) { if (!DOSE || !L.doseNum) return; const {ctx, chartArea: a, scales: {x, y}} = c; ctx.save(); ctx.font = 'bold 10px system-ui'; ctx.textBaseline = 'middle';
@@ -598,19 +940,14 @@
     }
     if (DOSE) { const sp = document.createElement('span'); sp.className = 'sub'; sp.style.color = '#e0a020'; sp.textContent = '· dose (estimated):'; bar.append(sp);
       chk('numbers', 'img.lesDoseNum', 'doseNum'); chk('strip', 'img.lesDoseStrip', 'doseStrip'); bar.append(unitButtons(() => drawLesions(id, body))); }
-    // lesion chips: click to hide/show
-    const chips = document.createElement('div'); chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 6px';
-    LS.lesions.forEach(l => { const c = document.createElement('button'); c.type = 'button'; c.title = l.name + ' (click to hide/show)';
-      c.style.cssText = `font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid ${LCOL[l.id]};background:${L.hidden.has(l.id) ? 'transparent' : LCOL[l.id] + ''};color:${L.hidden.has(l.id) ? 'var(--muted)' : '#000'};opacity:${L.hidden.has(l.id) ? 0.6 : 1}`;
-      c.textContent = l.id; c.onclick = () => { L.hidden.has(l.id) ? L.hidden.delete(l.id) : L.hidden.add(l.id); store.set('img.lesHidden', [...L.hidden]); drawLesions(id, body); };
-      chips.append(c); });
-    const all = lbtn('All', 'Show every lesion', false, () => { L.hidden.clear(); store.set('img.lesHidden', []); drawLesions(id, body); });
+    // lesion buttons: the component every imaging panel shares (lesion_chips.js); the badge is what the latest report said
     const LY = LS.reports.reduce((m, r) => r.date > m ? r.date : m, '').slice(0, 4);   // latest report year
-    const act = lbtn('Active ' + LY, 'Only lesions mentioned in ' + LY + ' reports', false, () => {
-      const on = new Set(LS.reports.filter(r => r.date >= LY).map(r => r.lesion)); L.hidden = new Set(LS.lesions.map(l => l.id).filter(x => !on.has(x)));
-      store.set('img.lesHidden', [...L.hidden]); drawLesions(id, body); });
-    chips.append(all, act);
-    body.append(bar, chips);
+    const act = LesionChips.btn('Active ' + LY, false, () => {
+      const on = new Set(LS.reports.filter(r => r.date >= LY).map(r => r.lesion)); setHiddenL(LS.lesions.map(l => l.id).filter(x => !on.has(x))); drawLesions(id, body); },
+      'Only lesions mentioned in ' + LY + ' reports');
+    body.append(bar, LesionChips.row({ids: LS.lesions.map(l => l.id), color: i => LCOL[i], name: i => LNAME[i], hidden: [...L.hidden], badge: reportBadge,
+      onChange: h => { setHiddenL(h); drawLesions(id, body); }, extra: [act],
+      badgeNote: 'badge = the latest report: ↑ grew or new · ↓ shrank or resolved · grey = stable, mixed or no trend given · faded = not in the latest report'}));
     // mixed-scanner warning: hard to miss on purpose (the user asked to be made to notice it, 2026-11-16)
     if (L.showMeas) {
       const vis = MEAS().filter(m => !m.none && !L.hidden.has(m.lesion));
@@ -642,7 +979,7 @@
 
   function drawLesions(id, body) {
     if ((L.view === 'volume' || L.view === 'periods') && !window.LesionTrends) L.view = 'timeline';
-    if (L.view === 'volume' || L.view === 'periods') return window.LesionTrends.draw(id, body, L.view, lesViewBtns(id, body), () => drawLesions(id, body));
+    if (L.view === 'volume' || L.view === 'periods') return window.LesionTrends.draw(id, body, L.view, lesViewBtns(id, body), () => drawLesions(id, body), LSEL);
     const old = charts.get(id); if (old) { old.destroy(); charts.delete(id); }
     body.innerHTML = ''; lesToolbar(body, id);
     const H = hOf(id, PANELS[id].h0);
@@ -766,18 +1103,18 @@
   const mine = id => typeof id === 'string' && id.startsWith('img:');
   MRD.isId = id => mine(id) || o.isId(id);
   MRD.title = id => mine(id) ? PANELS[id].title : o.title(id);
-  MRD.unit = id => mine(id) ? (id === IDV && V.scan ? fd(V.scan.date) : PANELS[id].unit) : o.unit(id);
+  MRD.unit = id => mine(id) ? (id === IDV && V.scan ? fd(V.scan.date) + (V.scan.sim ? ' · simulated ' + fd(V.scan.sim.date) : '') : PANELS[id].unit) : o.unit(id);
   MRD.h0 = id => mine(id) ? PANELS[id].h0 : o.h0(id);
-  MRD.panel = (id, body) => { if (!mine(id)) return o.panel(id, body); BODIES.set(id, body); (id === IDV ? drawViewer : id === IDL ? drawLesions : id === IDD ? drawDose : drawDates)(id, body); };
+  MRD.panel = (id, body) => { if (!mine(id)) return o.panel(id, body); BODIES.set(id, body); (id === IDV ? drawViewer : id === IDL ? drawLesions : id === IDD ? drawDose : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, body); };
   MRD.refresh = id => { if (!mine(id)) return o.refresh(id); if (id === IDV || id === IDD) return;   // the slice viewer doesn't follow the time window
-    const b = BODIES.get(id); if (b && b.isConnected) (id === IDL ? drawLesions : drawDates)(id, b); };
+    const b = BODIES.get(id); if (b && b.isConnected) (id === IDL ? drawLesions : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, b); };
 
   /* Library: Imaging → Brain MRI → Scan dates / Slice viewer */
   MRD.section = (el, q) => {
     o.section(el, q);
-    if (q && !'imaging brain mri scans slice viewer lesions over time radiation dose'.includes(q)) return;
+    if (q && !'imaging brain mri scans slice viewer lesions over time radiation dose perfusion blood flow volume swelling shrinkage displacement bent grid projection future'.includes(q)) return;
     const S = section(el, 'img', 'Imaging', '1 group', true, 'sec', q);
-    const ids = [ID, IDL, IDV].concat(DOSE ? [IDD] : []), k = ids.filter(i => sel.includes(i)).length;
+    const ids = [ID, IDL, IDV].concat(DOSE ? [IDD] : [], PERF ? [IDP] : [], SWELL ? [IDW] : []), k = ids.filter(i => sel.includes(i)).length;
     const G = section(S, 'img:brain', 'Brain MRI', k ? k + '/' + ids.length : ROWS.length + ' scans', true, 'grp', q);
     // All / None / Only on the Imaging heading and the Brain MRI group (same buttons and behaviour as Vitals)
     [[S, 'grp:Imaging', 'Imaging', 'imaging panel'], [G, 'grp:img:brain', 'Brain MRI', 'brain MRI panel']].forEach(([D, key, label, what]) => { const s = D.firstChild;
@@ -796,8 +1133,10 @@
     };
     row(ID, 'Scan dates', ROWS.length + ' · ' + ROWS.filter(r => !r.images).length + ' no images', 'Every brain MRI as a point on the timeline');
     row(IDL, 'Lesions over time', LS.lesions.length + ' lesions · ' + LS.scans.length + ' reports', 'Each lesion (L01…): our measured volumes with trends and doubling times, plus what every report said (timeline, sizes, grid); treatments marked');
-    row(IDV, 'Slice viewer', SCANS.length + ' measured', 'Scroll through a scan in 3 planes + 3D with our lesion outlines (L01…)');
+    row(IDV, 'Slice viewer', SCANS.length + ' measured', 'Scroll through a scan in 3 planes + 3D with our lesion outlines (L01…); layers: radiation dose, perfusion, swelling (colour or bent grid); brightness matched across dates; simulate a future scan');
     if (DOSE) row(IDD, 'Radiation dose by lesion', 'estimated', 'Estimated radiation dose each lesion received, split by course (stacked bars)');
+    if (SWELL) row(IDW, 'Swelling by lesion', IMG_DATA.swelling.totals.length + ' scans', 'How much more (swollen) or less (shrunk) room the brain around each lesion takes than on the normal control MRI, over time (flexible-fit estimate); the map itself is a layer in the Slice viewer');
+    if (PERF) row(IDP, 'Perfusion by lesion', new Set(IMG_DATA.perfusion.rows.map(r => r.date)).size + ' scans', 'Blood volume (rCBV) and blood flow (ASL) inside each lesion, compared with normal or nearby brain; the maps themselves are a layer in the Slice viewer');
   };
 
   syncMoments(); (window.momentSyncers = window.momentSyncers || []).push(syncMoments);   // again after the shared edits load

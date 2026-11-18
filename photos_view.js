@@ -20,11 +20,21 @@
   const P = PHOTO_DATA;
   const NAME = P.title || 'Photos', TELLER = P.teller || 'the person', TELLS = TELLER + (TELLER.endsWith('s') ? "'" : "'s");   // the panel name and whose stories they are come from the data
   const IDS = 'photo:strip', IDG = 'photo:gallery';
-  const ALL = P.items.slice().sort((a, b) => a.t < b.t ? -1 : a.t > b.t ? 1 : 0);
-  const INTRO = ALL.filter(i => i.display === 'intro');
-  const TL = ALL.filter(i => i.display !== 'intro');                       // everything on the timeline
-  const nPh = ALL.filter(i => i.kind === 'photo').length, nVid = ALL.filter(i => i.kind === 'video').length;
-  const PANELS = {[IDS]: {title: NAME + ' · photos over time', unit: TL.length + ' photos and videos', h0: 150},
+  const EVERY = P.items.slice().sort((a, b) => a.t < b.t ? -1 : a.t > b.t ? 1 : 0);
+  EVERY.forEach(i => { i.level0 = i.level; });
+  /* Edits from /photos/edits.json (hidden photos, changed labels), saved by the Edit mode (this Mac and the home network only) */
+  let HID = new Set(), canEdit = false, edit = false, showHidden = false;
+  let ALL, INTRO, TL, nPh, nVid, PANELS = null;
+  function applyEdits(e) {
+    if (e) { HID = new Set(e.hidden || []); canEdit = !!e.canEdit; EVERY.forEach(i => { i.level = (e.level || {})[i.id] || i.level0; }); }
+    ALL = EVERY.filter(i => !HID.has(i.id));
+    INTRO = ALL.filter(i => i.display === 'intro');
+    TL = ALL.filter(i => i.display !== 'intro');                       // everything on the timeline
+    nPh = ALL.filter(i => i.kind === 'photo').length; nVid = ALL.filter(i => i.kind === 'video').length;
+    if (PANELS) { PANELS[IDS].unit = TL.length + ' photos and videos'; PANELS[IDG].unit = nPh + ' photos · ' + nVid + ' videos'; }
+  }
+  applyEdits();
+  PANELS = {[IDS]: {title: NAME + ' · photos over time', unit: TL.length + ' photos and videos', h0: 150},
                   [IDG]: {title: NAME + ' · gallery', unit: nPh + ' photos · ' + nVid + ' videos', h0: 620}};
   const CH = P.chapters, CHI = Object.fromEntries(CH.map((c, i) => [c.title, i]));
   const CHCOL = ['#8a8984', '#6b7280', '#c2410c', '#2a78d6', '#b45309', '#7c3aed', '#d4572a', '#1baf7a', '#a83fd0', '#2aa876', '#d42a8a'];
@@ -35,7 +45,7 @@
   const saveS = () => store.set('photo.view', S);
   let graphic = !!store.get('photo.graphic', false);
   const isG = it => it.level === 'graphic';
-  const covered = it => isG(it) && !graphic;
+  const covered = it => isG(it) && !graphic && !edit;   // the Edit mode shows everything, so labels can be judged
   const thumb = it => '/photos/thumb/' + encodeURIComponent(it.id) + '.jpg';
   const web = it => '/photos/web/' + encodeURIComponent(it.id) + '.' + (it.kind === 'video' ? it.ext : 'jpg');
   const BODIES = new Map();
@@ -134,6 +144,25 @@
 
   /* ================= gallery ================= */
   let STORIES = {}, storiesHome = false, storiesLoaded = false;
+  fetch('/photos/edits.json').then(r => r.ok ? r.json() : null).then(j => { if (j) { applyEdits(j); if (sel.some(mine)) render(); list(); } }).catch(() => {});
+  function saveEdit(body) {
+    return fetch('/photos/edits', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+      .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error || r.status)))
+      .then(j => { applyEdits(j); render(); list(); })   // render(): the panel headers show the new counts
+      .catch(err => alert('Not saved: ' + err));
+  }
+  function editBar(it) {
+    const b = document.createElement('div'); b.className = 'photoEdit';
+    const h = document.createElement('button'); h.type = 'button';
+    const hid = HID.has(it.id); h.textContent = hid ? '↩ Restore' : '✕ Hide'; h.className = hid ? 'phRestore' : 'phHide';
+    h.title = hid ? 'Put this photo back on the website' : 'Take this photo off the website (the original is not touched; it can be restored)';
+    h.onclick = e => { e.stopPropagation(); saveEdit({id: it.id, hidden: !hid}); };
+    const sl = document.createElement('select'); sl.title = 'Label'; sl.setAttribute('aria-label', 'Label');
+    ['everyday', 'medical', 'graphic'].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; o.selected = (it.level || 'everyday') === v; sl.append(o); });
+    sl.onclick = e => e.stopPropagation();
+    sl.onchange = () => saveEdit({id: it.id, level: sl.value === (it.level0 || 'everyday') ? null : sl.value});
+    b.append(h, sl); return b;
+  }
   fetch('/photos/stories.json').then(r => r.ok ? r.json() : null).then(j => { if (j) { STORIES = j.stories || {}; storiesHome = !!j.home; } storiesLoaded = true;
     const g = BODIES.get(IDG); if (g && g.body.isConnected) drawGallery(IDG, g.body); }).catch(() => { storiesLoaded = true; });
   const nStories = it => (STORIES[it.id] || []).length;
@@ -149,7 +178,10 @@
     if (['question'].includes(it.sure)) badges.push('date?');
     if (nStories(it)) badges.push('💬 ' + nStories(it));
     if (badges.length) { const b = document.createElement('span'); b.className = 'photoBadge'; b.textContent = badges.join(' · '); d.append(b); }
-    d.onclick = () => openBox(list, k); return d;
+    d.onclick = () => openBox(list, k);
+    if (!edit) return d;
+    const w = document.createElement('div'); w.className = 'photoEditWrap' + (HID.has(it.id) ? ' isHidden' : '') + (isG(it) ? ' isGraphic' : '');
+    w.append(d, editBar(it)); return w;
   }
 
   function drawGallery(id, body) {
@@ -162,6 +194,12 @@
       b.setAttribute('aria-pressed', !!S[key]); b.onclick = () => { S[key] = !S[key]; saveS(); drawGallery(id, body); }; return b; };
     const size = document.createElement('input'); size.type = 'range'; size.min = 80; size.max = 260; size.value = S.size; size.title = 'Picture size'; size.setAttribute('aria-label', 'Picture size');
     size.oninput = () => { S.size = +size.value; saveS(); body.querySelectorAll('.photoCard').forEach(c => { const b = c.classList.contains('big') ? 1.6 : 1; c.style.width = c.style.height = S.size * b + 'px'; }); };
+    if (canEdit) { const eb = document.createElement('button'); eb.type = 'button'; eb.className = 'photoTog' + (edit ? ' on' : '');
+      eb.textContent = edit ? '✓ Done editing' : '✎ Edit photos'; eb.title = 'Hide photos from the website, or change their label (this Mac and the home network only)';
+      eb.onclick = () => { edit = !edit; if (!edit) showHidden = false; redrawAll(); }; bar.append(eb);
+      if (edit) { const hb = document.createElement('button'); hb.type = 'button'; hb.className = 'photoTog' + (showHidden ? ' on' : '');
+        hb.textContent = 'Hidden (' + HID.size + ')'; hb.title = 'Show only the photos taken off the website, to restore one';
+        hb.onclick = () => { showHidden = !showHidden; drawGallery(id, body); }; bar.append(hb); } }
     bar.append(graphicBtn(), sel_, tog('Only the time window', 'win', 'Show only photos inside the time window of the charts'),
       tog('💬 With stories', 'stories', 'Show only photos ' + TELLER + ' has told a story about'), size);
     body.append(bar);
@@ -170,8 +208,12 @@
       'Some photos show the physical side of treatment (surgery wounds, skin changes, nudity). They are covered until you press "Show graphic photos".';
     body.append(note);
     const box = document.createElement('div'); box.className = 'photoScroll'; box.style.height = hOf(id, PANELS[id].h0) + 'px'; body.append(box);
-    let its = TL.filter(i => (!S.chapter || i.chapter === S.chapter) && (!S.win || (tOf(i) >= W.a && tOf(i) <= W.b)) && (!S.stories || nStories(i)));
-    if (!S.chapter && !S.win && !S.stories && INTRO.length) {
+    const POOL = showHidden ? EVERY.filter(i => HID.has(i.id)) : TL;
+    let its = POOL.filter(i => (!S.chapter || i.chapter === S.chapter) && (!S.win || (tOf(i) >= W.a && tOf(i) <= W.b)) && (!S.stories || nStories(i)));
+    if (edit) { const n = document.createElement('div'); n.className = 'photoEditNote';
+      n.textContent = showHidden ? 'Photos taken off the website. "Restore" puts one back.' :
+        'Editing: every photo is shown, graphic ones too. "Hide" takes a photo off the website for everyone; the original is never touched. Changes are saved at once.'; body.insertBefore(n, box); }
+    if (!S.chapter && !S.win && !S.stories && !showHidden && INTRO.length) {
       const sec = document.createElement('section'); sec.className = 'photoSec';
       sec.innerHTML = '<h3>Before &amp; after</h3>';
       INTRO.forEach((it, k) => { const row = document.createElement('div'); row.className = 'photoIntro'; row.append(card(it, INTRO, k, true));
@@ -265,6 +307,10 @@
 .photoCard img{width:100%;height:100%;object-fit:cover;display:block}.photoCard.cov{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;
  background:repeating-linear-gradient(45deg,var(--line),var(--line) 8px,var(--card) 8px,var(--card) 16px)}
 .photoCard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.photoEditWrap{display:flex;flex-direction:column;gap:3px}.photoEditWrap.isGraphic .photoCard{outline:2px solid #b45309}
+.photoEditWrap.isHidden .photoCard{opacity:.45}.photoEdit{display:flex;gap:3px}.photoEdit button,.photoEdit select{font:inherit;font-size:11px;padding:1px 4px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.photoEdit button.phHide{color:#c2410c}.photoEdit button.phRestore{color:#1baf7a}.photoEdit select{flex:1;min-width:0}
+.photoEditNote{font-size:12px;margin:0 0 6px;padding:5px 8px;border-radius:6px;background:rgba(180,83,9,.12);color:var(--ink)}
 .photoBadge{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.72);color:#fff;font-size:10px;padding:1px 5px;border-radius:8px}
 .photoOv{position:fixed;inset:0;z-index:1000;background:rgba(10,10,10,.92);display:grid;grid-template-columns:1fr 340px;grid-template-rows:1fr auto;gap:0}
 .photoStage{display:flex;align-items:center;justify-content:center;min-height:0;padding:16px}.photoStage img,.photoStage video{max-width:100%;max-height:calc(100vh - 80px);object-fit:contain;border-radius:4px}

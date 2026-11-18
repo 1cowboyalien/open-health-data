@@ -14,6 +14,9 @@ Usage:
   (website copies made by local/photos/build_web.py, with location and camera data removed). Videos answer byte ranges
   (Safari needs them to play). GET /photos/stories.json = every story in local/photos/stories/<id>.json; a story with
   "family_only": true is left out unless the visitor is this Mac or the home network.
+  GET /photos/edits.json = {hidden: [ids], level: {id: level}, canEdit}; POST /photos/edits {id, hidden?, level?} changes it
+  (this Mac and the home network only; local/photos/photo_edits.json, previous copy kept as photo_edits.prev.json).
+  A hidden photo is shown by the Edit mode at home but is 404 for everyone else; originals are never touched.
 - GET  /api/edits  -> {"rev": n, "edits": {...}}  from local/med_edits.json (the same file the
   build scripts read, so moments, medication changes and saved ranges survive reloads/rebuilds).
 - POST /api/edits  {"rev": n, "edits": {...}} saves them. If someone saved in between (rev differs)
@@ -59,6 +62,17 @@ EDITS = os.path.join(LOCAL, "med_edits.json")
 HIST = os.path.join(LOCAL, "edits_history")
 IMG_TYPES = (".nii.gz", ".obj")
 KEEP = 300
+PHOTO_EDITS = os.path.join(LOCAL, "photos", "photo_edits.json")
+
+
+def read_photo_edits():
+    """{hidden: {id: {at}}, level: {id: level}} from local/photos/photo_edits.json (empty if missing)."""
+    try:
+        e = json.load(open(PHOTO_EDITS))
+        return {"hidden": dict(e.get("hidden") or {}), "level": dict(e.get("level") or {})}
+    except (OSError, ValueError):
+        return {"hidden": {}, "level": {}}
+
 MAXBODY = 5_000_000
 lock = threading.Lock()
 USAGE = None   # usage.Usage, set in __main__
@@ -207,6 +221,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def photos(self, rel):
         base = os.path.realpath(os.path.join(LOCAL, "photos"))
+        if rel == "edits.json":
+            e = read_photo_edits()
+            return self.send(200, {"hidden": sorted(e["hidden"]), "level": e["level"], "canEdit": usage.is_local_request(self)})
         if rel == "stories.json":
             home = usage.is_local_request(self)
             out = {}
@@ -223,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
                     out[f[:-5]] = keep
             return self.send(200, {"stories": out, "home": home})
         sub, _, name = rel.partition("/")
+        if os.path.splitext(name)[0] in read_photo_edits()["hidden"] and not usage.is_local_request(self):
+            return self.send(404, {"error": "not found"})   # hidden from the website: only the home Edit mode still sees it
         f = os.path.realpath(os.path.join(base, rel))
         ok = (sub in ("thumb", "web") and "/" not in name and f.startswith(os.path.join(base, sub) + os.sep)
               and os.path.isfile(f))
@@ -340,6 +359,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": USAGE.events(self, self._vid, body)})
         if self.path.split("?")[0] == "/api/start-view":
             return self.save_start()
+        if self.path.split("?")[0] == "/photos/edits":
+            return self.save_photo_edit()
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -358,6 +379,42 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(409, {"rev": rev, "edits": cur})
             write_edits(rev + 1, edits)
         self.send(200, {"rev": rev + 1})
+
+    def save_photo_edit(self):
+        """Hide/restore one photo or change its label (this Mac and the home network only)."""
+        if not usage.is_local_request(self):
+            return self.send(403, {"error": "only from this Mac or the home network"})
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > 4000:
+            return self.send(413, {"error": "empty or too large"})
+        try:
+            b = json.loads(self.rfile.read(n))
+            pid = str(b["id"])
+            if not re.fullmatch(r"[A-Za-z0-9_\-]{1,120}", pid) or not os.path.exists(os.path.join(LOCAL, "photos", "thumb", pid + ".jpg")):
+                raise ValueError("unknown photo")
+            if "level" in b and b["level"] not in ("everyday", "medical", "graphic", None):
+                raise ValueError("bad level")
+        except Exception as e:  # noqa: BLE001
+            return self.send(400, {"error": str(e)})
+        with lock:
+            e = read_photo_edits()
+            if "hidden" in b:
+                if b["hidden"]:
+                    e["hidden"][pid] = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+                else:
+                    e["hidden"].pop(pid, None)
+            if "level" in b:
+                if b["level"]:
+                    e["level"][pid] = b["level"]
+                else:
+                    e["level"].pop(pid, None)
+            if os.path.exists(PHOTO_EDITS):
+                shutil.copy2(PHOTO_EDITS, PHOTO_EDITS.replace(".json", ".prev.json"))
+            tmp = PHOTO_EDITS + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(e, f, indent=1)
+            os.replace(tmp, PHOTO_EDITS)
+        self.send(200, {"hidden": sorted(e["hidden"]), "level": e["level"], "canEdit": True})
 
     def save_start(self):
         """Replace the start view (this Mac and the home network only)."""

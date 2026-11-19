@@ -215,7 +215,7 @@ function buildTop() {
   const row = document.createElement('div'); row.id = 'askTop';
   row.innerHTML = `<input id="askTopIn" placeholder="Ask anything about the records…"><button class="askBtn" id="askTopGo">Ask</button>`;
   const wrap = document.createElement('div'); wrap.id = 'askTopWrap';
-  wrap.innerHTML = `<div class="bar"><span>Conversation · asking as <a href="#" class="askWho" style="color:inherit" title="Change your name">${esc(asker() || 'you')}</a> · answers come from the files · <a href="${API}/review" target="_blank" style="color:inherit">review all ↗</a></span>
+  wrap.innerHTML = `<div class="bar"><span>Conversation · asking as <a href="#" class="askWho" style="color:inherit" title="Change your name">${esc(asker() || 'you')}</a> · answers come from the files · <a href="${API}/sandbox" target="_blank" style="color:inherit" title="Bring a paper or data to explore beside the records, kept apart from them">sandbox ↗</a> · <a href="${API}/review" target="_blank" style="color:inherit">review all ↗</a></span>
     <span><button class="askGhost" id="askTopNew">New</button> <button class="askGhost" id="askTopHide">▴ Hide</button></span></div><div class="askLog"></div>`;
   nav.insertBefore(wrap, nav.firstChild); nav.insertBefore(row, wrap);
   const input = row.querySelector('input'), go = row.querySelector('button');

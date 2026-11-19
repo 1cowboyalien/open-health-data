@@ -115,7 +115,10 @@ def start_tag(can_save):
     return (f"<script>window.START_VIEW={data};window.START_VIEW_CAN_SAVE={'true' if can_save else 'false'};"
             + START_SEED + "</script>").encode()
 ASK_PATHS = ("/", "/review", "/file", "/api/quick-asks", "/api/chat", "/api/conversations",
-             "/api/conversation", "/api/review", "/api/tasks", "/api/person")
+             "/api/conversation", "/api/review", "/api/tasks", "/api/person",
+             "/sandbox", "/api/sandbox/list", "/api/sandbox/item", "/api/sandbox/raw",
+             "/api/sandbox/new", "/api/sandbox/file")
+ASK_UPLOAD_MAX = 50_000_000  # /ask/api/sandbox/file: one uploaded file (the chat server checks the real limits)
 
 
 def read_edits():
@@ -193,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         if sub.split("?")[0] not in ASK_PATHS:
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
-        if n > MAXBODY:
+        if n > (ASK_UPLOAD_MAX if sub.split("?")[0] == "/api/sandbox/file" else MAXBODY):
             return self.send(413, {"error": "too large"})
         body = self.rfile.read(n) if n else None
         headers = {"X-Ask-Remote": self.client_address[0]}
@@ -207,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(502, {"error": "the chat server isn't running"})
         self.send_response(r.status)
         self._bytes = 0
-        for k in ("Content-Type", "Content-Length"):
+        for k in ("Content-Type", "Content-Length", "X-Content-Type-Options", "Content-Security-Policy"):
             if r.getheader(k):
                 self.send_header(k, r.getheader(k))
         self.send_header("Cache-Control", "no-store")

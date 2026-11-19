@@ -13,7 +13,7 @@
    all of them at once; until it is on, a graphic photo is a covered box and its picture is never requested. Kept per browser
    (store 'photo.graphic').
    Stories: fetched from /photos/stories.json = {stories: {<id>: [{title?, caption?, told?, family_only?, turns: [{who, text, audio?}]} | {text}]}};
-   Stories told on the story page (story_view.html) carry a caption in her words and the conversation; at home each of her answers
+   Stories told on the story page (story_view.html) name their storyteller (teller: Erica, or family and friends) and carry a caption in her words and the conversation; at home each of her answers
    can be played (audio = <session>/takes/NNN.wav, served by /story/audio/, home network only); links and more photos added in the
    story editor are listed under it. labs.html#date=YYYY-MM-DD opens the charts around that date (links saved with a story).
    the server leaves out family-only stories for visitors outside the home network. The words are shown as they were said.
@@ -211,7 +211,7 @@
         hb.textContent = 'Hidden (' + HID.size + ')'; hb.title = 'Show only the photos taken off the website, to restore one';
         hb.onclick = () => { showHidden = !showHidden; galScroll = 0; lastDone = null; drawGallery(id, body); }; bar.append(hb); } }
     bar.append(graphicBtn(), sel_, tog('Only the time window', 'win', 'Show only photos inside the time window of the charts'),
-      tog('💬 With stories', 'stories', 'Show only photos ' + TELLER + ' has told a story about'), size);
+      tog('💬 With stories', 'stories', 'Show only photos with a story (from ' + TELLER + ' or anyone else)'), size);
     body.append(bar);
     const note = document.createElement('div'); note.className = 'sub photoNote';
     note.textContent = graphic ? 'Graphic photos are shown. Some show surgery wounds, skin changes and nudity.' :
@@ -276,11 +276,12 @@
   function storyHtml(it) {
     const L = STORIES[it.id] || [];
     if (!L.length) return '<div class="sub">No stories yet. When ' + esc(TELLER) + ' tells the story of this photo, the words will appear here, as they were said.</div>';
-    return L.map(s => '<div class="photoStory">' + (s.title ? '<b>' + esc(s.title) + '</b>' : '') + (s.told ? ' <span class="sub">told ' + esc(s.told) + '</span>' : '') +
+    return L.map(s => '<div class="photoStory">' + (s.title ? '<b>' + esc(s.title) + '</b>' : '') +
+      ' <span class="sub">' + esc(s.teller || TELLER) + (s.told ? ' told it ' + esc(s.told) : '') + '</span>' +
       (s.family_only ? ' <span class="sub">· family only</span>' : '') +
       (s.caption ? '<div class="cap">' + esc(s.caption) + '</div>' : '') +
       (s.caption && s.turns ? '<details><summary class="sub">The conversation (' + s.turns.length + ')</summary>' : '') +
-      (s.turns || [{who: TELLER, text: s.text}]).map(x => '<div class="turn ' + (x.who === TELLER ? 'teller' : 'other') + '"><span class="who">' + esc(x.who || '') +
+      (s.turns || [{who: s.teller || TELLER, text: s.text}]).map(x => '<div class="turn ' + (x.who !== 'Claude' ? 'teller' : 'other') + '"><span class="who">' + esc(x.who || '') +
         (x.audio && storiesHome ? ' <audio controls preload="none" src="/story/audio/' + esc(x.audio) + '"></audio>' : '') + '</span>' + esc(x.text || '') + '</div>').join('') +
       (s.caption && s.turns ? '</details>' : '') +
       ((s.photos || []).filter(id => ALL.some(x => x.id === id)).length ? '<div class="sub" style="margin-top:6px">More photos in this story</div><div class="moreph">' +
@@ -308,7 +309,7 @@
         (it.src && it.sure !== 'exact' ? '<div class="sub">Date from: ' + esc(it.src) + '</div>' : '') +
         (it.panels ? it.panels.map(p => '<div class="sub"><b>' + esc(p.pos) + ':</b> ' + esc(p.taken || 'date unknown') + (p.note ? ' · ' + esc(p.note) : '') + '</div>').join('') : '') +
         (hp.length ? '<h4>What was happening</h4>' + hp.map(h => '<div class="sub">' + (h.stay ? '' : esc(h.date) + ' (' + (h.d === 0 ? 'same day' : Math.abs(h.d) + ' day' + (Math.abs(h.d) > 1 ? 's ' : ' ') + (h.d > 0 ? 'later' : 'earlier')) + '): ') + esc(h.text) + '</div>').join('') : '') +
-        '<h4>' + esc(TELLS) + ' stories</h4>' + storyHtml(it);
+        '<h4>Stories</h4>' + storyHtml(it);
       if (it.display !== 'intro') { const go = document.createElement('button'); go.type = 'button'; go.className = 'photoTog'; go.textContent = 'Show this date on the charts';
         go.title = 'Move every chart to a window around this date'; go.onclick = () => { const t = tOf(it); setWin(Math.max(X0, t - 45 * DAY), Math.min(X1, t + 45 * DAY)); close(); }; side.append(go); }
       const nav = document.createElement('div'); nav.className = 'photoNav';
@@ -390,7 +391,7 @@
       const n = document.createElement('span'); n.className = 'n'; n.textContent = count;
       d.append(cb, nm, n); d.onclick = onName || (() => { cb.checked = !cb.checked; onTick(cb.checked); }); return d; };
     SEC.append(row('Photos over time', TL.length, 'Small pictures on the time axis, lined up with every chart', sel.includes(IDS), v => setLabSel([IDS], v)));
-    SEC.append(row('Gallery', ALL.length, 'Every photo and video by chapter and month; click one to open it, with its date and ' + TELLS + ' stories', sel.includes(IDG), v => setLabSel([IDG], v)));
+    SEC.append(row('Gallery', ALL.length, 'Every photo and video by chapter and month; click one to open it, with its date and the stories told about it', sel.includes(IDG), v => setLabSel([IDG], v)));
     const G = section(SEC, 'photo:ch', 'Chapters', CH.filter(c => ALL.some(i => i.chapter === c.title)).length, false, 'grp', q);
     CH.filter(c => ALL.some(i => i.chapter === c.title)).forEach(c => { const n = ALL.filter(i => i.chapter === c.title).length;
       const open = () => { S.chapter = c.title; S.win = false; saveS(); if (!sel.includes(IDG)) setLabSel([IDG], true); else redrawAll(); };

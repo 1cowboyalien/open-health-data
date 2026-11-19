@@ -407,11 +407,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"sessions": story.sessions(), "settings": story.settings(), "voice": story.voice_name()})
             if path == "/story/api/voice":   # a fixed line in Claude's voice, to try the speakers
                 line = story.LINES.get(q.get("line", ["hello"])[0], story.LINES["hello"])
+                who = q.get("name", [""])[0]
+                if line == story.LINES["hello"] and who in [t["name"] for t in story.tellers()]:
+                    line = "Hi %s. I'm ready when you are." % who
                 return self.send(200, {"audio": "cache/" + story.cached_line(line), "text": line})
             if path == "/story/api/health":   # the ready check, home Mac side
                 h = story.health()
                 h["onHomeMac"] = self.client_address[0] in ("127.0.0.1", "::1") or self.client_address[0] == self.connection.getsockname()[0]
                 return self.send(200, h)
+            if path == "/story/api/tellers":
+                return self.send(200, {"tellers": story.tellers()})
             if path == "/story/api/stories":   # every saved story, and drafts waiting in sessions
                 return self.send(200, story.stories_list())
             if path == "/story/api/story":   # one story to edit: ?photo=&index= (saved) or ?photo=&session= (a draft)
@@ -455,7 +460,7 @@ class Handler(BaseHTTPRequestHandler):
             b = json.loads(data or b"{}")
             if sub == "open-setting":
                 return self.send(200, story.open_setting(json.loads(data or b"{}")))
-            fn = {"story-save": story.story_save, "story-delete": story.story_delete,
+            fn = {"tellers": story.teller_save, "story-save": story.story_save, "story-delete": story.story_delete,
                   "sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
                   "drafts": story.drafts, "approve": story.approve}.get(sub)
             if not fn:

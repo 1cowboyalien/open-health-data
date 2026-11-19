@@ -22,10 +22,17 @@ textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:calc(var(
 #photo img,#photo video{max-width:100%;max-height:56vh;border-radius:8px;display:block}
 .strip{display:flex;gap:6px;overflow-x:auto;padding:8px 0}.strip .t{position:relative;flex:0 0 auto;cursor:pointer;border-radius:6px;border:2px solid transparent}
 .strip .t img{height:58px;display:block;border-radius:4px}.strip .t.cur{border-color:var(--acc)}.strip .t .ck{position:absolute;right:2px;top:0;color:#fff;text-shadow:0 0 3px #000;font-size:calc(var(--t) * 0.875)}
-.tl{position:relative;height:46px;margin:6px 4px 0}.tl .ax{position:absolute;top:10px;left:0;right:0;height:3px;background:var(--line);border-radius:2px}
-.tl .m{position:absolute;top:2px;height:19px;min-width:3px;border-radius:2px;background:var(--sub);opacity:.75}
-.tl .m.stay{background:var(--red);opacity:.45}.tl .m.radiation{background:#b07d2f;opacity:.45}.tl .me{position:absolute;top:-2px;width:3px;height:27px;background:var(--acc)}
-.tl .lb{position:absolute;top:26px;font-size:calc(var(--t) * 0.75);color:var(--sub);white-space:nowrap;transform:translateX(-50%)}
+.tl{position:relative;height:74px;margin:6px 4px 0}.tl .ax{position:absolute;top:24px;left:0;right:0;height:3px;background:var(--line);border-radius:2px}
+.tl .m{position:absolute;top:16px;height:19px;min-width:3px;border-radius:2px;background:var(--sub);opacity:.75}
+.tl .m.stay{background:var(--red);opacity:.45}.tl .m.radiation{background:#b07d2f;opacity:.45}
+.tl .me{position:absolute;top:12px;width:3px;height:27px;background:var(--acc);transform:translateX(-1px)}
+.tl .med{position:absolute;top:-2px;font-size:calc(var(--t) * 0.8);color:var(--acc);font-weight:600;white-space:nowrap;transform:translateX(-50%)}
+.tl .ph{position:absolute;top:30px;width:2px;height:6px;background:var(--acc);opacity:.45}
+.tl .tk{position:absolute;top:27px;width:1px;height:7px;background:var(--sub);opacity:.6}
+.tl .tkl{position:absolute;top:36px;font-size:calc(var(--t) * 0.7);color:var(--sub);white-space:nowrap;transform:translateX(-50%)}
+.tl .lb{position:absolute;top:54px;font-size:calc(var(--t) * 0.75);color:var(--ink);white-space:nowrap;transform:translateX(-50%)}
+.tlr{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(var(--t) * 0.78);color:var(--sub);margin-top:2px}
+.tlr button{font-size:calc(var(--t) * 0.75);padding:1px 7px}.tlr button.on{background:var(--accbg);color:var(--acc);border-color:var(--acc)}
 .q{margin-top:0;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
 .q .who{font-size:calc(var(--t) * 0.75);color:var(--sub);margin-bottom:2px}.q .say{font-family:var(--voice);font-size:calc(var(--t) * 1.312);line-height:1.45}
 .heard{margin-bottom:10px;padding:10px 14px;border-radius:10px;background:#0000000a;font-size:calc(var(--t) * 0.9375)}
@@ -681,7 +688,7 @@ function drawMain() {
   <div class="stage"><div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
-  ${id ? timelineHtml(it.t) : ''}</div>
+  <div id="tlbox">${id ? timelineHtml(it.t) : ''}</div></div>
   <div class="talk"><div id="prompt"></div></div></div>
   <div id="takesbox"></div>`;
   $('#rectop').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); $('#rectop').textContent = REC.open ? 'Hide records' : 'Show records'; };
@@ -699,19 +706,39 @@ function drawMain() {
     m.onchange = () => switchMic(m.value); });
   drawPrompt();
 }
-function timelineHtml(t) {
+const TL_SPANS = [[14, '±2 weeks'], [45, '±6 weeks'], [91, '±3 months'], [182, '±6 months'], [365, '±1 year']];
+function timelineHtml(t) {   // the photo's place in time: dates, month ticks, the medical timeline and other photos around it
   if (!t) return '';
-  const c = new Date(day(t) + 'T12:00').getTime(), span = 45 * 864e5, a = c - span, b = c + span, x = v => ((v - a) / (b - a) * 100);
-  const ms = s => new Date(s.slice(0, 10) + 'T12:00').getTime();
+  const span = LS.get('tlspan', 45), ms = s => new Date(s.slice(0, 10) + 'T12:00').getTime();
+  const c = ms(t), a = c - span * 864e5, b = c + span * 864e5, x = v => ((v - a) / (b - a) * 100);
+  const dfmt = (v, o) => new Date(v).toLocaleDateString(undefined, o || {month: 'short', day: 'numeric', year: 'numeric'});
   const near = D.timeline.filter(e => e.from && ms(e.to || e.from) >= a && ms(e.from) <= b);
+  // ticks: weeks for short ranges, months otherwise; first tick and every January show the year
+  const ticks = [];
+  if (span <= 14) { for (let v = a; v <= b; v += 7 * 864e5) ticks.push([v, dfmt(v, {month: 'short', day: 'numeric'})]); }
+  else { const d = new Date(a); d.setDate(1); d.setMonth(d.getMonth() + 1); let first = true;
+    for (; d.getTime() <= b; d.setMonth(d.getMonth() + (span > 200 ? 2 : 1))) { ticks.push([d.getTime(), d.toLocaleDateString(undefined, first || d.getMonth() === 0 ? {month: 'short', year: 'numeric'} : {month: 'short'})]); first = false; } }
+  const shown = ticks.filter(([v]) => Math.abs(x(v) - 50) > 7 && x(v) > 3 && x(v) < 97);
   const labels = [];
   near.filter(e => e.kind !== 'stay').sort((p, q) => Math.abs(ms(p.from) - c) - Math.abs(ms(q.from) - c))
-    .forEach(e => { const p = x(ms(e.from)); if (labels.length < 3 && Math.abs(p - 50) > 8 && labels.every(l => Math.abs(x(ms(l.from)) - p) > 26)) labels.push(e); });
-  return `<div class="tl"><div class="ax"></div>${near.map(e => { const l = Math.max(0, x(ms(e.from))), r = Math.min(100, x(ms(e.to || e.from))); return `<div class="m ${e.kind}" title="${esc(e.from + ' ' + e.text)}" style="left:${l}%;width:calc(${Math.max(0, r - l)}% + 3px)"></div>`; }).join('')}
-    <div class="me" style="left:50%" title="this photo"></div>
-    ${labels.map(e => `<div class="lb" style="left:${Math.min(88, Math.max(12, x(ms(e.from))))}%">${esc(new Date(ms(e.from)).toLocaleDateString(undefined, {month: 'numeric', day: 'numeric'}) + ' ' + e.text.slice(0, 34))}</div>`).join('')}
-    </div><div class="sub" style="text-align:center;margin-top:2px">${near.length ? 'Six weeks either side of this photo: hospital stays in red, procedures in grey' : 'Nothing in the medical timeline within six weeks of this photo'}</div>`;
+    .forEach(e => { const p = x(ms(e.from)); if (labels.length < 3 && labels.every(l => Math.abs(x(ms(l.from)) - p) > 26)) labels.push(e); });
+  const photos = D.items.filter(i => i.t && ms(i.t) >= a && ms(i.t) <= b && i.id !== cur());
+  return `<div class="tl">
+    <div class="med" style="left:${Math.min(85, Math.max(15, 50))}%">${esc(dfmt(c))}</div>
+    <div class="ax"></div>${near.map(e => { const l = Math.max(0, x(ms(e.from))), r = Math.min(100, x(ms(e.to || e.from))); return `<div class="m ${e.kind}" title="${esc(dfmt(ms(e.from)) + (e.to && e.to !== e.from ? ' to ' + dfmt(ms(e.to)) : '') + ': ' + e.text)}" style="left:${l}%;width:calc(${Math.max(0, r - l)}% + 3px)"></div>`; }).join('')}
+    ${photos.map(i => `<div class="ph" style="left:${x(ms(i.t))}%" title="photo, ${esc(dfmt(ms(i.t)))}"></div>`).join('')}
+    <div class="me" style="left:50%" title="this photo, ${esc(dfmt(c))}"></div>
+    ${ticks.map(([v]) => `<div class="tk" style="left:${x(v)}%"></div>`).join('')}
+    ${shown.map(([v, l]) => `<div class="tkl" style="left:${x(v)}%">${esc(l)}</div>`).join('')}
+    ${labels.map(e => `<div class="lb" style="left:${Math.min(85, Math.max(15, x(ms(e.from))))}%">${esc(dfmt(ms(e.from), {month: 'numeric', day: 'numeric'}) + ' ' + e.text.slice(0, 34))}</div>`).join('')}
+  </div>
+  <div class="tlr"><span>${esc(dfmt(a))}</span>
+    <span>${TL_SPANS.map(([d, l]) => `<button data-span="${d}" class="${d === span ? 'on' : ''}">${l}</button>`).join(' ')}</span>
+    <span>${esc(dfmt(b))}</span></div>
+  <div class="sub" style="text-align:center;font-size:calc(var(--t) * 0.75)">${near.length ? 'Red = hospital stays · grey = procedures · brown = radiation · blue ticks = other photos' : 'Nothing in the medical timeline in this range · blue ticks = other photos'}</div>`;
 }
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-span]'); if (!b || screen !== 'main') return;
+  LS.set('tlspan', +b.dataset.span); const box = document.querySelector('#tlbox'); if (box) box.innerHTML = timelineHtml(ITEM(cur()).t); });
 const liveTakes = p => (S ? S.takes : []).filter(t => !t.deleted && (t.photo === p || (!t.photo && t.led_to === p)));
 function takesHtml() {
   const p = cur() || '', tk = liveTakes(p);

@@ -619,4 +619,124 @@ def audio_file(rel):
     else:
         m = re.fullmatch(r"cache/([a-z0-9\-]{1,100}\.m4a)", rel)
         f = os.path.join(BASE, "voice_cache", m.group(1)) if m else None
+        if rel.split("?")[0] == "check/practice.m4a":
+            f = os.path.join(BASE, "check", "practice.m4a")
     return f if f and os.path.isfile(f) else None
+
+
+# ---------------- ready check: is everything on the home Mac set up? ----------------
+FIX_DICTATION = "On the home Mac: System Settings > Keyboard > Dictation > turn it on (choose English). Then run the check again."
+FIX_SPEECH = "On the home Mac: System Settings > Privacy & Security > Speech Recognition > turn on Story Transcribe."
+
+
+def check_dir():
+    d = os.path.join(BASE, "check")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def sample_wav():
+    """A short spoken sentence (the Mac's own voice), to test speech to text without anyone talking."""
+    f = os.path.join(check_dir(), "sample.wav")
+    if not os.path.exists(f):
+        aiff = f[:-4] + ".aiff"
+        subprocess.run(["say", "-o", aiff, "Testing the story page, one two three."], check=True, timeout=60)
+        subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@48000", "-c", "1", aiff, f], check=True, timeout=60)
+        os.remove(aiff)
+    return f
+
+
+def health():
+    """Checks of the home Mac's side, each {key, label, ok (True/False/None = a warning), detail, fix}."""
+    out = []
+    add = lambda key, label, ok, detail="", fix="": out.append({"key": key, "label": label, "ok": ok, "detail": detail, "fix": fix})
+    # the drive with the photos and recordings
+    try:
+        os.makedirs(SESS, exist_ok=True)
+        probe = os.path.join(SESS, ".write-test")
+        open(probe, "w").write("ok"); os.remove(probe)
+        free = __import__("shutil").disk_usage(SESS).free / 1e9
+        add("drive", "Drive for recordings", free > 2, "%.0f GB free on the drive that keeps the recordings" % free,
+            "" if free > 2 else "Free some space on the drive (an hour of recording needs about 1 GB).")
+    except OSError as e:
+        add("drive", "Drive for recordings", False, "can't write recordings: %s" % e, "Check that the external drive (ssd70) is plugged in and mounted.")
+    n = len(photo_data()["items"])
+    add("photos", "Photos", n > 0, "%d photos and videos ready" % n, "" if n else "The photo copies are missing: run local/photos/build_web.py.")
+    # speech to text, end to end, on a sample sentence
+    t0 = time.time()
+    try:
+        r = transcribe(sample_wav())
+    except (OSError, subprocess.SubprocessError) as e:
+        r = {"error": str(e)}
+    secs = round(time.time() - t0, 1)
+    if r.get("error"):
+        e = r["error"]
+        fix = FIX_DICTATION if "Dictation" in e else FIX_SPEECH if "permission" in e.lower() else "See the error; rebuild with story/build_transcribe.sh if the app is missing."
+        add("speech", "Speech to text (on the home Mac)", False, e, fix)
+    else:
+        heard = (r.get("text") or "").strip()
+        ok = "test" in heard.lower()
+        add("speech", "Speech to text (on the home Mac)", ok, 'heard "%s" in %s s' % (heard, secs),
+            "" if ok else "It ran but didn't hear the test sentence; try again, and check Dictation's language is English.")
+    # Claude's voice
+    try:
+        cached_line(LINES["hello"])
+        v = voice_name() or "the Mac's default voice"
+        premium = "(Premium)" in v or "(Enhanced)" in v
+        add("voice", "Claude's voice", True if premium else None, "speaking with %s" % v,
+            "" if premium else "Works. For a more natural voice, download a Premium voice on the home Mac (System Settings > Accessibility > Spoken Content > System voice > Manage Voices) and put its name in local/story/settings.json.")
+    except (OSError, subprocess.SubprocessError) as e:
+        add("voice", "Claude's voice", False, str(e), "The Mac's 'say' command failed; restart the Mac if this persists.")
+    # Claude itself, through the chat server
+    t0 = time.time()
+    try:
+        urllib.request.urlopen(chat_server() + "/api/quick-asks", timeout=5).read()
+        add("claude", "Claude (the chat server)", True, "running (answered in %.1f s)" % (time.time() - t0))
+    except OSError as e:
+        add("claude", "Claude (the chat server)", False, "not answering: %s" % e,
+            "Start it on the home Mac: cd /Volumes/ssd70/Cancer && env -u CLAUDECODE python3 -I chat/serve_chat.py")
+    # the secure address's certificate
+    cert = os.path.join(LOCAL, "tls", "cert.pem")
+    if os.path.exists(cert):
+        try:
+            end = subprocess.run(["openssl", "x509", "-enddate", "-noout", "-in", cert], capture_output=True, text=True, timeout=10).stdout.strip().split("=", 1)[-1]
+            days = (datetime.datetime.strptime(end, "%b %d %H:%M:%S %Y %Z") - datetime.datetime.utcnow()).days
+            add("cert", "Secure address (for the microphone)", days > 14, "certificate good for %d more days" % days,
+                "" if days > 14 else "Make a new one: python3 serve_viewer.py --make-cert, then restart the viewer.")
+        except (OSError, ValueError, subprocess.SubprocessError):
+            add("cert", "Secure address (for the microphone)", None, "couldn't read the certificate's date")
+    else:
+        add("cert", "Secure address (for the microphone)", False, "no certificate", "python3 serve_viewer.py --make-cert, then restart the viewer with --https-port 8767.")
+    return {"checks": out, "ok": all(c["ok"] is not False for c in out), "at": now()}
+
+
+def practice(data, rate):
+    """A practice run: her test sentence -> text -> Claude's recap and question, spoken. Nothing is kept in any session."""
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not a WAV recording")
+    d = check_dir()
+    f = os.path.join(d, "practice.wav")
+    open(f, "wb").write(data)
+    timing = {"seconds": round((len(data) - 44) / 2 / max(1, int(rate or 48000)), 1)}
+    t0 = time.time()
+    r = transcribe(f)
+    timing["speech"] = round(time.time() - t0, 1)
+    if r.get("error"):
+        return {"error": r["error"], "fix": FIX_DICTATION if "Dictation" in r["error"] else FIX_SPEECH, "timing": timing}
+    text = (r.get("text") or "").strip()
+    if not text:
+        return {"text": "", "error": "no words heard", "fix": "Check the microphone is the right one and close enough, then try again.", "timing": timing}
+    t0 = time.time()
+    try:
+        c = claude("[This is a practice run of the story page, to check everything works. Erica said the sentence below. "
+                   "Recap it and ask one short, light question back, as you would in a real session.]\nErica: " + text)
+        j = parse_reply(c.get("text"))
+    except OSError as e:
+        return {"text": text, "error": "Claude didn't answer: %s" % e, "fix": "Start the chat server on the home Mac.", "timing": timing}
+    timing["claude"] = round(time.time() - t0, 1)
+    say = str(j.get("say") or "").strip() or "That worked."
+    recap = str(j.get("recap") or "").strip()
+    t0 = time.time()
+    speak((recap + " ... " + say) if recap else say, os.path.join(d, "practice.m4a"))
+    timing["voice"] = round(time.time() - t0, 1)
+    return {"text": text, "recap": recap, "question": say, "audio": "check/practice.m4a?t=%d" % time.time(), "timing": timing}

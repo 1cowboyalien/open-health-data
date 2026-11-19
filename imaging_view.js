@@ -5,7 +5,9 @@
    so the panels get the same ⤒ ↑ ↓ ⤓ − + × controls and Compare stacking.
    Panels:  img:brain:dates  = every brain MRI as a point on the shared time axis
             img:brain:viewer = NiiVue slice viewer (axial/coronal/sagittal + 3D) with our lesion outlines L01…
-   Data: IMG_DATA = {brain_mri: [...], viewer_scans: [{date, t1c, labels, lesions:[{id,n,name,rgb,enh,axial,ras}]}]}. */
+   Data: IMG_DATA = {brain_mri: [...], viewer_scans: [{date, t1c, labels, lesions:[{id,n,name,rgb,enh,axial,ras}],
+          series?: [{key, label, short, file, badge, note, probe, labels?, lesions?, lesions_note?}], series_main?, perf?: [{key, label, file, note?}]}]}
+          (series = other kinds of picture of that date; perf note = said beside the perfusion scale, e.g. a map we computed ourselves). */
 (() => {
   const ROWS = IMG_DATA.brain_mri;
   const SCANS = IMG_DATA.viewer_scans || [];
@@ -85,6 +87,7 @@
              tone: store.get('img.tone', true),   // brightness matched across scan dates (display only)
              proj: Object.assign({m: 1, sc: 'full'}, store.get('img.proj', {}), {on: false}),   // simulated future scan: months ahead, scenario; always starts off
              grid: Object.assign({x: 4}, store.get('img.grid', {}), {on: false}),   // bent grid (swelling as movement): how many times larger than real it is drawn; always starts off
+             ser: '',   // another series of the same scan date ('' = the measured one); never remembered, so every visit starts on the measured series
              size: store.get('img.size', 0), full: false};   // size: viewer height in px (0 = the panel's height); full: filling the window
   window.__imgViewer = V;   // for testing in the browser console
   if (typeof saveEdits === 'function') { const _save = saveEdits;
@@ -129,6 +132,7 @@
     </style>
     <div class="nvmain"><div class="nvbar">
         <label>Scan <select data-r="scan"></select></label>
+        <span data-r="serbar" style="display:none" title="Other kinds of picture from the same scan date. Every date opens on its measured series; the outlines and volumes always come from that one."><label>Series <select data-r="series"></select></label></span>
         <span data-r="projbar" style="display:none;padding:1px 6px;border:1px dashed #e0a020;border-radius:6px" title="A simulation, not a scan: the latest scan's images with each lesion outline grown or shrunk to the size it would have if its latest rate carried on. A scenario from our own measurements, not a forecast.">
           <label style="color:#e0a020"><input type="checkbox" data-r="projon"> Simulate</label>
           <select data-r="projm" aria-label="How far ahead"></select> <select data-r="projsc" aria-label="Which rate"></select></span>
@@ -202,6 +206,7 @@
         <label>cut face <select data-o="cutFace"><option value="tint">tinted</option><option value="clear">clear</option></select></label>
       </div></details>
       <div data-r="simbar" style="display:none;font-size:12px;margin:0 0 4px;padding:5px 9px;border:2px solid #e0a020;border-radius:6px;background:color-mix(in srgb,#e0a020 14%,transparent)"></div>
+      <div data-r="serban" style="display:none;font-size:12px;margin:0 0 4px;padding:5px 9px;border:2px solid #e0a020;border-radius:6px;background:color-mix(in srgb,#e0a020 14%,transparent)"></div>
       <div data-r="pscale" style="display:none;font-size:11px;color:var(--muted);margin:0 0 3px;line-height:26px"></div>
       <div data-r="sscale" style="display:none;font-size:11px;color:var(--muted);margin:0 0 3px;line-height:26px"></div>
       <div class="nvbox" data-r="box"><canvas data-r="cv"></canvas><canvas data-r="gridcv" aria-hidden="true" style="position:absolute;inset:0;pointer-events:none"></canvas></div>
@@ -226,6 +231,7 @@
     R('lo').value = 0; R('hi').value = 1000;
     SCANS.forEach(s => { const o = document.createElement('option'); o.value = s.date; o.textContent = fd(s.date) + ' · ' + (s.viewing ? 'viewing only' : s.lesions.length + ' lesions'); R('scan').appendChild(o); });
     R('scan').onchange = () => load(R('scan').value).catch(() => {});   // a failed load is reported in the viewer (loadFailed)
+    R('series').onchange = () => { V.ser = R('series').value; load(R('scan').value).catch(() => {}); };
     R('op').oninput = () => { if (LV() && V.disp.outline !== 'outline') { V.nv.setOpacity(LI(), R('op').value / 100); } };
     R('cut').onclick = () => { V.cut = !V.cut; R('cut').classList.toggle('on', V.cut); applyCut(); };
     w.querySelectorAll('[data-z3]').forEach(b => b.onclick = () => zoom3(+b.dataset.z3));
@@ -366,13 +372,14 @@
       pan: Array.from(sc.pan2Dxyzmm || [0, 0, 0, 1]), az: sc.renderAzimuth, el: sc.renderElevation, z3: nv.volScaleMultiplier || 1,
       lo: +V.R('lo').value, hi: +V.R('hi').value, mid: +V.R('mid').value, op: +V.R('op').value, cut: V.cut,
       radio: V.radio, noseLeft: V.noseLeft, glass: +V.R('glass').value, dose: Object.assign({}, V.dose), perf: Object.assign({}, V.perf),
-      swell: Object.assign({}, V.swell), grid: Object.assign({}, V.grid), tone: !!V.tone};
+      swell: Object.assign({}, V.swell), grid: Object.assign({}, V.grid), tone: !!V.tone, ser: V.ser || ''};
   }
   /* opening = the viewer is opening with this view (the default): position, layout and contrast apply, but the colour layers
      (radiation, perfusion, swelling) stay off until the user picks a view or a layer */
   async function recall(v, opening) {
     if (V.proj.on) { V.proj.on = false; V.R('projon').checked = false; }   // a saved view is a real scan, never the simulation
-    if (!V.scan || V.scan.date !== v.date || V.scan.sim) await load(v.date);
+    V.ser = opening ? '' : (v.ser || '');   // a picked view shows the series it was saved with; the viewer itself always opens on the measured one
+    if (!V.scan || V.scan.date !== v.date || V.scan.sim || (V.scan.ser ? V.scan.ser.key : '') !== V.ser) await load(v.date);
     if (v.tone !== undefined && !!v.tone !== !!V.tone) { V.tone = !!v.tone; store.set('img.tone', V.tone); V.R('tone').checked = V.tone; applyTone(); }
     const nv = V.nv, NV = V.NV;
     V.disp = Object.assign({}, DDEF, v.disp || (v.single ? {layout: 'axial'} : {}));
@@ -545,9 +552,10 @@
   function perfLegend() { const m = V.scan && (V.scan.perf || []).find(x => x.key === V.perf.key); if (!m) return;
     // the scale sits right above the images (pscale); the bar keeps only the reading note
     const sc = V.R('pscale'); sc.style.display = 'block';
-    sc.innerHTML = `<span style="white-space:nowrap"><b style="color:#e05ad0">${m.key === 'asl' ? 'Blood flow (ASL)' : 'Blood volume (rCBV)'}</b> × normal brain</span>${perfScale()}<span style="white-space:nowrap">no colour below ${(V.perf.min / 100).toFixed(1)}×</span>`;
+    sc.innerHTML = `<span style="white-space:nowrap"><b style="color:#e05ad0">${m.key === 'asl' ? 'Blood flow (ASL)' : 'Blood volume (rCBV)'}</b> × normal brain</span>${perfScale()}<span style="white-space:nowrap">no colour below ${(V.perf.min / 100).toFixed(1)}×</span>` +
+      (m.note ? ` <span style="color:#e0a020">${esc(m.note)}</span>` : '');   // e.g. a map we computed ourselves because the hospital sent none (from the data)
     V.R('plegend').innerHTML = 
-      `<span title="Our estimate from the hospital's map, not a reading. ${m.key === 'asl' ? 'Bright stripes along the back and midline can be blood still in the arteries (ASL arterial transit), not tumor.' : 'Veins, sinuses and the brain surface are bright on this map; a lesion against them borrows their value.'} Normal grey matter reads above 1× because normal brain mixes grey and white matter. The map covers ${m.key === 'asl' ? 'most of the head' : 'a slab of the head only'}.">how to read ⓘ</span>`; }
+      `<span title="${m.note ? esc(m.note[0].toUpperCase() + m.note.slice(1)) + '. Our estimate, not a reading.' : "Our estimate from the hospital's map, not a reading."} ${m.key === 'asl' ? 'Bright stripes along the back and midline can be blood still in the arteries (ASL arterial transit), not tumor.' : 'Veins, sinuses and the brain surface are bright on this map; a lesion against them borrows their value.'} Normal grey matter reads above 1× because normal brain mixes grey and white matter. The map covers ${m.key === 'asl' ? 'most of the head' : 'a slab of the head only'}.">how to read ⓘ</span>`; }
   async function applyPerf() {
     if (!V.nv) return; const nv = V.nv;
     const tok = V.perfTok = (V.perfTok || 0) + 1;
@@ -729,10 +737,38 @@
     b.innerHTML = `<b style="color:#e0a020">SIMULATION, not a scan.</b> These are the ${fd(V.scan.date)} images; each outline is drawn at the size it would have on <b>${fd(s.date)}</b> ` +
       `(+${s.m} month${s.m > 1 ? 's' : ''}) if <b>${esc(s.scenario_label)}</b>. ${esc((G.backtest && (G.backtest.short || G.backtest.text)) || '')} ` +
       `<span class="sub" title="${esc((G.backtest && G.backtest.text) || '')} ${esc(G.note || '')}">how it was tested ⓘ</span> · A scenario, not a forecast. Untick Simulate for the real outlines.`; }
+  /* ---- other series of the same scan date (data: scan.series = [{key, label, short, file, badge, note, probe}], scan.series_main = the
+     measured one's label), e.g. a FLAIR, or a copy rebuilt from a hospital website. Like the simulation it is a 'scan' object with one
+     thing swapped, here the picture: outlines, volumes, 3D models and layers stay those of the measured series, so everything else in
+     the viewer works unchanged. What the series is and how far to trust it comes from the data (badge, note) and is shown in a banner
+     while it is up. No brightness matching (tone: null): another kind of picture keeps its own contrast. ---- */
+  const SERS = new Map();
+  function serScan(base, key) { const s = (base.series || []).find(x => x.key === key); if (!s) return base;
+    const k = (base.sim ? base.sim.key : base.date) + '|' + key;
+    /* a series can bring its own outlines and volumes (s.labels, s.lesions: provisional numbers taken on that series itself) */
+    if (!SERS.has(k)) SERS.set(k, Object.assign({}, base, {t1c: s.file, tone: null, ser: s, main: base}, s.labels ? {labels: s.labels, lesions: s.lesions || []} : {}));
+    return SERS.get(k); }
+  function serBar(real) { const list = real.series || [], bar = V.R('serbar'), sel = V.R('series');
+    bar.style.display = list.length ? '' : 'none'; sel.innerHTML = '';
+    [{key: '', label: real.series_main || 'Measured series'}].concat(list).forEach(s => { const o = document.createElement('option'); o.value = s.key; o.textContent = s.label; sel.appendChild(o); });
+    sel.value = V.ser || ''; }
+  function serBanner() { const b = V.R('serban'), s = V.scan && V.scan.ser; if (!s) { b.style.display = 'none'; return; }
+    const m = V.scan.series_main;
+    b.style.display = 'block';
+    b.innerHTML = `<b style="color:#e0a020">${esc(s.badge || 'Another series of this scan')}.</b> ${esc(s.note || '')} ` +
+      (s.labels ? `The outlines and volumes shown here are ${esc(s.lesions_note || 'taken on this series')}.`
+                : `The outlines and volumes come from ${m ? esc(m) : 'the measured series'}; they are drawn here only to show the place. Pick that one under Series to go back.`); }
+  /* its own check (like gridCheck): the picture on screen must hold the values the data builder read at three points */
+  V.seriesCheck = () => { const s = V.scan && V.scan.ser, v = V.nv && V.nv.volumes[0]; if (!s || !v || !s.probe) return null;
+    let worst = 0; const got = s.probe.map(p => { const val = v.getValue(...v.mm2vox(p.ras)); worst = Math.max(worst, Math.abs(val - p.v)); return val; });
+    return {series: s.key, points: s.probe.length, want: s.probe.map(p => p.v), got, worst}; };
   async function load(date) {
     const real = SCANS.find(s => s.date === date) || SCANS[0]; if (!real) return;
     if (V.proj.on && !(real.proj && real.proj.length)) { V.proj.on = false; V.R('projon').checked = false; }   // the simulation exists for the latest measured scan only
-    const scan = V.proj.on ? simScan(real) : real;
+    if (V.ser && !(real.series || []).some(x => x.key === V.ser)) V.ser = '';   // this date has no such series: its measured one
+    serBar(real);
+    let scan = V.proj.on ? simScan(real) : real;
+    if (V.ser) scan = serScan(scan, V.ser);
     if (V.scan === scan && V.nv) return;
     /* switching between the real outlines and a simulation of the same scan: stay where the user is looking */
     V.keep = V.nv && V.scan && V.scan.date === scan.date ? {mm: Array.from(V.nv.frac2mm(V.nv.scene.crosshairPos)).slice(0, 3), pan: Array.from(V.nv.scene.pan2Dxyzmm || [0, 0, 0, 1]),
@@ -755,7 +791,8 @@
       : /failed to fetch|network|load failed|aborted/i.test(m) ? 'the connection to the server dropped'
       : m ? 'the scan could not be read (' + m + ')' : 'unknown error';
     V.scan = null; V.loading = null;
-    st.textContent = `Couldn't load the ${fd(scan.date)} scan: ${why}. Pick it again to retry, or choose another date.`;
+    if (scan.ser) { V.ser = ''; V.R('series').value = ''; V.R('serban').style.display = 'none'; }   // the next pick shows the measured series
+    st.textContent = `Couldn't load the ${fd(scan.date)} scan${scan.ser ? ' (' + scan.ser.label + ')' : ''}: ${why}. Pick it again to retry, or choose another date.`;
     st.dataset.err = '1'; st.style.color = '#e0703a';
     console.warn('scan load failed', scan.date, err);
   }
@@ -775,7 +812,7 @@
     }
     V.R('status').textContent = 'loading scan…'; delete V.R('status').dataset.err; V.R('status').style.color = '';
     V.doseTok = (V.doseTok || 0) + 1;   // cancel any dose still loading for the previous scan
-    await V.nv.loadVolumes([{url: scan.t1c, name: 't1c_' + scan.date + '.nii.gz'}, {url: scan.labels, name: 'lesions_' + scan.date + '.nii.gz', opacity: V.R('op').value / 100}]);   // NiiVue reads the file type from the name
+    await V.nv.loadVolumes([{url: scan.t1c, name: 't1c_' + scan.date + (scan.ser ? '_' + scan.ser.key : '') + '.nii.gz'}, {url: scan.labels, name: 'lesions_' + scan.date + (scan.ser && scan.ser.labels ? '_' + scan.ser.key : '') + '.nii.gz', opacity: V.R('op').value / 100}]);   // NiiVue reads the file type from the name
     V.raw = null; V.toned = false; applyTone();   // a fresh image: match its brightness (if on) before anything is drawn from it
     const L = scan.lesions, max = Math.max(0, ...L.map(l => l.n));
     const cm = {R: [0], G: [0], B: [0], A: [0], I: [0], labels: ['']};
@@ -788,7 +825,7 @@
     await V.nv.loadMeshes(L.filter(l => l.mesh).map(l => ({url: l.mesh, name: l.id + '.obj', rgba255: [...l.rgb, 255]})));
     V.nv.setMeshThicknessOn2D(V.disp.les2d === 'shiny' ? Infinity : 0);
     applyDisplay(); V.nv.setRenderAzimuthElevation(110, 15);
-    lesionList(scan); simBanner(); V.R('status').textContent = '';
+    lesionList(scan); simBanner(); serBanner(); V.R('status').textContent = '';
     if (!L.length) V.R('read').textContent = 'Click or drag in a view to move the crosshair; scroll to change slice; right-drag to adjust brightness.';   // not the previous scan's lesion
     applyContrast(); applyOrient(); applyGlass(); viewsBar(); await applyDose(); await applyPerf(); await applySwell(); await applyGrid();
     const big = L.slice().sort((a, b) => b.enh - a.enh)[0]; const pk = V.picked && scan.lesions.includes(V.picked) ? V.picked : null;
@@ -816,7 +853,8 @@
       box.querySelectorAll('.nvles').forEach(e => e.onclick = () => { const l = V.scan && V.scan.lesions.find(x => x.id === e.dataset.id); if (l) jump(l); });
       return;
     }
-    box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines${typeof L !== 'undefined' && L.rule === 'old' ? ', old 1.45× rule' : ''})${fld}</div>` +
+    const shown = scan.ser ? `<div style="padding:0 5px 3px;font-size:11px;color:#e0a020" title="${esc(scan.ser.note || '')}">on screen: ${esc(scan.ser.short || scan.ser.label)}; outlines and volumes ${scan.ser.labels ? esc(scan.ser.lesions_note || 'taken on this series') : 'from ' + esc(scan.series_main || 'the measured series')}</div>` : '';
+    box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines${typeof L !== 'undefined' && L.rule === 'old' ? ', old 1.45× rule' : ''})${fld}</div>` + shown +
       scan.lesions.map(l => `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ · longest axial ${l.axial} mm. Click to go there.">
         <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(volOf(l) / 1000).toFixed(2)} cm³</span></div>`).join('');
     box.querySelectorAll('.nvles').forEach(e => e.onclick = () => { const l = V.scan && V.scan.lesions.find(x => x.id === e.dataset.id); if (l) jump(l); });   // the scan shown/loading now, not the one this list was made for
@@ -952,7 +990,10 @@
     const top = Math.max(10, ...vals) * 1.08;
     return Math.ceil(top / 5) * 5;
   }
-  const MEAS = () => OLD() ? LS.measured_old : LS.measured;
+  /* states = a lesion's state on a measured scan where it has no outline (not seen, or a pinpoint): rows shaped like the "none" rows */
+  const STATES = LS.states || [];
+  const MEAS = () => (OLD() ? LS.measured_old : LS.measured).concat(STATES);
+  const noneTxt = m => m.below && m.note && !/normal scan/.test(m.note) ? 'Ours: ' + m.note : 'Our check: nothing at this place (normal scan, before the lesion appeared)';
   const measShape = m => is3T(m) ? 'triangle' : 'rectRot';
   const fieldOf = raw => raw ? (raw.meas ? raw.meas.field : raw.r ? raw.r.field : '') : '';
   const fieldOK = m => L.field === 'all' || m.field === L.field;
@@ -1016,7 +1057,7 @@
   }
 
   function lesTooltip(p) {
-    if (p.meas) return [`${p.lesion} ${LNAME[p.lesion]}`, p.meas.none ? 'Our check: nothing at this place (normal scan, before the lesion appeared)'
+    if (p.meas) return [`${p.lesion} ${LNAME[p.lesion]}`, p.meas.none ? noneTxt(p.meas)
       : `Our measurement: ${(p.meas.enh_mm3 / 1000).toFixed(2)} cm³ enhancing · longest axial ${p.meas.axial_mm} mm` + (p.meas.field ? ` · ${p.meas.field} scanner` + (is3T(p.meas) ? ' (compare with care across 1.5T)' : '') : '')];
     const r = p.r, tr = TREND[r.trend || ''];
     return [`${r.lesion} ${LNAME[r.lesion]}`, (r.mm != null ? (r.kind === 'punctate' ? 'punctate (~2 mm)' : r.kind === 'resolved' ? 'resolved' : r.kind === 'nonenhancing' ? 'non-enhancing' : r.mm + ' mm') : 'no size given') + (tr.t ? ' · ' + tr.t : ''),
@@ -1104,8 +1145,8 @@
         const r = cell(l.id, d), m = meas(l.id, d), tr = r ? TREND[r.trend || ''] : null;
         const txt = r ? (r.kind === 'resolved' ? '✕' : r.kind === 'nonenhancing' ? 'ne' : r.kind === 'punctate' ? '·' : r.mm != null ? Math.round(r.mm) : '—') + (r.ambiguous ? '?' : '') : '';
         const bg = tr && tr.c !== 'transparent' ? `background:color-mix(in srgb, ${tr.c} 28%, transparent)` : '';
-        const tip = (r ? lesTooltip({r}).slice(1).join('\n') : '') + (m ? (r ? '\n' : '') + (m.none ? 'Our check: nothing at this place (normal scan)' : `Ours: ${(m.enh_mm3 / 1000).toFixed(2)} cm³, ${m.axial_mm} mm` + (m.field ? ', ' + m.field + ' scanner' : '')) : '');
-        h += `<td title="${tip.replace(/"/g, '&quot;')}" style="text-align:center;padding:2px 4px;border:1px solid var(--line);${bg};${inWin(d) ? '' : 'opacity:.45'}">${txt}${m ? `<div style="font-size:9px;color:${LCOL[l.id]}">${m.none ? '◇ none' : (is3T(m) ? '▲' : '◆') + (m.enh_mm3 / 1000).toFixed(1)}</div>` : ''}</td>`;
+        const tip = (r ? lesTooltip({r}).slice(1).join('\n') : '') + (m ? (r ? '\n' : '') + (m.none ? noneTxt(m) : `Ours: ${(m.enh_mm3 / 1000).toFixed(2)} cm³, ${m.axial_mm} mm` + (m.field ? ', ' + m.field + ' scanner' : '')) : '');
+        h += `<td title="${tip.replace(/"/g, '&quot;')}" style="text-align:center;padding:2px 4px;border:1px solid var(--line);${bg};${inWin(d) ? '' : 'opacity:.45'}">${txt}${m ? `<div style="font-size:9px;color:${LCOL[l.id]}">${m.none ? (m.below === 'tiny' ? '◇ tiny' : '◇ none') : (is3T(m) ? '▲' : '◆') + (m.enh_mm3 / 1000).toFixed(1)}</div>` : ''}</td>`;
       });
       if (DOSE) { const rr = doseRows(l.id), tot = rr.length ? drun(rr[rr.length - 1]) : null;
         h += `<td style="text-align:center;padding:2px 6px;border:1px solid var(--line);font-weight:600;color:#000;background:${tot != null ? heat(tot) : 'transparent'}" title="${rr.map(r => CLAB[r.course] + ': ' + Math.round(dval(r)) + ' ' + dunit()).join('\n')}">${tot != null ? Math.round(tot) : ''}</td>`; }

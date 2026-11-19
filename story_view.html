@@ -105,6 +105,7 @@ async function openMic() {   // returns this opening's number: a test that close
   src.connect(A.proc); A.proc.connect(mute); mute.connect(A.ctx.destination);
   const t = A.stream.getAudioTracks()[0]; A.label = t ? t.label : '';
   if (t) t.onended = () => { A.fallback = 'The microphone stopped (unplugged?). Pick it again above.'; micBar(); };
+  document.querySelectorAll('select.spk').forEach(sl => fillSpk(sl));   // with the mic allowed, the speakers' names can be shown
   return gen;
 }
 async function switchMic(id) {   // change microphones in the middle of a session without losing what is being said
@@ -123,7 +124,7 @@ function micBar() {   // the microphone picker + live level in the session's top
   const w = $('#miclvl'); if (w) w.style.width = Math.min(100, A.level * 400) + '%';
   const st = $('#micstate'); if (!st) return;
   const off = !A.stream || (A.ctx && A.ctx.state !== 'running');
-  st.innerHTML = A.fallback ? `<span class="err">${esc(A.fallback)}</span>` : off ? '<button id="micon" class="pri">🎤 Turn the microphone on</button>' : '';
+  st.innerHTML = SPK_WARN && !A.fallback ? `<span class="err">${esc(SPK_WARN)}</span>` : A.fallback ? `<span class="err">${esc(A.fallback)}</span>` : off ? '<button id="micon" class="pri">🎤 Turn the microphone on</button>' : '';
   const b = $('#micon'); if (b) b.onclick = async () => { if (A.ctx && A.ctx.state === 'suspended') await A.ctx.resume(); else await switchMic(LS.get('mic', '')); micBar(); };
 }
 function closeMic() {
@@ -176,14 +177,41 @@ function bars(x) { const el = $('#bars'); if (!el) return; [...el.children].forE
 
 /* ---------------- Claude's voice ---------------- */
 let voice = null;
+/* ---------------- the speaker (sound output) ---------------- */
+// Chrome and Edge can send sound to a chosen speaker (setSinkId); other browsers use the computer's chosen output.
+const CAN_PICK_SPK = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
+let SPK_WARN = '';
+async function sinkTo(el) {   // send an <audio> element (or AudioContext) to the chosen speaker; falls back to the default
+  const id = LS.get('spk', '');
+  if (!id || !el || !el.setSinkId) return;
+  try { await el.setSinkId(id); SPK_WARN = ''; }
+  catch (e) { SPK_WARN = 'The chosen speaker isn\'t available (turned off or disconnected?). Using the computer\'s default.'; }
+}
+async function spkOptions() {   // [{id, label}]: the default (with the device it points to) first
+  const outs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput');
+  const def = outs.find(d => d.deviceId === 'default');
+  return [{id: '', label: 'Computer default' + (def && def.label ? ': ' + def.label.replace(/^Default - /, '') : '')}]
+    .concat(outs.filter(d => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications').map(d => ({id: d.deviceId, label: d.label || 'Speaker'})));
+}
+async function fillSpk(sel, after) {
+  if (!sel) return;
+  if (!CAN_PICK_SPK) { sel.outerHTML = '<span class="sub">this browser plays through the computer\'s chosen speaker' + (LOCAL_SET.sound ? ' (<a href="' + LOCAL_SET.sound + '">sound settings</a>)' : '') + '</span>'; return; }
+  const opts = await spkOptions(), want = LS.get('spk', '');
+  sel.innerHTML = opts.map(o => `<option value="${esc(o.id)}" ${o.id === want ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+  sel.title = (opts.find(o => o.id === want) || opts[0]).label;
+  sel.onchange = async () => { LS.set('spk', sel.value); sel.title = sel.options[sel.selectedIndex].text; document.querySelectorAll('audio').forEach(sinkTo); if (voice) sinkTo(voice); log('speaker changed', {speaker: sel.title}); after && after(); };
+}
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener)   // a Bluetooth speaker connecting or leaving: refresh the lists
+  navigator.mediaDevices.addEventListener('devicechange', () => document.querySelectorAll('select.spk').forEach(s => fillSpk(s)));
 function play(url) {
-  return new Promise(res => {
+  return new Promise(async res => {
     voice = new Audio('/story/audio/' + url);
+    await sinkTo(voice);
     voice.onended = voice.onerror = () => { voice = null; res(); };
     voice.play().catch(() => { voice = null; res(); });
   });
 }
-function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain(); o.frequency.value = 1000; g.gain.value = 0.4; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.25); setTimeout(() => c.close(), 600); } catch (e) {} }
+function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(); if (c.setSinkId && LS.get('spk', '')) c.setSinkId(LS.get('spk', '')).catch(() => {}); const o = c.createOscillator(), g = c.createGain(); o.frequency.value = 1000; g.gain.value = 0.4; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.25); setTimeout(() => c.close(), 600); } catch (e) {} }
 
 /* ---------------- session flow ---------------- */
 const cur = () => S && S.photos[S.pos];
@@ -411,7 +439,7 @@ function drawEditor() {
   if ($('#eapprove')) $('#eapprove').onclick = async () => { await save(); await api('approve', {id: ED.session, photo: ED.photo, title: ED.title, caption: ED.caption, audience: ED.family_only ? 'family' : 'everyone'}); screen = 'library'; LIB = null; drawLib(); };
   if ($('#edel')) $('#edel').onclick = async () => { if (!confirm('Take this story off the gallery? A copy is kept on the home Mac, and the recordings stay.')) return;
     await api('story-delete', {photo: ED.photo, index: ED.index}); screen = 'library'; LIB = null; drawLib(); };
-  app.querySelectorAll('audio').forEach(a => a.onplay = () => stopSound(a));
+  app.querySelectorAll('audio').forEach(a => { sinkTo(a); a.onplay = () => stopSound(a); });
 }
 
 /* ---------------- ready check ---------------- */
@@ -470,8 +498,8 @@ function drawCheck() {
     ${ckRow('Browser can record', canRec, canRec ? '' : 'This browser is missing recording features', 'Use an up-to-date Chrome or Safari.', '', {type: 'link', href: 'https://www.google.com/chrome/', label: 'Get Chrome'})}
     ${ckRow('Microphone', CK.mic, CK.mic === true ? 'heard you on ' + (CK.micName || 'the microphone') : 'Press Test, then say a few words', 'Pick the right microphone on the start screen, allow the browser to use it (the address bar shows a microphone icon), and check the DJI receiver is plugged in.',
       '<div class="row"><div class="meter"><i id="lvl"></i></div><button id="tmic">Test</button></div>', LOCAL_SET.mic ? {type: 'link', href: LOCAL_SET.mic, label: 'Open this computer\'s microphone privacy settings'} : null)}
-    ${ckRow('Speakers (Claude\'s voice)', CK.speakers, CK.speakers === true ? 'you heard Claude' : 'Press Play and listen', 'Turn the volume up, and check the sound output (headphones or speaker) in the computer\'s sound settings.',
-      '<div class="row"><button id="tspk">▶ Play</button><button id="heard">I heard it</button><button id="notheard">I didn\'t</button></div>', LOCAL_SET.sound ? {type: 'link', href: LOCAL_SET.sound, label: 'Open this computer\'s sound settings'} : null)}
+    ${ckRow('Speakers (Claude\'s voice)', CK.speakers, CK.speakers === true ? 'you heard Claude' + (CK.spkName ? ' on ' + CK.spkName : '') : 'Pick the speaker, press Play and listen', 'Turn the volume up, and check the sound output (headphones or speaker) in the computer\'s sound settings.',
+      '<div class="row"><select class="spk" id="ckspk" style="max-width:220px"><option>…</option></select><button id="tspk">▶ Play</button><button id="heard">I heard it</button><button id="notheard">I didn\'t</button></div>', LOCAL_SET.sound ? {type: 'link', href: LOCAL_SET.sound, label: 'Open this computer\'s sound settings'} : null)}
     ${ckRow('Connection to the home Mac', CK.net === undefined ? undefined : CK.net, CK.netText || 'Press Test', 'Slow connection: check the VPN is connected; recordings will still save, just more slowly.', '<button id="tnet">Test</button>')}
   </div>
   <div class="card"><b>Practice run</b> <span class="sub">the whole loop, for real, with nothing saved: you talk → words → Claude says back what it heard and asks a question</span>
@@ -490,8 +518,8 @@ function drawCheck() {
         if (best > 0.03 || Date.now() - t0 > 10000) { A.onLevel = null; CK.mic = best > 0.03; CK.micName = A.label + (A.fallback ? ' (not the chosen one: ' + A.fallback + ')' : ''); LS.set('ck', CK); if (A.gen === g && screen === 'check') closeMic(); drawCheck(); } };
     } catch (e) { CK.mic = false; LS.set('ck', CK); drawCheck(); }
   };
-  $('#tspk').onclick = testVoice;
-  $('#heard').onclick = () => { CK.speakers = true; LS.set('ck', CK); drawCheck(); };
+  $('#tspk').onclick = testVoice; fillSpk($('#ckspk'), () => { CK.speakers = undefined; LS.set('ck', CK); });
+  $('#heard').onclick = () => { const s = $('#ckspk'); CK.speakers = true; CK.spkName = s && s.options ? s.options[s.selectedIndex].text : ''; LS.set('ck', CK); drawCheck(); };
   $('#notheard').onclick = () => { CK.speakers = false; LS.set('ck', CK); drawCheck(); };
   $('#tnet').onclick = async () => {
     const b = new Blob([new Uint8Array(2e6)]), t0 = performance.now();
@@ -585,6 +613,7 @@ function drawHome() {
     <div class="row" style="margin-top:12px"><button class="big" id="free">Or start by telling a story</button><span class="sub">You say what you want to talk about; Claude finds the photos and records from then.</span></div></div>
   <div class="card"><b>Before you start</b>
     <div class="row" style="margin-top:8px"><span class="sub">Microphone</span><select id="mic"><option value="">Default</option></select><div class="meter"><i id="lvl"></i></div><button id="test">Test mic</button></div>
+    <div class="row" style="margin-top:8px"><span class="sub">Speaker</span><select id="spk" class="spk" style="max-width:340px"><option>…</option></select><button id="hear2">▶ Play Claude's voice</button></div>
     <div class="row" style="margin-top:8px"><label><input type="checkbox" id="film" ${LS.get('filming', true) ? 'checked' : ''}> Filming: Claude speaks through the speaker (so the phones hear it)</label></div>
     <div class="row" style="margin-top:8px"><label><input type="checkbox" id="autoend" ${LS.get('autoEnd', false) ? 'checked' : ''}> End my turn by itself when I stop talking for a few seconds (otherwise press End thought)</label></div>
     <div class="row" style="margin-top:8px"><button id="hear">Hear Claude's voice</button><span class="sub">Voice: ${esc(HOME.voice || 'Mac default')}. Change it in local/story/settings.json; Premium voices sound most natural.</span></div>
@@ -613,7 +642,7 @@ function drawHome() {
     try { const r = await api('sessions', {title: ch, photos: ids, teller: TELL}); begin(r.id); } catch (e) { err = e.message; drawHome(); }
   };
   $('#free').onclick = async () => { if (notReady()) return; try { const r = await api('sessions', {title: TELL + "'s choice of stories", photos: [], free: true, teller: TELL}); begin(r.id); } catch (e) { err = e.message; drawHome(); } };
-  fillMics();
+  fillMics(); fillSpk($('#spk')); $('#hear2').onclick = testVoice;
 }
 async function testVoice() { try { const r = await api('voice?name=' + encodeURIComponent(TELL)); await play(r.audio); } catch (e) { err = 'Voice: ' + e.message; drawHome(); } }
 async function fillMics() {
@@ -634,7 +663,7 @@ function drawMain() {
   const media = !id ? `<div class="nophoto"><div style="font-size:22px">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
                                     : `<img src="/photos/web/${encodeURIComponent(id)}.jpg" alt="">`;
   app.innerHTML = `<div class="top"><span class="sub"><span class="pill" style="color:var(--ink)">🗣 ${esc(S.teller || 'Erica')} telling</span> ${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
-    <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:190px;padding:2px 6px;font-size:13px"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:60px;height:6px"><i id="miclvl"></i></span></span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
+    <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:190px;padding:2px 6px;font-size:13px"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:60px;height:6px"><i id="miclvl"></i></span></span><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🔊 <select id="spksel" class="spk" style="max-width:190px;padding:2px 6px;font-size:13px"><option>…</option></select></span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
   <div class="stage"><div><div id="micstate"></div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
@@ -649,7 +678,7 @@ function drawMain() {
   app.querySelectorAll('.strip .t').forEach(t => t.onclick = () => +t.dataset.p !== S.pos && goTo(+t.dataset.p));
   const clk = () => { const e = $('#clk'); if (e) e.textContent = new Date().toLocaleTimeString(); const r = $('#rec'); if (r && A.cont) { const s = Math.floor((Date.now() - A.contStart) / 1000); r.textContent = '● Recording ' + [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); } };
   clk(); clockT = setInterval(() => { clk(); }, 500);
-  clearInterval(micT); micT = setInterval(micBar, 120); micBar();
+  clearInterval(micT); micT = setInterval(micBar, 120); micBar(); fillSpk($('#spksel'));
   micOptions($('#micsel'), LS.get('mic', '')).then(h => { const m = $('#micsel'); if (!m) return; m.innerHTML = h;
     if (A.label) [...m.options].forEach(o => { if (o.textContent === A.label) o.selected = true; });
     m.onchange = () => switchMic(m.value); });
@@ -717,7 +746,7 @@ function drawReview() {
   app.querySelectorAll('.rv').forEach(row => {
     const p = row.dataset.p, d = S.drafts[p] = S.drafts[p] || {};
     row.querySelectorAll('.au').forEach(b => b.onclick = () => { d.audience = b.dataset.a; row.querySelectorAll('.au').forEach(x => x.classList.toggle('on', x === b)); });
-    row.querySelectorAll('audio').forEach(a => a.onplay = () => stopSound(a));   // one recording at a time
+    row.querySelectorAll('audio').forEach(a => { sinkTo(a); a.onplay = () => stopSound(a); });   // one recording at a time, on the chosen speaker
     const eb = row.querySelector('.eded'); if (eb) eb.onclick = async () => {
       if (d.status === 'approved') { const L2 = await api('stories'); const x = L2.stories.find(x => x.photo === p && x.session === S.id); if (x) return openEditor({kind: 'story', photo: p, index: x.index}); }
       await api('approve', {id: S.id, photo: p, status: d.status === 'later' ? 'later' : 'draft', title: row.querySelector('.ti').value, caption: row.querySelector('.ca').value, audience: d.audience}).catch(() => {});

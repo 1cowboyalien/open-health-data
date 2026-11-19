@@ -353,7 +353,7 @@ function recApply() {   // put REC (topic + dates) into the embedded viewer
   try {
     w.eval('libHidden=true;applyLib();mode="compare";');
     w.onlyLab('story-' + Date.now(), ids, TOPICS[what[0]] || 'Story');
-    w.setWin(mid - half, mid + half);
+    if (w.goToDate) w.goToDate(mid, {len: 2 * half}); else w.setWin(mid - half, mid + half);   // centred, cursor locked on the photo's date (the MRI viewer follows)
     setTimeout(() => {   // scroll the viewer to the chosen panel (the always-on Keyframes and Treatments panels come first)
       try { const h = [...w.document.querySelectorAll('.cmph b')].find(b => !/^(Keyframes|Treatments|Concern)/.test(b.textContent.trim()));
             if (h) w.scrollTo(0, h.getBoundingClientRect().top + w.scrollY - 90); } catch (e) {}

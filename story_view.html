@@ -5,45 +5,47 @@
      She sees a photo, talks; her answer is recorded (WAV, kept), turned into text on the home Mac, and Claude asks one spoken
      follow-up question. Captions are reviewed at the end. Pause and pick up on any device at home or on the VPN. -->
 <style>
-:root{--bg:#f6f5f1;--card:#fff;--ink:#1f1e1c;--sub:#6b6a65;--line:#dedcd4;--acc:#2f6fb0;--accbg:#e6f0fb;--red:#c0392b;--ok:#2e7d4f;--voice:Georgia,'Times New Roman',serif}
+:root{--t:13px;--bg:#f6f5f1;--card:#fff;--ink:#1f1e1c;--sub:#6b6a65;--line:#dedcd4;--acc:#2f6fb0;--accbg:#e6f0fb;--red:#c0392b;--ok:#2e7d4f;--voice:Georgia,'Times New Roman',serif}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1c1b;--card:#262624;--ink:#eceae4;--sub:#a9a79f;--line:#3b3a37;--acc:#7fb2e8;--accbg:#22364d;--red:#f08070;--ok:#7cc79a}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-button{font:inherit;font-size:15px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
-button:hover{border-color:var(--sub)}button.big{font-size:18px;padding:12px 22px}button.pri{background:var(--accbg);color:var(--acc);border-color:var(--acc)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:var(--t)/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+button{font:inherit;font-size:calc(var(--t) * 0.9375);padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--sub)}button.big{font-size:calc(var(--t) * 1.125);padding:12px 22px}button.pri{background:var(--accbg);color:var(--acc);border-color:var(--acc)}
 button.on{background:var(--accbg);color:var(--acc);border-color:var(--acc)}
 select,input[type=text],textarea{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
-textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:17px;line-height:1.5}
+textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:calc(var(--t) * 1.062);line-height:1.5}
 .wrap{max-width:1100px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
-.sub{color:var(--sub);font-size:14px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.pill{font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--sub);white-space:nowrap}
+.sub{color:var(--sub);font-size:calc(var(--t) * 0.875)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{font-size:calc(var(--t) * 0.8125);padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--sub);white-space:nowrap}
 .top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 #photo{display:flex;justify-content:center;align-items:center;background:#0000000d;border-radius:12px;min-height:200px}
 #photo img,#photo video{max-width:100%;max-height:56vh;border-radius:8px;display:block}
 .strip{display:flex;gap:6px;overflow-x:auto;padding:8px 0}.strip .t{position:relative;flex:0 0 auto;cursor:pointer;border-radius:6px;border:2px solid transparent}
-.strip .t img{height:58px;display:block;border-radius:4px}.strip .t.cur{border-color:var(--acc)}.strip .t .ck{position:absolute;right:2px;top:0;color:#fff;text-shadow:0 0 3px #000;font-size:14px}
+.strip .t img{height:58px;display:block;border-radius:4px}.strip .t.cur{border-color:var(--acc)}.strip .t .ck{position:absolute;right:2px;top:0;color:#fff;text-shadow:0 0 3px #000;font-size:calc(var(--t) * 0.875)}
 .tl{position:relative;height:46px;margin:6px 4px 0}.tl .ax{position:absolute;top:10px;left:0;right:0;height:3px;background:var(--line);border-radius:2px}
 .tl .m{position:absolute;top:2px;height:19px;min-width:3px;border-radius:2px;background:var(--sub);opacity:.75}
 .tl .m.stay{background:var(--red);opacity:.45}.tl .m.radiation{background:#b07d2f;opacity:.45}.tl .me{position:absolute;top:-2px;width:3px;height:27px;background:var(--acc)}
-.tl .lb{position:absolute;top:26px;font-size:12px;color:var(--sub);white-space:nowrap;transform:translateX(-50%)}
+.tl .lb{position:absolute;top:26px;font-size:calc(var(--t) * 0.75);color:var(--sub);white-space:nowrap;transform:translateX(-50%)}
 .q{margin-top:0;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
-.q .who{font-size:12px;color:var(--sub);margin-bottom:2px}.q .say{font-family:var(--voice);font-size:21px;line-height:1.45}
-.heard{margin-bottom:10px;padding:10px 14px;border-radius:10px;background:#0000000a;font-size:15px}
+.q .who{font-size:calc(var(--t) * 0.75);color:var(--sub);margin-bottom:2px}.q .say{font-family:var(--voice);font-size:calc(var(--t) * 1.312);line-height:1.45}
+.heard{margin-bottom:10px;padding:10px 14px;border-radius:10px;background:#0000000a;font-size:calc(var(--t) * 0.9375)}
 .bars{display:flex;gap:3px;align-items:flex-end;height:30px}.bars span{width:6px;background:var(--red);border-radius:2px;transition:height .08s}
 .ctr{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .flash{position:fixed;inset:0;background:#fff;z-index:9;display:none}
-.big3{font-size:120px;font-weight:500;text-align:center;line-height:1}
+.big3{font-size:calc(var(--t) * 7.5);font-weight:500;text-align:center;line-height:1}
 .rv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:14px 0;border-top:1px solid var(--line)}
 .rv img{width:150px;border-radius:8px}
-.err{color:var(--red);font-size:14px}
+.err{color:var(--red);font-size:calc(var(--t) * 0.875)}
 @media (max-width:899px){.endbar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--card);border-top:1px solid var(--line);padding:10px;margin:0}}
-.recs{margin-top:16px}.recs .bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.recs .bar button{font-size:14px;padding:5px 11px}
+.recs{margin-top:16px}.recs .bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.recs .bar button{font-size:calc(var(--t) * 0.875);padding:5px 11px}
 .recs iframe{width:100%;height:600px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
 .nophoto{min-height:300px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:30px;gap:10px;background:#0000000d;border-radius:12px}
+.topbar{position:sticky;top:0;z-index:6;background:var(--bg);padding:6px 0 8px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.topbar .row{gap:6px}.topbar button{padding:5px 11px}
 .stage{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stage .talk{display:flex;flex-direction:column}
 @media (min-width:900px){.stage{grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr)}#photo img,#photo video{max-height:62vh}.stage .talk .ctr{justify-content:flex-start}}
 .ck{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
-.ck .st{font-size:20px;line-height:1.2}.ck .fix{font-size:14px;color:var(--ink);background:#c0392b14;border-radius:8px;padding:6px 9px;margin-top:4px}
+.ck .st{font-size:calc(var(--t) * 1.25);line-height:1.2}.ck .fix{font-size:calc(var(--t) * 0.875);color:var(--ink);background:#c0392b14;border-radius:8px;padding:6px 9px;margin-top:4px}
 .ck .warn{background:#b07d2f1a}
 .bar2{height:8px;background:var(--line);border-radius:4px;overflow:hidden;flex:1;min-width:80px}.bar2 i{display:block;height:100%;background:var(--ok)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin:8px 0}
@@ -72,6 +74,10 @@ async function api(path, body, raw) {
 const log = (ev, x) => S && api('log', {id: S.id, events: [Object.assign({ev, client: Date.now()}, x || {})]}).catch(() => {});
 
 let D = null, BY = {}, S = null, screen = 'home', err = '';
+function setTextSize(px) { px = Math.max(10, Math.min(22, px)); document.documentElement.style.setProperty('--t', px + 'px'); LS.set('textsize', px); }
+setTextSize(LS.get('textsize', 13));
+const sizeBtns = () => `<span class="pill" style="display:inline-flex;gap:4px;align-items:center">Text <button class="ts" data-d="-1" style="padding:2px 8px" title="Smaller text">A−</button><button class="ts" data-d="1" style="padding:2px 8px" title="Bigger text">A+</button></span>`;
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.ts'); if (b) setTextSize(LS.get('textsize', 13) + +b.dataset.d); });
 let TELLERS = [], TELL = LS.get('teller', 'Erica');   // who is telling stories on this computer right now
 const toldBy = (i, who) => (i.tellers || []).includes(who);
 const ITEM = id => BY[id] || {};
@@ -285,7 +291,7 @@ async function nextPhoto(my) {
   run++; if (L) L.finish('stop'); if (voice) { voice.pause(); voice = null; }
   if (!cur()) return converse();
   api('session', {id: S.id, action: 'done', photo: cur(), device: DEVICE}).catch(() => {});
-  if (S.pos >= S.photos.length - 1) { log('last photo done'); return endSitting(); }
+  if (S.pos >= S.photos.length - 1) { log('last photo done'); setState({mode: 'finished'}); return; }
   await goTo(S.pos + 1);
 }
 async function goTo(pos) {
@@ -416,7 +422,7 @@ function drawEditor() {
   <div class="card"><b>${esc(ED.teller || 'Erica')}'s words</b> <span class="sub">fix any words the computer got wrong; the recordings stay as they are</span>
     ${ED.turns.map(x => x.who === 'Claude' ? `<div class="sub" style="margin:10px 0 2px"><i>Claude: ${esc(x.text)}</i></div>` :
       `<div style="margin:6px 0">${x.audio ? `<audio controls preload="none" src="/story/audio/${esc(x.audio)}" style="height:32px;width:100%;max-width:420px"></audio>` : ''}
-       <textarea class="eturn" data-i="${er.indexOf(x)}" style="min-height:60px;font-size:15px">${esc(x.text || '')}</textarea></div>`).join('') || '<p class="sub">No recordings for this story.</p>'}</div>
+       <textarea class="eturn" data-i="${er.indexOf(x)}" style="min-height:60px;font-size:calc(var(--t) * 0.9375)">${esc(x.text || '')}</textarea></div>`).join('') || '<p class="sub">No recordings for this story.</p>'}</div>
   <div class="card"><b>Links</b> <span class="sub">web pages or records that go with this story</span>
     ${ED.links.map(l => `<div class="row elink" style="margin:6px 0"><input type="text" class="ll" placeholder="What it is" value="${esc(l.label)}" style="flex:1"><input type="text" class="lu" placeholder="https://…" value="${esc(l.url)}" style="flex:2"><button class="lx">✕</button></div>`).join('')}
     <div class="row" style="margin-top:6px"><button id="eaddlink">+ Add a link</button><button id="eaddrec">+ Link to the records on this date</button></div></div>
@@ -594,7 +600,7 @@ function drawHome() {
   app.innerHTML = `<div class="top" style="margin-bottom:0"><h1 style="font-weight:500;margin:6px 0 2px">Tell your story</h1><button class="big" id="lib">📚 Your stories</button></div><div class="sub">Look at a photo, talk about it, and Claude asks you about it, out loud. Everything stays on the home computer.</div>
   ${err ? `<p class="err">${esc(err)}</p>` : ''}
   <div class="card"><div class="row" style="justify-content:space-between"><b>Who's telling?</b><span class="sub">Erica's story first, and anyone with a memory of her journey</span></div>
-    <div class="row" style="margin-top:8px">${TELLERS.map(t => `<button class="${t.name === TELL ? 'pri' : ''}" data-tell="${esc(t.name)}" style="font-size:17px">${t.name === TELL ? '🗣 ' : ''}${esc(t.name)}</button>`).join('')}
+    <div class="row" style="margin-top:8px">${TELLERS.map(t => `<button class="${t.name === TELL ? 'pri' : ''}" data-tell="${esc(t.name)}" style="font-size:calc(var(--t) * 1.062)">${t.name === TELL ? '🗣 ' : ''}${esc(t.name)}</button>`).join('')}
       <button id="addtell">+ Someone else</button></div>
     <div class="row" style="margin-top:8px"><span class="sub">How ${esc(TELL)} knows Erica:</span><input type="text" id="tellabout" value="${esc((TELLERS.find(t => t.name === TELL) || {}).about || '')}" placeholder="e.g. her husband, her friend from work" style="flex:1;min-width:200px"><button id="savetell">Save</button></div>
     <div id="newtell"></div></div>
@@ -613,6 +619,7 @@ function drawHome() {
     <div class="row" style="margin-top:12px"><button class="big" id="free">Or start by telling a story</button><span class="sub">You say what you want to talk about; Claude finds the photos and records from then.</span></div></div>
   <div class="card"><b>Before you start</b>
     <div class="row" style="margin-top:8px"><span class="sub">Microphone</span><select id="mic"><option value="">Default</option></select><div class="meter"><i id="lvl"></i></div><button id="test">Test mic</button></div>
+    <div class="row" style="margin-top:8px">${sizeBtns()}<span class="sub">makes all the writing on these pages smaller or bigger</span></div>
     <div class="row" style="margin-top:8px"><span class="sub">Speaker</span><select id="spk" class="spk" style="max-width:340px"><option>…</option></select><button id="hear2">▶ Play Claude's voice</button></div>
     <div class="row" style="margin-top:8px"><label><input type="checkbox" id="film" ${LS.get('filming', true) ? 'checked' : ''}> Filming: Claude speaks through the speaker (so the phones hear it)</label></div>
     <div class="row" style="margin-top:8px"><label><input type="checkbox" id="autoend" ${LS.get('autoEnd', false) ? 'checked' : ''}> End my turn by itself when I stop talking for a few seconds (otherwise press End thought)</label></div>
@@ -660,16 +667,24 @@ function seriesOf(id) {
 function drawMain() {
   const id = cur(), it = ITEM(id), ser = id ? seriesOf(id) : [];
   if (it.t) { REC.from = day(it.t); REC.to = day(it.t); REC.why = REC.why === 'you chose' ? REC.why : ''; }
-  const media = !id ? `<div class="nophoto"><div style="font-size:22px">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
+  const media = !id ? `<div class="nophoto"><div style="font-size:calc(var(--t) * 1.375)">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
                                     : `<img src="/photos/web/${encodeURIComponent(id)}.jpg" alt="">`;
-  app.innerHTML = `<div class="top"><span class="sub"><span class="pill" style="color:var(--ink)">🗣 ${esc(S.teller || 'Erica')} telling</span> ${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
-    <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:190px;padding:2px 6px;font-size:13px"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:60px;height:6px"><i id="miclvl"></i></span></span><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🔊 <select id="spksel" class="spk" style="max-width:190px;padding:2px 6px;font-size:13px"><option>…</option></select></span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
-  <div class="stage"><div><div id="micstate"></div><div id="photo">${media}</div>
+  app.innerHTML = `<div class="topbar">
+    <div class="row" style="justify-content:space-between"><span class="sub"><span class="pill" style="color:var(--ink)">🗣 ${esc(S.teller || 'Erica')} telling</span> ${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
+      <span class="row"><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span></span></div>
+    <div class="row" style="margin-top:6px;justify-content:space-between">
+      <span class="row"><button id="back" ${S.pos ? '' : 'disabled'}>← Back</button><button id="skipq">Skip question</button><button id="next" class="pri">Next photo →</button><button id="pause">❚❚ Pause</button></span>
+      <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:170px;padding:2px 6px;font-size:calc(var(--t) * 0.8125)"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:50px;height:6px"><i id="miclvl"></i></span></span>
+        <span class="pill" style="display:inline-flex;gap:6px;align-items:center">🔊 <select id="spksel" class="spk" style="max-width:170px;padding:2px 6px;font-size:calc(var(--t) * 0.8125)"><option>…</option></select></span>
+        <button id="rectop">${REC.open ? 'Hide records' : 'Show records'}</button>${sizeBtns()}</span></div></div>
+  <div id="micstate"></div>
+  <div class="stage"><div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
   ${id ? timelineHtml(it.t) : ''}</div>
-  <div class="talk"><div id="prompt"></div>
-  <div class="ctr"><button id="back" ${S.pos ? '' : 'disabled'}>← Back</button><button id="skipq">Skip question</button><button id="next" class="pri">Next photo →</button></div></div></div>`;
+  <div class="talk"><div id="prompt"></div></div></div>
+  <div id="takesbox"></div>`;
+  $('#rectop').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); $('#rectop').textContent = REC.open ? 'Hide records' : 'Show records'; };
   recMount(); recApply();
   if (!REC.from) { REC.from = '2023-05-01'; REC.to = new Date().toISOString().slice(0, 10); }
   $('#pause').onclick = pause; $('#next').onclick = () => nextPhoto(); $('#back').onclick = () => S.pos && goTo(S.pos - 1);
@@ -701,13 +716,13 @@ const liveTakes = p => (S ? S.takes : []).filter(t => !t.deleted && (t.photo ===
 function takesHtml() {
   const p = cur() || '', tk = liveTakes(p);
   if (!tk.length) return '';
-  return `<div class="card" style="margin-top:12px;padding:10px 14px"><b style="font-size:15px">What you've said about this ${p ? 'photo' : 'moment'}</b>
+  return `<div class="card" style="margin-top:12px;padding:10px 14px"><b style="font-size:calc(var(--t) * 0.9375)">What you've said about this ${p ? 'photo' : 'moment'}</b>
     ${tk.map((t, i) => { const q = S.questions.find(q => q.n === t.question);
       return `<div style="border-top:1px solid var(--line);padding:8px 0;margin-top:6px">${q ? `<div class="sub"><i>Claude: ${esc(q.text)}</i></div>` : ''}
         <div class="row" style="align-items:center;margin:4px 0"><span class="sub">${i + 1} · ${Math.floor((t.seconds || 0) / 60)}:${String(Math.round((t.seconds || 0) % 60)).padStart(2, '0')}</span>
           <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:30px;flex:1;min-width:160px"></audio></div>
-        <div style="font-size:15px;line-height:1.45">${t.text ? esc(t.text) : '<span class="sub">' + (t.error ? 'couldn\'t turn into words yet' : 'no words heard') + '</span>'}</div>
-        <div class="row" style="margin-top:4px"><button data-again="${t.n}" style="font-size:13px;padding:4px 10px">↻ Say it again</button><button data-del="${t.n}" style="font-size:13px;padding:4px 10px">🗑 Delete</button></div></div>`; }).join('')}</div>`;
+        <div style="font-size:calc(var(--t) * 0.9375);line-height:1.45">${t.text ? esc(t.text) : '<span class="sub">' + (t.error ? 'couldn\'t turn into words yet' : 'no words heard') + '</span>'}</div>
+        <div class="row" style="margin-top:4px"><button data-again="${t.n}" style="font-size:calc(var(--t) * 0.8125);padding:4px 10px">↻ Say it again</button><button data-del="${t.n}" style="font-size:calc(var(--t) * 0.8125);padding:4px 10px">🗑 Delete</button></div></div>`; }).join('')}</div>`;
 }
 function wireTakes(el) {
   el.querySelectorAll('audio').forEach(a => { sinkTo(a); a.onplay = () => stopSound(a); });
@@ -725,19 +740,29 @@ function drawPrompt() {
   const el = $('#prompt'); if (!el) return;
   const s = state, auto = LS.get('autoEnd', false);
   const heard = s.heard ? `<div class="heard"><span class="sub">You said</span><br>${esc(s.heard)}</div>` : '';
-  const recap = s.recap ? `<div class="heard" style="background:var(--accbg)"><span class="sub">Claude heard</span><br><span style="font-family:var(--voice);font-size:17px">${esc(s.recap)}</span>
+  const recap = s.recap ? `<div class="heard" style="background:var(--accbg)"><span class="sub">Claude heard</span><br><span style="font-family:var(--voice);font-size:calc(var(--t) * 1.062)">${esc(s.recap)}</span>
      <div style="margin-top:6px"><button id="wrong">That's not right</button></div></div>` : '';
   if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = recap + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
     (s.mode === 'listening' ? `<div class="ctr endbar" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
        <span class="sub">${auto ? 'Listening… press End thought when you\'re done (a long pause also ends it)' : 'Listening… talk as long as you like, then press End thought'}</span></div>
-       <div class="row"><button class="big pri" id="done" style="font-size:20px;padding:14px 34px">✓ End thought</button>${s.kind === 'closing' ? '<button class="big" id="cnext" style="font-size:20px;padding:14px 26px">Next photo →</button>' : ''}</div></div>` : '');
+       <div class="row"><button class="big pri" id="done" style="font-size:calc(var(--t) * 1.25);padding:14px 34px">✓ End thought</button>${s.kind === 'closing' ? '<button class="big" id="cnext" style="font-size:calc(var(--t) * 1.25);padding:14px 26px">Next photo →</button>' : ''}</div></div>` : '');
   else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Listening back to what you said…' : 'Getting ready…'}</div></div>`;
   else if (s.mode === 'error') el.innerHTML = heard + `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button class="pri" id="again">Try again</button><button id="sayagain">🎤 Say it again</button><button id="enext">Next photo →</button></div></div>`;
+  else if (s.mode === 'finished') {
+    const it = ITEM(cur()), chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title)), k = chs.findIndex(c => c.title === it.chapter);
+    const nexts = chs.slice(k + 1).map(c => ({c, ids: D.items.filter(i => i.chapter === c.title && !toldBy(i, S.teller || 'Erica') && !S.photos.includes(i.id)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id)})).filter(x => x.ids.length);
+    const nx = nexts[0];
+    el.innerHTML = `<div class="q"><div class="say" style="font-size:calc(var(--t) * 1.15)">That was the last photo in this session.</div>
+      <div class="ctr" style="flex-direction:column;align-items:stretch">${nx ? `<button class="big pri" id="keep">Keep going: ${esc(nx.c.title)} (${nx.ids.length} photos)</button>` : ''}
+      <button class="big" id="torev">Review and approve the stories</button><button id="fpause">Pause for now</button></div></div>`;
+    if (nx) $('#keep').onclick = async () => { const r = await api('session', {id: S.id, action: 'add', photos: nx.ids, device: DEVICE}); S = r.session; state = {}; draw(); converse(); };
+    $('#torev').onclick = endSitting; $('#fpause').onclick = pause;
+  }
   else if (s.mode === 'idle') el.innerHTML = `<div class="q"><div class="sub">Nothing heard. Talk when you're ready, or go to the next photo.</div><div class="ctr"><button class="big" id="again">I'm ready</button></div></div>`;
   else el.innerHTML = '';
   if ($('#done')) $('#done').onclick = () => L && L.finish('button');
   if ($('#cnext')) $('#cnext').onclick = () => nextPhoto();
-  const tb = document.createElement('div'); tb.innerHTML = takesHtml(); el.appendChild(tb); wireTakes(tb);
+  const tb = $('#takesbox'); if (tb) { tb.innerHTML = takesHtml(); wireTakes(tb); }
   if ($('#wrong')) $('#wrong').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('wrong'); else state.wrongPending = true; };
   if ($('#again')) $('#again').onclick = () => { state = {}; converse(); };
   if ($('#enext')) $('#enext').onclick = () => nextPhoto();
@@ -762,7 +787,7 @@ function drawReview() {
       <input type="text" class="ti" placeholder="Title" value="${esc(d.title || '')}" style="width:100%;margin-bottom:6px">
       <textarea class="ca" placeholder="Caption, in ${esc(S.teller || 'Erica')}'s words">${esc(d.caption || '')}</textarea>
       <div class="recs1" style="margin-top:8px">${tk.map((t, i) => `<div class="row" style="margin:4px 0;align-items:center"><span class="sub" style="min-width:110px">Recording ${i + 1}${t.seconds ? ' · ' + Math.floor(t.seconds / 60) + ':' + String(Math.round(t.seconds % 60)).padStart(2, '0') : ''}</span>
-        <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:32px;flex:1;min-width:200px;max-width:420px"></audio><button data-rdel="${t.n}" title="Delete this recording" style="font-size:13px;padding:4px 10px">🗑</button>
+        <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:32px;flex:1;min-width:200px;max-width:420px"></audio><button data-rdel="${t.n}" title="Delete this recording" style="font-size:calc(var(--t) * 0.8125);padding:4px 10px">🗑</button>
         <span class="sub" style="flex-basis:100%;margin-left:0">${esc((t.text || '(no words)').slice(0, 140))}${(t.text || '').length > 140 ? '…' : ''}</span></div>`).join('')}</div>
       <div class="row" style="margin-top:6px">
         <button class="au ${d.audience !== 'family' ? 'on' : ''}" data-a="everyone">Everyone</button><button class="au ${d.audience === 'family' ? 'on' : ''}" data-a="family">Family only</button>

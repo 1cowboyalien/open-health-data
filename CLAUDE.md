@@ -13,7 +13,7 @@ Start by reading `HANDOFF.md` in this folder. It has the full state of the proje
 - Never commit `epic_raw/`, databases or real health data (see `.gitignore`).
 - Save raw API responses unchanged before processing. Store times in UTC.
 - Keep the 14 osteosarc.com lab columns, plus the added columns listed in `HANDOFF.md` §6.
-- `epic_pull.py` in this folder is the canonical version of the script.
+- `epic_pull.py` in this folder is the canonical version of the script. It also saves doctors' notes (`clinical_notes_p*.json` + text in `<pull>/notes/`, listed in `notes_index.json`; `--notes none` to skip) and imaging report text (`<pull>/binaries/`; `--report-text`). Turn notes into searchable text with `python3 -I ../records/notes2text.py <pull> ../records/<site>_notes_<date>/`.
 
 ## After every pull (do this without being asked)
 1. Rebuild: `python3 flatten_labs.py && python3 flatten_vitals.py && python3 flatten_meds.py && python3 make_lab_view.py`

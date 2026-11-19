@@ -18,7 +18,8 @@ What it does:
   2. You log in as a test patient (e.g. fhircamila / epicepic1) and approve.
   3. It downloads Patient, labs, vitals, reports, conditions, meds (orders,
      dispenses and the Medication record each one points to), the text of
-     imaging reports (the Binary each report points to; --report-text), etc.
+     imaging reports (the Binary each report points to; --report-text), and
+     doctors' notes with their text (DocumentReference + Binary; --notes), etc.
   4. Saves every response, unmodified, under ./epic_raw/<timestamp>/
 
 Nothing is changed or cleaned. The point is to look at the raw fields.
@@ -55,6 +56,9 @@ QUERIES = [
     ("immunizations",          "Immunization?patient={pid}"),
     ("procedures",             "Procedure?patient={pid}"),
     ("encounters",             "Encounter?patient={pid}"),
+    # Doctors' notes (progress notes, consults, H&P, discharge summaries). The text itself is a
+    # separate Binary each note points to; fetch_note_texts downloads it (--notes).
+    ("clinical_notes",         "DocumentReference?patient={pid}&category=clinical-note"),
 ]
 
 
@@ -275,6 +279,64 @@ def fetch_report_binaries(base, access, outdir, bundles, which="imaging"):
     return len(pairs) - failed if not failed else f"{len(pairs) - failed} ({failed} failed)"
 
 
+def note_attachments(bundles):
+    """(DocumentReference, attachment) pairs for clinical notes whose text is a separate Binary.
+    Epic often offers one note in two forms (text/html and text/rtf); keep one per note,
+    preferring HTML, then plain text, then RTF."""
+    rank = {"text/html": 0, "text/plain": 1, "text/rtf": 2, "application/rtf": 2}
+    out = []
+    for b in bundles:
+        for en in b.get("entry", []):
+            d = en.get("resource", {})
+            if d.get("resourceType") != "DocumentReference":
+                continue
+            atts = [c.get("attachment", {}) for c in d.get("content", [])]
+            atts = [a for a in atts if a.get("url") and not a.get("data")]
+            if atts:
+                out.append((d, min(atts, key=lambda a: rank.get(a.get("contentType", ""), 9))))
+    return out
+
+
+def fetch_note_texts(base, access, outdir, bundles):
+    """A clinical note (DocumentReference) only points to its text (attachment.url -> Binary/<id>).
+    Download one form of each unchanged into <outdir>/notes/ and list them in notes_index.json
+    (note id, date, type, author, encounter, status, file)."""
+    pairs = note_attachments(bundles)
+    os.makedirs(os.path.join(outdir, "notes"), exist_ok=True)
+    index, failed = [], 0
+    for i, (d, a) in enumerate(pairs, 1):
+        url = a["url"] if a["url"].startswith("http") else f"{base.rstrip('/')}/{a['url'].lstrip('/')}"
+        bid = url.rstrip("/").split("/")[-1]
+        ctype = a.get("contentType", "")
+        name = "".join(c if c.isalnum() or c in "-_." else "_" for c in bid)[:120]
+        item = {"note_id": d.get("id"), "date": d.get("date"),
+                "period": (d.get("context") or {}).get("period"),
+                "type": (d.get("type") or {}).get("text"),
+                "authors": [x.get("display") for x in d.get("author", [])],
+                "encounters": [x.get("reference") for x in (d.get("context") or {}).get("encounter", [])],
+                "status": d.get("docStatus") or d.get("status"),
+                "content_type": ctype, "url": url}
+        try:
+            body, got = http_raw(url, access, ctype or "*/*")
+            fname = f"notes/{name}.{FORM_EXT.get(got.split(';')[0].strip(), FORM_EXT.get(ctype, 'bin'))}"
+            with open(os.path.join(outdir, fname), "wb") as fh:
+                fh.write(body)
+            item.update(file=fname, served_as=got, bytes=len(body))
+        except urllib.error.HTTPError as e:
+            try:
+                detail = e.read().decode(errors="replace")[:300]
+            except Exception:
+                detail = ""
+            item.update(error=f"HTTP {e.code}", body=detail); failed += 1
+        except urllib.error.URLError as e:
+            item.update(error="network", body=str(e.reason)[:300]); failed += 1
+        index.append(item)
+        if i % 50 == 0:
+            print(f"      ... {i}/{len(pairs)}")
+    save(outdir, "notes_index.json", index)
+    return len(pairs) - failed if not failed else f"{len(pairs) - failed} ({failed} failed)"
+
+
 def save(outdir, name, obj):
     path = os.path.join(outdir, name)
     with open(path, "w", encoding="utf-8") as f:
@@ -302,6 +364,9 @@ def main():
     ap.add_argument("--report-text", choices=("imaging", "all", "none"), default="imaging",
                     help="Download the text documents (Binary) that DiagnosticReports point to: "
                          "imaging reports only (default), all reports, or none")
+    ap.add_argument("--notes", choices=("all", "none"), default="all",
+                    help="Download the text of every clinical note (default all), or none "
+                         "(the list of notes is always saved)")
     ap.add_argument("--site", default=None,
                     help="Short name for the health system, e.g. mdanderson "
                          "(default: taken from the --base host)")
@@ -381,7 +446,7 @@ def main():
     except urllib.error.HTTPError as e:
         summary["patient"] = f"HTTP {e.code}"
 
-    med_bundles, report_bundles = [], []
+    med_bundles, report_bundles, note_bundles = [], [], []
     for label, tmpl in QUERIES:
         url = f"{args.base}/{tmpl.format(pid=pid)}"
         page, total = 1, 0
@@ -398,6 +463,8 @@ def main():
                 med_bundles.append(bundle)
             if label == "diagnostic_reports":
                 report_bundles.append(bundle)
+            if label == "clinical_notes":
+                note_bundles.append(bundle)
             total += sum(1 for en in bundle.get("entry", [])
                          if en.get("resource", {}).get("resourceType") != "OperationOutcome")
             url = next((l["url"] for l in bundle.get("link", [])
@@ -414,6 +481,11 @@ def main():
     summary["report_binaries"] = fetch_report_binaries(args.base, access, outdir,
                                                        report_bundles, args.report_text)
     print(f"    {'report_binaries':22s} {summary['report_binaries']}")
+
+    if args.notes == "all":
+        print("    clinical note text (one read per note)...")
+        summary["note_texts"] = fetch_note_texts(args.base, access, outdir, note_bundles)
+        print(f"    {'note_texts':22s} {summary['note_texts']}")
 
     save(outdir, "_summary.json", summary)
     print(f"\nDone. Raw files are in: {os.path.abspath(outdir)}")

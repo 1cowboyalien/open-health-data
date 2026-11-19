@@ -1,0 +1,519 @@
+"""Erica's "Tell your story" sessions: the server side of story_view.html (served by serve_viewer.py at /story).
+
+Everything here answers only this Mac and the home network (VPN included); serve_viewer.py checks that first.
+Private files, all under local/story/ (never in git):
+    settings.json            {"voice": "Samantha", "claudeSeesPhoto": false, "model": "sonnet", "maxQuestions": 3}
+    Story Transcribe.app     on-device speech to text (story/build_transcribe.sh); first use asks for permission
+    voice_cache/             spoken lines that are always the same ("Tell me about this one.")
+    sessions/<sid>/session.json   the sitting: photo queue, place, takes, questions, drafts, who has it open
+                  takes/NNN.wav       each answer, as recorded (48 kHz mono WAV, kept for the narrated video)
+                  questions/NNN.m4a   each spoken question
+                  continuous-NN.webm  the whole sitting, one file per stretch between pauses (for syncing phone video)
+                  log.jsonl           every event, with the laptop's clock and this Mac's clock
+Approved stories go to local/photos/stories/<photo id>.json, which the gallery shows (family-only ones only at home).
+Claude's questions come from the chat server (chat/serve_chat.py, POST /api/interview), which runs Claude on this Mac.
+Python standard library plus macOS tools (say, afconvert, open).
+"""
+import datetime
+import json
+import os
+import re
+import secrets
+import subprocess
+import tempfile
+import threading
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOCAL = os.path.join(HERE, "local")
+BASE = os.path.join(LOCAL, "story")
+SESS = os.path.join(BASE, "sessions")
+PHOTOS = os.path.join(LOCAL, "photos")
+STORIES = os.path.join(PHOTOS, "stories")
+APP = os.path.join(BASE, "Story Transcribe.app")
+ASK_CONF = os.path.join(LOCAL, "ask.json")
+LIVE_SECONDS = 30          # a device that hasn't checked in for this long has let go of the session
+lock = threading.Lock()
+SID = re.compile(r"s-\d{8}-\d{6}-[a-z0-9]{4}$")
+PID = re.compile(r"[A-Za-z0-9_\-]{1,120}$")
+OPENERS = ["Tell me about this one.", "What's happening here?", "What do you remember about this one?",
+           "Tell me the story of this one.", "What comes to mind when you see this?"]
+
+
+def now():
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+
+
+def settings():
+    s = {"voice": "", "claudeSeesPhoto": False, "model": "sonnet", "maxQuestions": 3}
+    try:
+        s.update(json.load(open(os.path.join(BASE, "settings.json"))))
+    except (OSError, ValueError):
+        pass
+    return s
+
+
+# ---------------- photos and what was happening ----------------
+def photo_data():
+    """The gallery's items (website copies), minus hidden photos, with the chapters and a slim timeline."""
+    try:
+        v = json.load(open(os.path.join(PHOTOS, "photos_view.json")))
+    except (OSError, ValueError):
+        return {"items": [], "chapters": [], "timeline": []}
+    try:
+        hidden = set(json.load(open(os.path.join(PHOTOS, "photo_edits.json"))).get("hidden") or {})
+    except (OSError, ValueError):
+        hidden = set()
+    told = {}
+    for f in os.listdir(STORIES) if os.path.isdir(STORIES) else []:
+        if f.endswith(".json"):
+            try:
+                told[f[:-5]] = len(json.load(open(os.path.join(STORIES, f))).get("stories") or [])
+            except (OSError, ValueError):
+                pass
+    items = [dict(i, told=told.get(i["id"], 0)) for i in v.get("items", []) if i["id"] not in hidden]
+    return {"title": v.get("title"), "teller": v.get("teller") or "Erica", "items": items,
+            "chapters": v.get("chapters", []), "timeline": timeline()}
+
+
+def timeline():
+    """Procedures, hospital stays and radiation courses, as [{from, to?, text, kind}] for the strip under the photo."""
+    try:
+        p = json.load(open(os.path.join(LOCAL, "procedures", "procedures.json")))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for e in p.get("events", []):
+        if e.get("date"):
+            out.append({"from": e["date"], "text": e.get("short") or e.get("procedure") or "", "kind": "event"})
+    for s in p.get("stays", []):
+        site = s.get("site") or ""
+        out.append({"from": str(s.get("from", ""))[:10], "to": str(s.get("to") or s.get("from", ""))[:10],
+                    "text": ("ER visit" if s.get("kind") == "er" else "In hospital") + (" (" + site.title() + ")" if site else ""),
+                    "kind": "stay"})
+    for r in p.get("rt_courses", []):
+        out.append({"from": r.get("from"), "to": r.get("to"), "text": "Radiation: " + (r.get("label") or ""), "kind": "radiation"})
+    return sorted(out, key=lambda x: x["from"] or "")
+
+
+def nearby(t, days=21):
+    """Timeline entries within `days` of the date t (YYYY-MM-DD...), as short lines for Claude."""
+    date, gap = datetime.date, datetime.timedelta(days=days)
+    try:
+        d0 = date.fromisoformat(t[:10])
+    except (TypeError, ValueError):
+        return []
+    out = []
+    for e in timeline():
+        try:
+            a = date.fromisoformat(e["from"][:10]); b = date.fromisoformat((e.get("to") or e["from"])[:10])
+        except (TypeError, ValueError):
+            continue
+        if a - d0 > gap or d0 - b > gap:
+            continue
+        rel = "during" if a <= d0 <= b else ("%d days before the photo" % (d0 - b).days if b < d0 else "%d days after the photo" % (a - d0).days)
+        out.append("%s%s: %s (%s)" % (e["from"], (" to " + e["to"]) if e.get("to") and e["to"] != e["from"] else "", e["text"], rel))
+    return out
+
+
+# ---------------- sessions ----------------
+def path(sid, *p):
+    return os.path.join(SESS, sid, *p)
+
+
+def load(sid):
+    if not SID.match(sid or "") or not os.path.exists(path(sid, "session.json")):
+        raise KeyError("no such session")
+    return json.load(open(path(sid, "session.json")))
+
+
+def save(s):
+    tmp = path(s["id"], "session.json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(s, f, indent=1, ensure_ascii=False)
+    os.replace(tmp, path(s["id"], "session.json"))
+
+
+def log(sid, ev):
+    ev = dict(ev, server=now())
+    with open(path(sid, "log.jsonl"), "a") as f:
+        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+
+
+def public(s):
+    """What the page needs (everything; the session is only ever shown at home)."""
+    return s
+
+
+def sessions():
+    out = []
+    for sid in sorted(os.listdir(SESS), reverse=True) if os.path.isdir(SESS) else []:
+        try:
+            s = load(sid)
+        except (KeyError, OSError, ValueError):
+            continue
+        drafts = s.get("drafts") or {}
+        out.append({"id": sid, "title": s["title"], "created": s["created"], "status": s["status"],
+                    "updated": s.get("updated"), "pos": s["pos"], "firstPhoto": s["photos"][min(s["pos"], len(s["photos"]) - 1)], "count": len(s["photos"]), "done": len(s.get("done") or []),
+                    "toReview": sum(1 for d in drafts.values() if d.get("status") != "approved")
+                                + sum(1 for p in s.get("done") or [] if p not in drafts and any(t["photo"] == p and t.get("text") for t in s["takes"])),
+                    "live": s.get("live")})
+    return out
+
+
+def create(b):
+    ids = [str(x) for x in b.get("photos") or [] if PID.match(str(x))]
+    known = {i["id"] for i in photo_data()["items"]}
+    ids = [i for i in ids if i in known]
+    if not ids:
+        raise ValueError("no photos chosen")
+    sid = time.strftime("s-%Y%m%d-%H%M%S-") + secrets.token_hex(2)
+    os.makedirs(path(sid, "takes")); os.makedirs(path(sid, "questions"))
+    s = {"id": sid, "title": str(b.get("title") or "Story session")[:120], "created": now(), "updated": now(),
+         "status": "new", "photos": ids, "pos": 0, "done": [], "takes": [], "questions": [], "drafts": {},
+         "claude": None, "parts": 0, "live": None}
+    save(s)
+    log(sid, {"ev": "created", "photos": len(ids)})
+    return s
+
+
+def act(b):
+    """claim / heartbeat / goto / pause / resume / end / done (a photo finished)."""
+    sid, a, dev = str(b.get("id")), b.get("action"), str(b.get("device") or "")[:60]
+    with lock:
+        s = load(sid)
+        live, t = s.get("live"), time.time()
+        mine = live and live.get("device") == dev
+        free = not live or t - live.get("t", 0) > LIVE_SECONDS
+        if a == "claim":
+            if not (mine or free or b.get("force")):
+                return {"session": s, "busy": live}
+            if live and not mine:
+                log(sid, {"ev": "taken over", "from": live.get("device"), "device": dev})
+            s["live"] = {"device": dev, "t": t, "name": str(b.get("deviceName") or "")[:60]}
+            s["status"] = "active"
+            s["parts"] = s.get("parts", 0) + 1   # each stretch between pauses gets its own whole-sitting recording
+        elif not mine:
+            return {"session": s, "lost": True, "live": live}   # another device has it now
+        elif a == "heartbeat":
+            s["live"]["t"] = t
+        elif a == "goto":
+            s["pos"] = max(0, min(len(s["photos"]) - 1, int(b.get("pos", s["pos"]))))
+        elif a == "done":
+            p = str(b.get("photo"))
+            if p in s["photos"] and p not in s["done"]:
+                s["done"].append(p)
+        elif a in ("pause", "end"):
+            s["status"] = "paused" if a == "pause" else "ended"
+            s["live"] = None
+        s["updated"] = now()
+        save(s)
+    if a not in ("heartbeat",):
+        log(sid, {"ev": a, "device": dev, "pos": s["pos"], "client": b.get("client")})
+    return {"session": s}
+
+
+def client_log(b):
+    sid = str(b.get("id"))
+    load(sid)
+    for e in (b.get("events") or [])[:200]:
+        if isinstance(e, dict):
+            log(sid, {k: e[k] for k in list(e)[:12]})
+    return {"ok": True}
+
+
+def continuous(sid, part, data, ext="webm"):
+    """Append a chunk of the whole-sitting recording (MediaRecorder slices joined back into one file)."""
+    load(sid)
+    part = int(part)
+    if not 0 < part < 1000 or ext not in ("webm", "mp4", "ogg"):
+        raise ValueError("bad part")
+    with lock:
+        with open(path(sid, "continuous-%02d.%s" % (part, ext)), "ab") as f:
+            f.write(data)
+    return {"ok": True}
+
+
+# ---------------- speech to text ----------------
+def transcribe(wav):
+    """On-device speech to text with Story Transcribe.app; {"text", "segments"} or {"error"}."""
+    if os.environ.get("STORY_FAKE_STT"):   # testing the page without the transcriber
+        return {"text": os.environ["STORY_FAKE_STT"], "segments": []}
+    if not os.path.isdir(APP):
+        return {"error": "the transcriber isn't built (story/build_transcribe.sh)"}
+    fd, out = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(out)
+    try:
+        subprocess.run(["open", "-n", "-W", "-g", "-j", APP, "--args", wav, out], timeout=300,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return json.load(open(out))
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        return {"error": "speech to text failed: %s" % e}
+    finally:
+        if os.path.exists(out):
+            os.remove(out)
+
+
+def take(sid, photo, data, meta):
+    """Save one answer (WAV), turn it into text, and add it to the session."""
+    if not PID.match(photo or ""):
+        raise ValueError("bad photo")
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not a WAV recording")
+    with lock:
+        s = load(sid)
+        n = len(s["takes"]) + 1
+        name = "%03d.wav" % n
+        open(path(sid, "takes", name), "wb").write(data)
+        s["takes"].append({"n": n, "photo": photo, "file": name, "at": now(), "client": meta.get("client"),
+                           "seconds": round((len(data) - 44) / 2 / max(1, int(meta.get("rate") or 48000)), 1),
+                           "question": meta.get("question") or None, "text": None})
+        save(s)
+    r = transcribe(path(sid, "takes", name))
+    with lock:
+        s = load(sid)
+        t = next(x for x in s["takes"] if x["n"] == n)
+        t["text"] = r.get("text") if "text" in r else None
+        t["segments"] = r.get("segments")
+        if r.get("error"):
+            t["error"] = r["error"]
+        save(s)
+    log(sid, {"ev": "take", "n": n, "photo": photo, "seconds": t["seconds"], "client": meta.get("client")})
+    return {"take": t}
+
+
+# ---------------- Claude (via the chat server) and Claude's voice ----------------
+def chat_server():
+    if os.environ.get("STORY_CHAT"):   # a test chat server
+        return os.environ["STORY_CHAT"].rstrip("/")
+    try:
+        return json.load(open(ASK_CONF))["chatServer"].rstrip("/")
+    except (OSError, ValueError, KeyError):
+        return "http://127.0.0.1:8820"
+
+
+def claude(prompt, sid=None, image=None, timeout=120):
+    st = settings()
+    body = json.dumps({"prompt": prompt, "sessionId": sid, "image": image if st["claudeSeesPhoto"] else None,
+                       "model": st["model"]}).encode()
+    req = urllib.request.Request(chat_server() + "/api/interview", data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def voice_name():
+    v = settings().get("voice")
+    if v:
+        return v
+    try:
+        names = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for pat in (r"^(.+?\((?:Premium|Enhanced)\))\s+en_US", r"^(.+?\((?:Premium|Enhanced)\))\s+en_", r"^(Samantha)\s+en_US"):
+        m = re.search(pat, names, re.M)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def speak(text, out):
+    """Text to speech with the Mac's voice, saved as .m4a."""
+    tmp = out + ".aiff"
+    v = voice_name()
+    subprocess.run(["say"] + (["-v", v] if v else []) + ["-o", tmp, text], check=True, timeout=60)
+    subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", tmp, out], check=True, timeout=60)
+    os.remove(tmp)
+
+
+def cached_line(text):
+    d = os.path.join(BASE, "voice_cache")
+    os.makedirs(d, exist_ok=True)
+    name = re.sub(r"[^a-z0-9]+", "-", (voice_name() + "-" + text).lower()).strip("-")[:90] + ".m4a"
+    f = os.path.join(d, name)
+    if not os.path.exists(f):
+        speak(text, f)
+    return name
+
+
+def photo_context(s, photo):
+    it = next((i for i in photo_data()["items"] if i["id"] == photo), {})
+    lines = ["Photo date: %s (%s)" % ((it.get("t") or "unknown")[:16].replace("T", " "),
+                                       "exact, from the camera" if it.get("sure") == "exact" else "date: " + str(it.get("sure") or "unsure")),
+             "Chapter: %s" % it.get("chapter", "")]
+    if it.get("kind") == "video":
+        lines.append("This is a video, %s seconds long." % (it.get("seconds") or "?"))
+    if it.get("note"):
+        lines.append("Family's note on it: %s" % it["note"])
+    if it.get("session"):
+        same = [i for i in s["photos"] if i != photo and next((x for x in photo_data()["items"] if x["id"] == i), {}).get("session") == it["session"]]
+        if same:
+            lines.append("It's part of a series of %d photos from the same moment." % (len(same) + 1))
+    nb = nearby(it.get("t") or "")
+    if nb:
+        lines.append("What the medical records show around then:\n- " + "\n- ".join(nb))
+    return "\n".join(lines), it
+
+
+def ask(b):
+    """After a take (or at a new photo): one follow-up question from Claude, spoken. {"question", "audio", "next"}"""
+    sid, photo = str(b.get("id")), str(b.get("photo"))
+    s = load(sid)
+    if photo not in s["photos"]:
+        raise ValueError("photo not in this session")
+    takes = [t for t in s["takes"] if t["photo"] == photo]
+    asked = [q for q in s["questions"] if q["photo"] == photo and q.get("kind") == "followup"]
+    maxq = int(settings()["maxQuestions"])
+    if not takes:   # a new photo: a short opener in the same voice, no wait for Claude
+        text = OPENERS[s["pos"] % len(OPENERS)]
+        return {"question": text, "audio": "cache/" + cached_line(text), "kind": "opener"}
+    last = takes[-1]
+    words = re.sub(r"[^a-z ]", "", (last.get("text") or "").lower()).strip()
+    if words in ("next", "next photo", "next one", "skip", "skip this one", "skip it", "lets move on", "move on"):
+        return {"next": True, "kind": "command", "said": words}
+    if len(asked) >= maxq:
+        text = "Thank you. Let's look at the next one."
+        return {"question": text, "audio": "cache/" + cached_line(text), "next": True, "kind": "closing"}
+    ctx, it = photo_context(s, photo)
+    if not (last.get("text") or "").strip():
+        text = "I didn't catch that. Could you say it again?" if not last.get("error") else ""
+        if not text:
+            return {"question": "", "error": last["error"], "kind": "error"}
+        return {"question": text, "audio": "cache/" + cached_line(text), "kind": "repeat"}
+    convo = []
+    qs = {q["n"]: q for q in s["questions"]}
+    for t in takes:
+        if t.get("question") and t["question"] in qs:
+            convo.append("Claude: " + qs[t["question"]]["text"])
+        convo.append("Erica: " + (t.get("text") or "(nothing heard)"))
+    prompt = ("[Photo %d of %d in this sitting]\n%s\n\n[The conversation about this photo so far]\n%s\n\n"
+              "[Ask your next question. This photo has had %d follow-up questions; at most %d. "
+              "Answer NEXT instead if the photo feels fully told or she sounds ready to move on.]"
+              % (s["pos"] + 1, len(s["photos"]), ctx, "\n".join(convo), len(asked), maxq))
+    image = os.path.join(PHOTOS, "web", photo + ".jpg") if it.get("kind") == "photo" else os.path.join(PHOTOS, "thumb", photo + ".jpg")
+    r = claude(prompt, s.get("claude"), image)
+    text = (r.get("text") or "").strip().strip('"')
+    with lock:
+        s = load(sid)
+        if r.get("sessionId"):
+            s["claude"] = r["sessionId"]
+        if not text or text.upper().startswith("NEXT"):
+            save(s)
+            text = "Thank you. Let's look at the next one."
+            return {"question": text, "audio": "cache/" + cached_line(text), "next": True, "kind": "closing"}
+        n = len(s["questions"]) + 1
+        name = "%03d.m4a" % n
+        s["questions"].append({"n": n, "photo": photo, "text": text, "file": name, "at": now(), "kind": "followup",
+                               "seconds": r.get("seconds")})
+        save(s)
+    speak(text, path(sid, "questions", name))
+    log(sid, {"ev": "question", "n": n, "photo": photo, "text": text})
+    return {"question": text, "audio": "%s/questions/%s" % (sid, name), "n": n, "kind": "followup"}
+
+
+def drafts(b):
+    """End of the sitting: Claude drafts a title and caption for each photo she talked about, from her own words."""
+    sid = str(b.get("id"))
+    s = load(sid)
+    todo = [p for p in s["photos"] if any(t["photo"] == p and (t.get("text") or "").strip() for t in s["takes"])
+            and (s["drafts"].get(p) or {}).get("status") not in ("approved",)
+            and not (s["drafts"].get(p) or {}).get("caption")]
+    if todo:
+        qs = {q["n"]: q for q in s["questions"]}
+        parts = []
+        for p in todo:
+            lines = []
+            for t in [t for t in s["takes"] if t["photo"] == p]:
+                if t.get("question") in qs:
+                    lines.append("Claude: " + qs[t["question"]]["text"])
+                lines.append("Erica: " + (t.get("text") or ""))
+            parts.append("PHOTO %s\n%s" % (p, "\n".join(lines)))
+        prompt = ("[End of the sitting. For each photo below, write a short title (at most 8 words, sentence case) and a caption of 1 to 4 "
+                  "sentences in Erica's own first-person words: take her sentences, drop filler (um, like, you know), "
+                  "and do not add facts, feelings or names she didn't say. Reply with JSON only: "
+                  '{"<photo id>": {"title": "...", "caption": "..."}, ...}]\n\n' + "\n\n".join(parts))
+        r = claude(prompt, s.get("claude"), None, timeout=240)
+        m = re.search(r"\{.*\}", r.get("text") or "", re.S)
+        got = {}
+        try:
+            got = json.loads(m.group(0)) if m else {}
+        except ValueError:
+            pass
+        with lock:
+            s = load(sid)
+            if r.get("sessionId"):
+                s["claude"] = r["sessionId"]
+            for p in todo:
+                g = got.get(p) or {}
+                s["drafts"][p] = {"title": str(g.get("title") or "")[:120], "caption": str(g.get("caption") or "")[:3000],
+                                  "status": "draft", "audience": "everyone"}
+            save(s)
+    return {"session": load(sid)}
+
+
+def approve(b):
+    """Save one photo's story to the gallery (or keep it for later)."""
+    sid, photo = str(b.get("id")), str(b.get("photo"))
+    with lock:
+        s = load(sid)
+        if photo not in s["photos"]:
+            raise ValueError("photo not in this session")
+        d = s["drafts"].setdefault(photo, {})
+        d.update({"title": str(b.get("title") or d.get("title") or "")[:120],
+                  "caption": str(b.get("caption") or d.get("caption") or "")[:3000],
+                  "audience": "family" if b.get("audience") == "family" else "everyone"})
+        if b.get("status") == "later":
+            d["status"] = "later"
+            save(s)
+            return {"session": s}
+        qs = {q["n"]: q for q in s["questions"]}
+        turns = []
+        for t in [t for t in s["takes"] if t["photo"] == photo]:
+            if t.get("question") in qs:
+                turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
+            if (t.get("text") or "").strip():
+                turns.append({"who": "Erica", "text": t["text"], "audio": "%s/takes/%s" % (sid, t["file"])})
+        story = {"title": d["title"], "caption": d["caption"], "told": time.strftime("%-m/%-d/%Y"),
+                 "family_only": d["audience"] == "family", "session": sid, "turns": turns}
+        os.makedirs(STORIES, exist_ok=True)
+        f = os.path.join(STORIES, photo + ".json")
+        try:
+            cur = json.load(open(f))
+        except (OSError, ValueError):
+            cur = {"stories": []}
+        cur["stories"] = [x for x in cur.get("stories", []) if x.get("session") != sid] + [story]
+        tmp = f + ".tmp"
+        json.dump(cur, open(tmp, "w"), indent=1, ensure_ascii=False)
+        os.replace(tmp, f)
+        d["status"] = "approved"
+        d["approved"] = now()
+        save(s)
+    log(sid, {"ev": "approved", "photo": photo, "audience": d["audience"]})
+    return {"session": s}
+
+
+def markers_csv(sid):
+    """The session log as markers for video editing: laptop clock time, event, photo, words."""
+    load(sid)
+    rows = ["clock,event,photo,text"]
+    for line in open(path(sid, "log.jsonl")):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        c = e.get("client") or (e.get("server") or "").replace("T", " ")
+        if isinstance(c, (int, float)):
+            c = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(c / 1000)) + ".%03d" % (c % 1000)
+        q = lambda x: '"' + str(x or "").replace('"', '""') + '"'
+        rows.append(",".join([q(c), q(e.get("ev")), q(e.get("photo")), q(e.get("text"))]))
+    return ("\n".join(rows) + "\n").encode()
+
+
+def audio_file(rel):
+    """local/story/sessions/<sid>/(takes|questions)/NNN.(wav|m4a) or voice_cache/<name>.m4a, or None."""
+    m = re.fullmatch(r"(s-\d{8}-\d{6}-[a-z0-9]{4})/(takes|questions)/(\d{3}\.(?:wav|m4a))", rel)
+    if m:
+        f = path(m.group(1), m.group(2), m.group(3))
+    else:
+        m = re.fullmatch(r"cache/([a-z0-9\-]{1,100}\.m4a)", rel)
+        f = os.path.join(BASE, "voice_cache", m.group(1)) if m else None
+    return f if f and os.path.isfile(f) else None

@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tell your story</title>
+<!-- Erica's story sessions. Served by serve_viewer.py at /story (this Mac and the home network only); server side in story.py.
+     She sees a photo, talks; her answer is recorded (WAV, kept), turned into text on the home Mac, and Claude asks one spoken
+     follow-up question. Captions are reviewed at the end. Pause and pick up on any device at home or on the VPN. -->
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1f1e1c;--sub:#6b6a65;--line:#dedcd4;--acc:#2f6fb0;--accbg:#e6f0fb;--red:#c0392b;--ok:#2e7d4f;--voice:Georgia,'Times New Roman',serif}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1b;--card:#262624;--ink:#eceae4;--sub:#a9a79f;--line:#3b3a37;--acc:#7fb2e8;--accbg:#22364d;--red:#f08070;--ok:#7cc79a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+button{font:inherit;font-size:15px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--sub)}button.big{font-size:18px;padding:12px 22px}button.pri{background:var(--accbg);color:var(--acc);border-color:var(--acc)}
+button.on{background:var(--accbg);color:var(--acc);border-color:var(--acc)}
+select,input[type=text],textarea{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:17px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+.sub{color:var(--sub);font-size:14px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--sub);white-space:nowrap}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+#photo{display:flex;justify-content:center;align-items:center;background:#0000000d;border-radius:12px;min-height:200px}
+#photo img,#photo video{max-width:100%;max-height:56vh;border-radius:8px;display:block}
+.strip{display:flex;gap:6px;overflow-x:auto;padding:8px 0}.strip .t{position:relative;flex:0 0 auto;cursor:pointer;border-radius:6px;border:2px solid transparent}
+.strip .t img{height:58px;display:block;border-radius:4px}.strip .t.cur{border-color:var(--acc)}.strip .t .ck{position:absolute;right:2px;top:0;color:#fff;text-shadow:0 0 3px #000;font-size:14px}
+.tl{position:relative;height:46px;margin:6px 4px 0}.tl .ax{position:absolute;top:10px;left:0;right:0;height:3px;background:var(--line);border-radius:2px}
+.tl .m{position:absolute;top:2px;height:19px;min-width:3px;border-radius:2px;background:var(--sub);opacity:.75}
+.tl .m.stay{background:var(--red);opacity:.45}.tl .m.radiation{background:#b07d2f;opacity:.45}.tl .me{position:absolute;top:-2px;width:3px;height:27px;background:var(--acc)}
+.tl .lb{position:absolute;top:26px;font-size:12px;color:var(--sub);white-space:nowrap;transform:translateX(-50%)}
+.q{margin-top:0;margin-bottom:10px;padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.q .who{font-size:12px;color:var(--sub);margin-bottom:2px}.q .say{font-family:var(--voice);font-size:21px;line-height:1.45}
+.heard{margin-bottom:10px;padding:10px 14px;border-radius:10px;background:#0000000a;font-size:15px}
+.bars{display:flex;gap:3px;align-items:flex-end;height:30px}.bars span{width:6px;background:var(--red);border-radius:2px;transition:height .08s}
+.ctr{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+.flash{position:fixed;inset:0;background:#fff;z-index:9;display:none}
+.big3{font-size:120px;font-weight:500;text-align:center;line-height:1}
+.rv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:14px 0;border-top:1px solid var(--line)}
+.rv img{width:150px;border-radius:8px}
+.err{color:var(--red);font-size:14px}
+.recs{margin-top:16px}.recs .bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.recs .bar button{font-size:14px;padding:5px 11px}
+.recs iframe{width:100%;height:600px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.nophoto{min-height:300px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:30px;gap:10px;background:#0000000d;border-radius:12px}
+.stage{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stage .talk{display:flex;flex-direction:column}
+@media (min-width:900px){.stage{grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr)}#photo img,#photo video{max-height:62vh}.stage .talk .ctr{justify-content:flex-start}}
+.meter{height:8px;width:160px;background:var(--line);border-radius:4px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--ok)}
+</style></head><body>
+<div class="flash" id="flash"></div>
+<div class="wrap" id="app">Loading…</div>
+<div class="wrap" id="recbox" style="display:none;padding-top:0"></div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s), app = $('#app');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS = {get: (k, d) => { try { const v = localStorage.getItem('story.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+            set: (k, v) => { try { localStorage.setItem('story.' + k, JSON.stringify(v)); } catch (e) {} }};
+let DEVICE = LS.get('device', null); if (!DEVICE) { DEVICE = 'd-' + Math.random().toString(36).slice(2, 10); LS.set('device', DEVICE); }
+const DEVNAME = /iPad|iPhone/.test(navigator.userAgent) ? 'iPad/iPhone' : /Mac/.test(navigator.userAgent) ? 'Mac' : /Windows/.test(navigator.userAgent) ? 'Windows PC' : 'this device';
+async function api(path, body, raw) {
+  const r = await fetch('/story/api/' + path, body === undefined ? {} : {method: 'POST', body: raw ? body : JSON.stringify(body), headers: raw ? {} : {'Content-Type': 'application/json'}});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('server said ' + r.status));
+  return j;
+}
+const log = (ev, x) => S && api('log', {id: S.id, events: [Object.assign({ev, client: Date.now()}, x || {})]}).catch(() => {});
+
+let D = null, BY = {}, S = null, screen = 'home', err = '';
+const ITEM = id => BY[id] || {};
+const day = t => (t || '').slice(0, 10);
+const fmtDate = t => { if (!t) return 'date unknown'; const d = new Date(t.slice(0, 10) + 'T12:00'); return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}); };
+
+/* ---------------- microphone, levels, recording ---------------- */
+const A = {stream: null, ctx: null, proc: null, level: 0, rec: null, pcm: null, rate: 48000, cont: null, contStart: 0, onLevel: null};
+async function openMic() {
+  closeMic();
+  const filming = LS.get('filming', true), dev = LS.get('mic', '');
+  A.stream = await navigator.mediaDevices.getUserMedia({audio: Object.assign({channelCount: 1, echoCancellation: filming, noiseSuppression: false, autoGainControl: false},
+    dev ? {deviceId: {exact: dev}} : {})}).catch(() => navigator.mediaDevices.getUserMedia({audio: true}));
+  A.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  A.rate = A.ctx.sampleRate;
+  const src = A.ctx.createMediaStreamSource(A.stream), mute = A.ctx.createGain(); mute.gain.value = 0;
+  A.proc = A.ctx.createScriptProcessor(4096, 1, 1);
+  A.proc.onaudioprocess = e => {
+    const x = e.inputBuffer.getChannelData(0); let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i];
+    A.level = Math.sqrt(s / x.length);
+    if (A.pcm) A.pcm.push(new Float32Array(x));
+    if (A.onLevel) A.onLevel(A.level);
+  };
+  src.connect(A.proc); A.proc.connect(mute); mute.connect(A.ctx.destination);
+  const t = A.stream.getAudioTracks()[0]; A.label = t ? t.label : '';
+}
+function closeMic() {
+  stopContinuous();
+  if (A.proc) { A.proc.onaudioprocess = null; try { A.proc.disconnect(); } catch (e) {} }
+  if (A.ctx) A.ctx.close().catch(() => {});
+  if (A.stream) A.stream.getTracks().forEach(t => t.stop());
+  A.stream = A.ctx = A.proc = null; A.pcm = null;
+}
+function wav(chunks, rate) {
+  let n = 0; chunks.forEach(c => n += c.length);
+  const b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  let o = 44; chunks.forEach(c => { for (let i = 0; i < c.length; i++, o += 2) { const s = Math.max(-1, Math.min(1, c[i])); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); } });
+  return new Blob([b], {type: 'audio/wav'});
+}
+function startContinuous() {
+  if (!A.stream || !window.MediaRecorder || A.cont) return;
+  const types = [['audio/webm;codecs=opus', 'webm'], ['audio/mp4', 'mp4'], ['audio/ogg;codecs=opus', 'ogg']];
+  const t = types.find(t => MediaRecorder.isTypeSupported(t[0])); if (!t) return;
+  const part = S.parts || 1, id = S.id;
+  A.cont = new MediaRecorder(A.stream, {mimeType: t[0], audioBitsPerSecond: 128000});
+  A.cont.ondataavailable = e => { if (e.data && e.data.size) fetch(`/story/api/continuous?id=${id}&part=${part}&ext=${t[1]}`, {method: 'POST', body: e.data}).catch(() => {}); };
+  A.cont.start(5000); A.contStart = Date.now();
+  log('recording started', {part, ext: t[1]});
+}
+function stopContinuous() { if (A.cont && A.cont.state !== 'inactive') { A.cont.stop(); log('recording stopped', {part: S && S.parts}); } A.cont = null; }
+
+/* ---------------- talking: listen until a pause ---------------- */
+const SIL = 2500;       // ms of quiet that ends her turn
+let L = null;           // the current listening turn
+function listen(questionN) {
+  return new Promise(resolve => {
+    let floor = 0.004, spoke = false, quietSince = 0;
+    A.pcm = [];
+    L = {questionN, finish: why => { if (!L) return; A.onLevel = null; const chunks = A.pcm; A.pcm = null; L = null; resolve({chunks, spoke, why}); }};
+    A.onLevel = lv => {
+      const now = performance.now();
+      floor = lv < floor ? Math.max(0.001, lv) : floor * 0.9995 + lv * 0.0005;   // room noise: follows quiet moments, rises only slowly
+      const thr = Math.max(0.012, floor * 3);
+      bars(lv / (thr * 3));
+      if (lv > thr) { if (!spoke) log('erica talking', {photo: cur()}); spoke = true; quietSince = 0; }
+      else if (spoke) { if (!quietSince) quietSince = now; if (now - quietSince > SIL) L && L.finish('pause'); }
+    };
+    log('listening', {photo: cur(), question: questionN});
+  });
+}
+function bars(x) { const el = $('#bars'); if (!el) return; [...el.children].forEach((s, i) => { s.style.height = Math.max(3, Math.min(30, x * 30 * (0.5 + Math.abs(Math.sin(i * 1.7 + Date.now() / 120))))) + 'px'; }); }
+
+/* ---------------- Claude's voice ---------------- */
+let voice = null;
+function play(url) {
+  return new Promise(res => {
+    voice = new Audio('/story/audio/' + url);
+    voice.onended = voice.onerror = () => { voice = null; res(); };
+    voice.play().catch(() => { voice = null; res(); });
+  });
+}
+function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain(); o.frequency.value = 1000; g.gain.value = 0.4; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.25); setTimeout(() => c.close(), 600); } catch (e) {} }
+
+/* ---------------- session flow ---------------- */
+const cur = () => S && S.photos[S.pos];
+let run = 0, beat = null, clockT = null, state = {}, showSeries = LS.get('series', true);
+function setState(x) { state = Object.assign({}, x); if (screen === 'main') drawPrompt(); }
+
+async function begin(sid, force) {
+  err = '';
+  try {
+    let r = await api('session', {id: sid, action: 'claim', device: DEVICE, deviceName: DEVNAME, force: !!force});
+    if (r.busy) { screen = 'busy'; S = r.session; S._busy = r.busy; return draw(); }
+    S = r.session;
+    await openMic();
+    screen = 'sync'; draw();
+    for (const n of [3, 2, 1]) { $('#count').textContent = n; await wait(1000); }
+    $('#count').textContent = '0'; const f = $('#flash'); f.style.display = 'block'; beep(); log('sync flash and beep', {laptopClock: new Date().toLocaleTimeString()});
+    await wait(180); f.style.display = 'none';
+    startContinuous();
+    clearInterval(beat); beat = setInterval(heartbeat, 10000);
+    screen = 'main'; draw(); converse();
+  } catch (e) { err = 'Could not start: ' + e.message + (location.protocol !== 'https:' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost' ? ' (the microphone needs the https address)' : ''); screen = 'home'; draw(); }
+}
+async function heartbeat() {
+  if (!S || screen !== 'main') return;
+  const r = await api('session', {id: S.id, action: 'heartbeat', device: DEVICE}).catch(() => null);
+  if (r && r.lost) { stopAll(); S = r.session; screen = 'lost'; draw(); }
+}
+function stopAll() { run++; if (L) L.finish('stop'); if (voice) { voice.pause(); voice = null; } clearInterval(beat); closeMic(); }
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+async function converse() {   // one photo: opener, then answer -> question -> answer ... until next
+  const my = ++run; let photo = cur() || '';
+  log('photo shown', {photo, n: S.pos + 1});
+  let q = null;
+  try {
+    while (my === run) {
+      setState({mode: 'thinking', heard: state.heard});
+      const r = q ? q : await api('ask', {id: S.id, photo});
+      q = null; if (my !== run) return;
+      if (r.session) { S = r.session; photo = cur() || ''; drawMain(); log('photo shown', {photo, n: S.pos + 1, jumped: r.jumped}); }
+      if (r.show) recShow(r.show.what, r.show.from, r.show.to, 'Claude is showing this');
+      if (r.next && !r.question) return nextPhoto(my);
+      if (r.error && !r.question) { setState({mode: 'error', text: 'Couldn\'t turn that into words (' + r.error + '). Your recording is saved.'}); return; }
+      setState({mode: 'asking', question: r.question, kind: r.kind, heard: state.heard});
+      if (r.audio) await play(r.audio);
+      if (my !== run) return;
+      if (r.next) return nextPhoto(my);
+      setState({mode: 'listening', question: r.question, kind: r.kind, heard: state.heard});
+      const t = await listen(r.kind === 'followup' ? r.n : null);
+      if (my !== run) return;
+      if (t.why === 'skipq') { q = {question: 'Okay. Anything else about this one?', kind: 'opener', audio: null}; continue; }
+      if (!t.spoke || !t.chunks.length) { setState({mode: 'idle'}); return; }
+      setState({mode: 'thinking', heard: '…'});
+      const blob = wav(t.chunks, A.rate);
+      const tk = await fetch(`/story/api/take?id=${S.id}&photo=${encodeURIComponent(photo)}&rate=${A.rate}&client=${Date.now()}` + (r.kind === 'followup' ? `&question=${r.n}` : ''), {method: 'POST', body: blob}).then(x => x.json());
+      if (my !== run) return;
+      if (tk.take) { S.takes.push(tk.take); setState({mode: 'thinking', heard: tk.take.text || (tk.take.error ? '(couldn\'t turn it into words; the recording is saved)' : '(nothing heard)')}); }
+    }
+  } catch (e) { if (my === run) setState({mode: 'error', text: e.message}); }
+}
+async function nextPhoto(my) {
+  if (my !== undefined && my !== run) return;
+  run++; if (L) L.finish('stop'); if (voice) { voice.pause(); voice = null; }
+  if (!cur()) return converse();
+  api('session', {id: S.id, action: 'done', photo: cur(), device: DEVICE}).catch(() => {});
+  if (S.pos >= S.photos.length - 1) { log('last photo done'); return endSitting(); }
+  await goTo(S.pos + 1);
+}
+async function goTo(pos) {
+  run++; if (L) L.finish('stop'); if (voice) { voice.pause(); voice = null; }
+  const r = await api('session', {id: S.id, action: 'goto', pos, device: DEVICE});
+  S = r.session; state = {}; draw(); converse();
+}
+async function pause() {
+  stopAll(); await api('session', {id: S.id, action: 'pause', device: DEVICE}).catch(() => {});
+  screen = 'paused'; draw();
+}
+async function endSitting() {
+  stopAll(); await api('session', {id: S.id, action: 'pause', device: DEVICE}).catch(() => {});
+  screen = 'review'; draw(); loadDrafts();
+}
+
+/* ---------------- the records viewer, embedded under the photo ---------------- */
+const TOPICS = {photos: 'Photos over time', procedures: 'Procedures', mri: 'Brain MRI', labs: 'Labs', signatera: 'Signatera', pathology: 'Pathology'};
+const PANELS = {photos: ['photo:strip'], procedures: ['proc:timeline'], mri: ['img:brain:dates', 'img:brain:lesions'], signatera: ['mrd:ot'], pathology: ['path:slides']};
+const LABS = /^(WBC|White blood|Hemoglobin|Platelet|Neutrophil|ANC|CEA|CA 15-3|CA 27|Creatinine|ALT|AST)/i;
+let REC = {open: LS.get('recs', true), topic: 'procedures', from: null, to: null, why: ''};
+const recFrame = () => document.querySelector('#recframe');
+function recWin() { return recFrame() && recFrame().contentWindow; }
+function recReady() { try { const w = recWin(); return w && typeof w.setWin === 'function' && typeof w.onlyLab === 'function'; } catch (e) { return false; } }
+function recApply() {   // put REC (topic + dates) into the embedded viewer
+  if (!REC.open || !recReady() || !REC.from) return;
+  const w = recWin(), what = REC.topic.split(':'), day0 = Date.parse(REC.from + 'T12:00:00Z'), day1 = Date.parse((REC.to || REC.from) + 'T12:00:00Z');
+  const mid = (day0 + day1) / 2, half = Math.max(30 * 864e5, (day1 - day0) / 2 + 10 * 864e5);
+  let ids = PANELS[what[0]];
+  if (what[0] === 'labs') {
+    const want = what[1] ? new RegExp(what[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : LABS;
+    ids = w.eval('D.tests').filter(t => want.test(t.name) || (t.abbr && want.test(t.abbr))).slice(0, 6).map(t => t.id);
+    if (!ids.length) ids = w.eval('D.tests').filter(t => LABS.test(t.name)).slice(0, 6).map(t => t.id);
+  }
+  try {
+    w.eval('libHidden=true;applyLib();mode="compare";');
+    w.onlyLab('story-' + Date.now(), ids, TOPICS[what[0]] || 'Story');
+    w.setWin(mid - half, mid + half);
+    setTimeout(() => {   // scroll the viewer to the chosen panel (the always-on Keyframes and Treatments panels come first)
+      try { const h = [...w.document.querySelectorAll('.cmph b')].find(b => !/^(Keyframes|Treatments|Concern)/.test(b.textContent.trim()));
+            if (h) w.scrollTo(0, h.getBoundingClientRect().top + w.scrollY - 90); } catch (e) {}
+    }, 700);
+  } catch (e) { console.warn('records viewer:', e); }
+  const lab = $('#recwhat'); if (lab) lab.textContent = (TOPICS[what[0]] || what[0]) + (what[1] ? ': ' + what[1] : '') + ' · ' + fmtDate(new Date(mid - half).toISOString()) + ' to ' + fmtDate(new Date(mid + half).toISOString()) + (REC.why ? ' · ' + REC.why : '');
+  document.querySelectorAll('.recs .bar [data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === what[0]));
+}
+function recShow(topic, from, to, why) { REC.topic = topic || REC.topic; REC.from = from || REC.from; REC.to = to || from || REC.to; REC.why = why || ''; if (!REC.open) { REC.open = true; LS.set('recs', true); recMount(true); } recApply(); }
+function recsHtml() {
+  return `<div class="recs"><div class="bar"><b>Your records</b>${Object.entries(TOPICS).map(([k, v]) => `<button data-t="${k}">${esc(v)}</button>`).join('')}
+    <button id="rectoggle">${REC.open ? 'Hide records' : 'Show records'}</button><span class="sub" id="recwhat"></span></div>
+    ${REC.open ? '<iframe id="recframe" src="/labs.html" title="Medical records viewer"></iframe>' : ''}</div>`;
+}
+function recMount(redo) {   // the viewer lives in #recbox, outside the redrawn page, so it doesn't reload with each photo
+  const box = $('#recbox');
+  if (screen !== 'main') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (!box.dataset.ready || redo) { box.innerHTML = recsHtml(); recWire(); box.dataset.ready = '1'; }
+}
+function recWire() {
+  document.querySelectorAll('.recs .bar [data-t]').forEach(b => b.onclick = () => { recShow(b.dataset.t, null, null, 'you chose'); log('records shown', {topic: b.dataset.t}); });
+  $('#rectoggle').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); };
+  const f = recFrame(); if (f) f.onload = () => { const t0 = Date.now(), tick = () => recReady() ? recApply() : Date.now() - t0 < 15000 && setTimeout(tick, 300); tick(); };
+}
+
+/* ---------------- drawing ---------------- */
+function draw() {
+  clearInterval(clockT); if (screen !== 'main') recMount();
+  if (screen === 'home') return drawHome();
+  if (screen === 'sync') { app.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px"><div class="big3" id="count">3</div>
+     <p class="sub">Phones rolling? On zero the screen flashes white and beeps: that moment lines up every recording. Clap too if you like.</p>
+     <div class="row" style="justify-content:center"><span class="pill">Mic: ${esc(A.label || 'default')}</span><span class="pill">${LS.get('filming', true) ? 'Filming: Claude speaks through the speaker' : 'Headphones'}</span></div></div>`; return; }
+  if (screen === 'main') return drawMain();
+  if (screen === 'paused') { app.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px"><h2>Session paused</h2>
+     <p class="sub">Saved on the home computer: ${S.done.length} of ${S.photos.length} photos done.<br>Pick it up here or on any device at home or on the VPN.</p>
+     <div class="ctr"><button class="big pri" id="resume">Resume</button><button id="rev">Review stories now</button><button id="home">End for today</button></div></div>`;
+    $('#resume').onclick = () => begin(S.id); $('#rev').onclick = () => { screen = 'review'; draw(); loadDrafts(); }; $('#home').onclick = () => { screen = 'home'; S = null; loadHome(); }; return; }
+  if (screen === 'busy' || screen === 'lost') { const lv = S._busy || S.live || {}; app.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px">
+     <h2>${screen === 'lost' ? 'This session moved to another device' : 'This session is open on another device'}</h2>
+     <p class="sub">${esc(lv.name || 'Another device')} has it open right now. Taking it here pauses it there.</p>
+     <div class="ctr"><button class="big pri" id="take">Continue here</button><button id="home">Back</button></div></div>`;
+    $('#take').onclick = () => begin(S.id, true); $('#home').onclick = () => { screen = 'home'; S = null; loadHome(); }; return; }
+  if (screen === 'review') return drawReview();
+}
+
+async function loadHome() { app.innerHTML = '<div class="card">Loading…</div>'; try { HOME = await api('sessions'); } catch (e) { err = e.message; HOME = {sessions: []}; } drawHome(); }
+let HOME = {sessions: []};
+function drawHome() {
+  const open = HOME.sessions.filter(s => s.status !== 'ended' || s.toReview);
+  const chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title));
+  app.innerHTML = `<h1 style="font-weight:500;margin:6px 0 2px">Tell your story</h1><div class="sub">Look at a photo, talk about it, and Claude asks you about it, out loud. Everything stays on the home computer.</div>
+  ${err ? `<p class="err">${esc(err)}</p>` : ''}
+  ${open.length ? `<div class="card"><b>Pick up where you left off</b>${open.map(s => `<div class="rv" style="grid-template-columns:80px minmax(0,1fr) auto;align-items:center">
+      <img src="/photos/thumb/${encodeURIComponent(s.firstPhoto || '')}.jpg" alt="" onerror="this.style.visibility='hidden'" style="width:80px">
+      <div><div>${esc(s.title)}</div><div class="sub">${s.status === 'active' && s.live ? 'Open on ' + esc(s.live.name || 'a device') : s.status === 'new' ? 'Not started' : 'Paused'} · ${s.done} of ${s.count} photos${s.toReview ? ' · ' + s.toReview + ' to review' : ''} · ${esc((s.updated || '').replace('T', ' ').slice(0, 16))}</div></div>
+      <div class="row"><button class="pri" data-go="${s.id}">Continue</button>${s.toReview ? `<button data-rev="${s.id}">Review</button>` : ''}</div></div>`).join('')}</div>` : ''}
+  <div class="card"><b>Start a new session</b><div class="row" style="margin-top:8px">
+    <select id="ch">${chs.map(c => { const all = D.items.filter(i => i.chapter === c.title), left = all.filter(i => !i.told).length; return `<option value="${esc(c.title)}">${esc(c.title)} (${left} of ${all.length} not told yet)</option>`; }).join('')}</select>
+    <label class="sub"><input type="checkbox" id="untold" checked> Only photos without a story yet</label>
+    <button class="big pri" id="start">Start</button></div>
+    <div class="row" style="margin-top:12px"><button class="big" id="free">Or start by telling a story</button><span class="sub">You say what you want to talk about; Claude finds the photos and records from then.</span></div></div>
+  <div class="card"><b>Before you start</b>
+    <div class="row" style="margin-top:8px"><span class="sub">Microphone</span><select id="mic"><option value="">Default</option></select><div class="meter"><i id="lvl"></i></div><button id="test">Test mic</button></div>
+    <div class="row" style="margin-top:8px"><label><input type="checkbox" id="film" ${LS.get('filming', true) ? 'checked' : ''}> Filming: Claude speaks through the speaker (so the phones hear it)</label></div>
+    <div class="row" style="margin-top:8px"><button id="hear">Hear Claude's voice</button><span class="sub">Voice: ${esc(HOME.voice || 'Mac default')}. Change it in local/story/settings.json; Premium voices sound most natural.</span></div>
+  </div>`;
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => begin(b.dataset.go));
+  app.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => { S = (await api('session?id=' + b.dataset.rev)).session; screen = 'review'; draw(); loadDrafts(); });
+  $('#film').onchange = e => LS.set('filming', e.target.checked);
+  $('#hear').onclick = testVoice;
+  $('#test').onclick = async () => { try { await openMic(); fillMics(); A.onLevel = lv => { const e = $('#lvl'); if (e) e.style.width = Math.min(100, lv * 400) + '%'; }; setTimeout(() => { A.onLevel = null; closeMic(); }, 8000); } catch (e) { err = 'Microphone: ' + e.message; drawHome(); } };
+  $('#start').onclick = async () => {
+    const ch = $('#ch').value, untold = $('#untold').checked;
+    const ids = D.items.filter(i => i.chapter === ch && (!untold || !i.told)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id);
+    if (!ids.length) { err = 'Every photo in that chapter already has a story. Untick "Only photos without a story yet" to go through them again.'; return drawHome(); }
+    try { const r = await api('sessions', {title: ch, photos: ids}); begin(r.id); } catch (e) { err = e.message; drawHome(); }
+  };
+  $('#free').onclick = async () => { try { const r = await api('sessions', {title: 'Your choice of stories', photos: [], free: true}); begin(r.id); } catch (e) { err = e.message; drawHome(); } };
+  fillMics();
+}
+async function testVoice() { try { const r = await api('voice'); await play(r.audio); } catch (e) { err = 'Voice: ' + e.message; drawHome(); } }
+async function fillMics() {
+  const sel = $('#mic'); if (!sel || !navigator.mediaDevices) return;
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  const want = LS.get('mic', '');
+  sel.innerHTML = '<option value="">Default</option>' + devs.map(d => `<option value="${esc(d.deviceId)}" ${d.deviceId === want ? 'selected' : ''}>${esc(d.label || 'Microphone')}</option>`).join('');
+  sel.onchange = () => LS.set('mic', sel.value);
+}
+
+function seriesOf(id) {
+  const it = ITEM(id), same = S.photos.filter(p => it.session ? ITEM(p).session === it.session : day(ITEM(p).t) === day(it.t));
+  return same.length > 1 ? same : [];
+}
+function drawMain() {
+  const id = cur(), it = ITEM(id), ser = id ? seriesOf(id) : [];
+  if (it.t) { REC.from = day(it.t); REC.to = day(it.t); REC.why = REC.why === 'you chose' ? REC.why : ''; }
+  const media = !id ? `<div class="nophoto"><div style="font-size:22px">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
+                                    : `<img src="/photos/web/${encodeURIComponent(id)}.jpg" alt="">`;
+  app.innerHTML = `<div class="top"><span class="sub">${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
+    <span class="row"><span class="pill">Mic: ${esc((A.label || 'default').slice(0, 28))}</span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
+  <div class="stage"><div><div id="photo">${media}</div>
+  ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
+    ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
+  ${id ? timelineHtml(it.t) : ''}</div>
+  <div class="talk"><div id="prompt"></div>
+  <div class="ctr"><button id="back" ${S.pos ? '' : 'disabled'}>← Back</button><button id="skipq">Skip question</button><button id="next" class="pri">Next photo →</button></div></div></div>`;
+  recMount(); recApply();
+  if (!REC.from) { REC.from = '2023-05-01'; REC.to = new Date().toISOString().slice(0, 10); }
+  $('#pause').onclick = pause; $('#next').onclick = () => nextPhoto(); $('#back').onclick = () => S.pos && goTo(S.pos - 1);
+  $('#skipq').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('skipq'); };
+  if ($('#ser')) $('#ser').onchange = e => { showSeries = e.target.checked; LS.set('series', showSeries); drawMain(); };
+  app.querySelectorAll('.strip .t').forEach(t => t.onclick = () => +t.dataset.p !== S.pos && goTo(+t.dataset.p));
+  const clk = () => { const e = $('#clk'); if (e) e.textContent = new Date().toLocaleTimeString(); const r = $('#rec'); if (r && A.cont) { const s = Math.floor((Date.now() - A.contStart) / 1000); r.textContent = '● Recording ' + [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); } };
+  clk(); clockT = setInterval(clk, 500);
+  drawPrompt();
+}
+function timelineHtml(t) {
+  if (!t) return '';
+  const c = new Date(day(t) + 'T12:00').getTime(), span = 45 * 864e5, a = c - span, b = c + span, x = v => ((v - a) / (b - a) * 100);
+  const ms = s => new Date(s.slice(0, 10) + 'T12:00').getTime();
+  const near = D.timeline.filter(e => e.from && ms(e.to || e.from) >= a && ms(e.from) <= b);
+  const labels = [];
+  near.filter(e => e.kind !== 'stay').sort((p, q) => Math.abs(ms(p.from) - c) - Math.abs(ms(q.from) - c))
+    .forEach(e => { const p = x(ms(e.from)); if (labels.length < 3 && Math.abs(p - 50) > 8 && labels.every(l => Math.abs(x(ms(l.from)) - p) > 26)) labels.push(e); });
+  return `<div class="tl"><div class="ax"></div>${near.map(e => { const l = Math.max(0, x(ms(e.from))), r = Math.min(100, x(ms(e.to || e.from))); return `<div class="m ${e.kind}" title="${esc(e.from + ' ' + e.text)}" style="left:${l}%;width:calc(${Math.max(0, r - l)}% + 3px)"></div>`; }).join('')}
+    <div class="me" style="left:50%" title="this photo"></div>
+    ${labels.map(e => `<div class="lb" style="left:${Math.min(88, Math.max(12, x(ms(e.from))))}%">${esc(new Date(ms(e.from)).toLocaleDateString(undefined, {month: 'numeric', day: 'numeric'}) + ' ' + e.text.slice(0, 34))}</div>`).join('')}
+    </div><div class="sub" style="text-align:center;margin-top:2px">${near.length ? 'Six weeks either side of this photo: hospital stays in red, procedures in grey' : 'Nothing in the medical timeline within six weeks of this photo'}</div>`;
+}
+function drawPrompt() {
+  const el = $('#prompt'); if (!el) return;
+  const s = state, heard = s.heard ? `<div class="heard"><span class="sub">You said</span><br>${esc(s.heard)}</div>` : '';
+  if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = heard + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
+    (s.mode === 'listening' ? `<div class="ctr" style="align-items:center"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div><span class="sub">Listening… a short pause ends your turn</span><button class="big" id="done">Done talking</button></div>` : '');
+  else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Thinking of a question…' : 'Getting ready…'}</div></div>`;
+  else if (s.mode === 'error') el.innerHTML = `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button id="again">Try again</button></div></div>`;
+  else if (s.mode === 'idle') el.innerHTML = `<div class="q"><div class="sub">Nothing heard. Talk when you're ready, or go to the next photo.</div><div class="ctr"><button class="big" id="again">I'm ready</button></div></div>`;
+  else el.innerHTML = '';
+  if ($('#done')) $('#done').onclick = () => L && L.finish('button');
+  if ($('#again')) $('#again').onclick = () => { state = {}; converse(); };
+}
+
+/* ---------------- review at the end ---------------- */
+async function loadDrafts() {
+  const box = $('#drafts'); if (box) box.innerHTML = '<p class="sub">Claude is drafting a title and caption for each photo, from your own words…</p>';
+  try { S = (await api('drafts', {id: S.id})).session; } catch (e) { err = e.message; }
+  drawReview();
+}
+function drawReview() {
+  const ps = S.photos.filter(p => S.drafts[p] || S.takes.some(t => t.photo === p && t.text));
+  const left = ps.filter(p => (S.drafts[p] || {}).status !== 'approved');
+  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Your stories: ${esc(S.title)}</h2><span class="sub">${left.length} to review</span></div>
+  ${err ? `<p class="err">${esc(err)}</p>` : ''}<div id="drafts"></div>
+  <div class="ctr"><button class="big pri" id="all" ${left.length ? '' : 'disabled'}>Approve all</button><button id="later">Save for later</button><button id="home">Done</button>
+  <a class="sub" href="/story/api/markers.csv?id=${S.id}" style="align-self:center">Video markers (.csv)</a></div>`;
+  $('#drafts').innerHTML = ps.length ? ps.map(p => { const d = S.drafts[p] || {}, it = ITEM(p), tk = S.takes.filter(t => t.photo === p);
+    return `<div class="rv" data-p="${esc(p)}"><div><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt=""><div class="sub">${esc(fmtDate(it.t))}</div></div><div>
+      <input type="text" class="ti" placeholder="Title" value="${esc(d.title || '')}" style="width:100%;margin-bottom:6px">
+      <textarea class="ca" placeholder="Caption, in your words">${esc(d.caption || '')}</textarea>
+      <div class="row" style="margin-top:6px"><button class="ls">▶ Listen (${tk.length})</button>
+        <button class="au ${d.audience !== 'family' ? 'on' : ''}" data-a="everyone">Everyone</button><button class="au ${d.audience === 'family' ? 'on' : ''}" data-a="family">Family only</button>
+        ${d.status === 'approved' ? '<span style="color:var(--ok)">✓ Approved</span>' : '<button class="ap pri">✓ Approve</button>'}</div>
+      <details class="sub" style="margin-top:6px"><summary>The whole conversation</summary>${tk.map(t => { const q = S.questions.find(q => q.n === t.question); return (q ? `<div><i>Claude: ${esc(q.text)}</i></div>` : '') + `<div>Erica: ${esc(t.text || '(no words)')}</div>`; }).join('')}</details>
+    </div></div>`; }).join('') : '<p class="sub">No stories recorded in this session yet.</p>';
+  app.querySelectorAll('.rv').forEach(row => {
+    const p = row.dataset.p, d = S.drafts[p] = S.drafts[p] || {};
+    row.querySelectorAll('.au').forEach(b => b.onclick = () => { d.audience = b.dataset.a; row.querySelectorAll('.au').forEach(x => x.classList.toggle('on', x === b)); });
+    row.querySelector('.ls').onclick = async () => { for (const t of S.takes.filter(t => t.photo === p)) await play(S.id + '/takes/' + t.file); };
+    const ap = row.querySelector('.ap'); if (ap) ap.onclick = () => approve(p, row);
+  });
+  $('#all').onclick = async () => { for (const row of app.querySelectorAll('.rv')) if (row.querySelector('.ap')) await approve(row.dataset.p, row, true); drawReview(); };
+  $('#later').onclick = async () => { for (const row of app.querySelectorAll('.rv')) if (row.querySelector('.ap')) await api('approve', {id: S.id, photo: row.dataset.p, status: 'later', title: row.querySelector('.ti').value, caption: row.querySelector('.ca').value, audience: (S.drafts[row.dataset.p] || {}).audience}).catch(() => {}); screen = 'home'; S = null; loadHome(); };
+  $('#home').onclick = () => { screen = 'home'; S = null; err = ''; loadHome(); };
+}
+async function approve(p, row, quiet) {
+  try { S = (await api('approve', {id: S.id, photo: p, title: row.querySelector('.ti').value, caption: row.querySelector('.ca').value, audience: (S.drafts[p] || {}).audience})).session; err = ''; }
+  catch (e) { err = 'Couldn\'t save: ' + e.message; }
+  if (!quiet) drawReview();
+}
+
+/* ---------------- keys and start ---------------- */
+document.addEventListener('keydown', e => {
+  if (screen !== 'main' || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.key === ' ' && L) { e.preventDefault(); L.finish('key'); }
+  if (e.key === 'n' || e.key === 'ArrowRight') nextPhoto();
+  if (e.key === 'p') pause();
+});
+window.addEventListener('beforeunload', () => { if (S && screen === 'main') navigator.sendBeacon && navigator.sendBeacon('/story/api/session', new Blob([JSON.stringify({id: S.id, action: 'pause', device: DEVICE})], {type: 'application/json'})); });
+(async () => {
+  try { D = await api('photos'); D.items.forEach(i => BY[i.id] = i); } catch (e) { app.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; return; }
+  loadHome();
+})();
+</script></body></html>

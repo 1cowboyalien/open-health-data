@@ -37,6 +37,11 @@ Usage:
   (localStorage "labs.*") when that browser has none yet. start_view.js adds the "Start view" button.
   POST /api/start-view {"keys": {...}} replaces it: this Mac and the home network only (the previous one is
   kept as local/start_view.prev.json).
+- Story sessions ("Tell your story", story.py + story_view.html): GET /story is the page Erica uses to talk about her
+  photos; /story/api/... records her answers, turns them into text on this Mac, asks Claude for a spoken follow-up
+  question (through the chat server) and saves approved stories to local/photos/stories/. All of it answers only this
+  Mac and the home network (VPN included). The browser only allows the microphone on a secure page, so start the
+  viewer with --https-port 8767 (certificate: python3 serve_viewer.py --make-cert) and open https://<this Mac>:8767/story.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -54,6 +59,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import usage
+import story
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL = os.path.join(HERE, "local")
@@ -338,6 +344,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {"error": "not found"})
         if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
             return self.photos(urllib.parse.unquote(path[len("/photos/"):]))
+        if path == "/story" or path.startswith("/story/"):
+            return self.story_get(path)
         if path == "/api/edits":
             with lock:
                 rev, edits = read_edits()
@@ -361,6 +369,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.save_start()
         if self.path.split("?")[0] == "/photos/edits":
             return self.save_photo_edit()
+        if self.path.split("?")[0].startswith("/story/api/"):
+            return self.story_post(self.path.split("?")[0][len("/story/api/"):])
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -379,6 +389,62 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(409, {"rev": rev, "edits": cur})
             write_edits(rev + 1, edits)
         self.send(200, {"rev": rev + 1})
+
+    # ---- story sessions (story.py): this Mac and the home network only ----
+    def story_get(self, path):
+        if not usage.is_local_request(self):
+            return self.send(404, {"error": "not found"})
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        try:
+            if path in ("/story", "/story/"):
+                return self.send(200, open(os.path.join(HERE, "story_view.html"), "rb").read(), "text/html; charset=utf-8")
+            if path == "/story/api/photos":
+                return self.send(200, story.photo_data())
+            if path == "/story/api/sessions":
+                return self.send(200, {"sessions": story.sessions(), "settings": story.settings(), "voice": story.voice_name()})
+            if path == "/story/api/voice":   # a fixed line in Claude's voice, to try the speakers
+                return self.send(200, {"audio": "cache/" + story.cached_line("Hi Erica. I'm ready when you are.")})
+            if path == "/story/api/session":
+                return self.send(200, {"session": story.load(q.get("id", [""])[0])})
+            if path == "/story/api/markers.csv":
+                sid = q.get("id", [""])[0]
+                return self.send(200, story.markers_csv(sid), "text/csv; charset=utf-8",
+                                 headers=(("Content-Disposition", f'attachment; filename="{sid}-markers.csv"'),))
+            if path.startswith("/story/audio/"):
+                f = story.audio_file(urllib.parse.unquote(path[len("/story/audio/"):]))
+                if not f:
+                    return self.send(404, {"error": "not found"})
+                return self.send(200, open(f, "rb").read(), "audio/wav" if f.endswith(".wav") else "audio/mp4", cache=True)
+        except KeyError as e:
+            return self.send(404, {"error": str(e)})
+        self.send(404, {"error": "not found"})
+
+    def story_post(self, sub):
+        if not usage.is_local_request(self):
+            return self.send(403, {"error": "only from this Mac or the home network"})
+        n = int(self.headers.get("Content-Length") or 0)
+        if n < 0 or n > 200_000_000:
+            return self.send(413, {"error": "too large"})
+        data = self.rfile.read(n) if n else b""
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
+        try:
+            if sub == "take":   # body = WAV
+                return self.send(200, story.take(q.get("id", ""), q.get("photo", ""), data,
+                                                 {"client": q.get("client"), "rate": q.get("rate"), "question": int(q["question"]) if q.get("question", "").isdigit() else None}))
+            if sub == "continuous":   # body = a slice of the whole-sitting recording
+                return self.send(200, story.continuous(q.get("id", ""), q.get("part", "0"), data, q.get("ext", "webm")))
+            b = json.loads(data or b"{}")
+            fn = {"sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
+                  "drafts": story.drafts, "approve": story.approve}.get(sub)
+            if not fn:
+                return self.send(404, {"error": "not found"})
+            return self.send(200, fn(b))
+        except KeyError as e:
+            return self.send(404, {"error": str(e)})
+        except (ValueError, TypeError) as e:
+            return self.send(400, {"error": str(e)})
+        except OSError as e:   # chat server down, say/afconvert failed, ...
+            return self.send(502, {"error": str(e)})
 
     def save_photo_edit(self):
         """Hide/restore one photo or change its label (this Mac and the home network only)."""
@@ -452,10 +518,37 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--lan", action="store_true", help="listen on all network interfaces (home Wi-Fi only)")
     ap.add_argument("--port", type=int, default=8766)
+    ap.add_argument("--https-port", type=int, help="also serve https here (needed for the story page's microphone)")
+    ap.add_argument("--make-cert", action="store_true", help="make a self-signed certificate in local/tls/ and stop")
     a = ap.parse_args()
+    TLS = os.path.join(LOCAL, "tls")
+    if a.make_cert:
+        import subprocess
+        os.makedirs(TLS, exist_ok=True)
+        ips = {"127.0.0.1"}
+        for dev in ("en0", "en1", "en2"):
+            r = subprocess.run(["ipconfig", "getifaddr", dev], capture_output=True, text=True)
+            if r.stdout.strip():
+                ips.add(r.stdout.strip())
+        cnf = os.path.join(TLS, "openssl.cnf")
+        open(cnf, "w").write("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=erica-viewer\n[ext]\n"
+                             "subjectAltName=" + ",".join(["DNS:localhost"] + ["IP:" + i for i in sorted(ips)]) + "\n")
+        subprocess.check_call(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825", "-keyout",
+                               os.path.join(TLS, "key.pem"), "-out", os.path.join(TLS, "cert.pem"), "-config", cnf])
+        os.chmod(os.path.join(TLS, "key.pem"), 0o600)
+        raise SystemExit("certificate for " + ", ".join(sorted(ips)) + " in " + TLS)
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     print(f"Viewer: http://127.0.0.1:{a.port}/" + ("  (also on this Mac's network address; no login)" if a.lan else ""))
     print("Edits are kept in", EDITS, "| Ctrl+C to stop")
     USAGE = usage.Usage(os.path.join(LOCAL, "usage.sqlite"))
     print(f"Usage stats: http://127.0.0.1:{a.port}/stats (this Mac and the home network only)")
+    if a.https_port:
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_cert_chain(os.path.join(TLS, "cert.pem"), os.path.join(TLS, "key.pem"))
+        hs = ThreadingHTTPServer((host, a.https_port), Handler)
+        hs.socket = ctx.wrap_socket(hs.socket, server_side=True, do_handshake_on_connect=False)
+        threading.Thread(target=hs.serve_forever, daemon=True).start()
+        print(f"Also https on port {a.https_port}: story page https://127.0.0.1:{a.https_port}/story")
     ThreadingHTTPServer((host, a.port), Handler).serve_forever()

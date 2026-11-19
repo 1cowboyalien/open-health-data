@@ -12,7 +12,9 @@
    Graphic photos (level "graphic": wounds, skin changes, nudity): ONE button, "Show graphic photos", off by default, shows or covers
    all of them at once; until it is on, a graphic photo is a covered box and its picture is never requested. Kept per browser
    (store 'photo.graphic').
-   Stories: fetched from /photos/stories.json = {stories: {<id>: [{title?, told?, family_only?, turns: [{who, text}]} | {text}]}};
+   Stories: fetched from /photos/stories.json = {stories: {<id>: [{title?, caption?, told?, family_only?, turns: [{who, text, audio?}]} | {text}]}};
+   Stories told on the story page (story_view.html) carry a caption in her words and the conversation; at home each of her answers
+   can be played (audio = <session>/takes/NNN.wav, served by /story/audio/, home network only).
    the server leaves out family-only stories for visitors outside the home network. The words are shown as they were said.
    Data: PHOTO_DATA = {title, teller, chapters: [{from, title, about}], items: [{id, kind: photo|video, ext, t, tz?, sure, src?, chapter, level,
                        people?, caption?, note?, w?, h?, seconds?, session?, display?: 'intro', panels?, ask?}]}. */
@@ -275,7 +277,11 @@
     if (!L.length) return '<div class="sub">No stories yet. When ' + esc(TELLER) + ' tells the story of this photo, the words will appear here, as they were said.</div>';
     return L.map(s => '<div class="photoStory">' + (s.title ? '<b>' + esc(s.title) + '</b>' : '') + (s.told ? ' <span class="sub">told ' + esc(s.told) + '</span>' : '') +
       (s.family_only ? ' <span class="sub">· family only</span>' : '') +
-      (s.turns || [{who: TELLER, text: s.text}]).map(x => '<div class="turn ' + (x.who === TELLER ? 'teller' : 'other') + '"><span class="who">' + esc(x.who || '') + '</span>' + esc(x.text || '') + '</div>').join('') + '</div>').join('');
+      (s.caption ? '<div class="cap">' + esc(s.caption) + '</div>' : '') +
+      (s.caption && s.turns ? '<details><summary class="sub">The conversation (' + s.turns.length + ')</summary>' : '') +
+      (s.turns || [{who: TELLER, text: s.text}]).map(x => '<div class="turn ' + (x.who === TELLER ? 'teller' : 'other') + '"><span class="who">' + esc(x.who || '') +
+        (x.audio && storiesHome ? ' <audio controls preload="none" src="/story/audio/' + esc(x.audio) + '"></audio>' : '') + '</span>' + esc(x.text || '') + '</div>').join('') +
+      (s.caption && s.turns ? '</details>' : '') + '</div>').join('');
   }
   function openBox(list, k) {
     const ov = document.createElement('div'); ov.className = 'photoOv'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Photo');
@@ -346,7 +352,8 @@
 .photoSide .photoTog{margin-top:12px}.photoWhen{font-size:17px;font-weight:600}
 .photoNav{grid-column:1;display:flex;justify-content:center;align-items:center;gap:14px;color:#ddd;padding:8px}
 .photoNav button{font-size:22px;background:transparent;border:1px solid #555;color:#eee;border-radius:8px;padding:0 12px;cursor:pointer}.photoNav button:disabled{opacity:.3}
-.photoStory{border-top:1px solid var(--line);padding:8px 0}.photoStory .turn{margin:6px 0;padding:6px 9px;border-radius:10px;background:var(--bg)}
+.photoStory{border-top:1px solid var(--line);padding:8px 0}.photoStory .cap{font-family:Georgia,serif;font-size:16px;line-height:1.5;margin:6px 0}
+.photoStory audio{height:26px;vertical-align:middle;max-width:220px}.photoStory .turn{margin:6px 0;padding:6px 9px;border-radius:10px;background:var(--bg)}
 .photoStory .turn.teller{background:rgba(42,120,214,.10)}.photoStory .who{display:block;font-size:11px;color:var(--muted);font-weight:600}
 @media (max-width:760px){.photoOv{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}.photoSide{grid-row:3;grid-column:1}.photoStage img,.photoStage video{max-height:55vh}}`;
   document.head.append(st);

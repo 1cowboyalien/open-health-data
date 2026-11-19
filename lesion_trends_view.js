@@ -15,7 +15,15 @@
    Everything about the patient comes from IMG_DATA.lesion_series and IMG_DATA.growth, never from this code.
    Data used: lesion_series.lesions [{id,name,rgb}], measured [{lesion,date,enh_mm3,axial_mm,field,seq,seq_name,lo,hi,conf,flags,alt?,none?,note?}]
               (lo/hi = likely range, conf = ok|low, flags = cut/shared/faint/tiny, alt = a second series of the same visit; volumetry/quality.py),
-              treatments [{start,end,treatment,lesions,confidence}]; brain_mri [{date,partial}] for partial scans. */
+              treatments [{start,end,treatment,lesions,confidence}]; brain_mri [{date,partial}] for partial scans;
+              unmeasured [{date,hospital,field,why,needs,report}] = brain MRIs with no measured point (drawn as a grey diamond on a dotted
+              line at the scan's date, so no scan is silently absent); not_outlined {date: [ids]} = lesions the report describes on a
+              measured scan that we could not outline (named in that date's Total hover box: the total is a lower bound);
+              states [{lesion,date,none,below: not_seen|tiny,note,...}] = a lesion's state on a measured scan where it has no outline:
+              its line drops to the bottom of the plot there (x mark), so it never runs straight across scans where the lesion had
+              shrunk away; seen_not_outlined [{lesion,date,why}] = seen on that scan but not outlinable: a hollow square on its line;
+              provisional [{lesion,date,enh_mm3,lo,hi,axial_mm,conf,flags,field,note,source}] = volumes taken on a copy that is not the
+              hospital's files: a star on the lesion's line with dashed stretches, never part of a fit, a rate or a projection. */
 (() => {
   const LS = IMG_DATA.lesion_series;
   if (!LS || !LS.measured || !LS.measured.length) return;
@@ -53,8 +61,17 @@
     document.head.append(st); }
 
   /* points per lesion, sorted by date; "none" = our check found nothing there (0) */
-  const ptsOf = id => LS.measured.filter(m => m.lesion === id).map(m => ({t: ms(m.date), date: m.date, v: m.none ? 0 : m.enh_mm3, m}))
+  const MALL = LS.measured.concat(LS.states || []);   // states = "not seen" / "too small to outline" rows on measured scans (lesion_series.py)
+  const ptsOf = id => MALL.filter(m => m.lesion === id).map(m => ({t: ms(m.date), date: m.date, v: m.none ? 0 : m.enh_mm3, m}))
     .sort((a, b) => a.t - b.t);
+  /* Of a run of scans on which a lesion was not seen (or was too small to outline), keep the first and the last: the line drops at the first
+     and rises again from the last. run = how many scans, from when to when (for the hover box). */
+  const runEnds = pts => { const out = []; let i = 0;
+    while (i < pts.length) { if (pts[i].v > 0) { out.push(pts[i++]); continue; }
+      let j = i; while (j + 1 < pts.length && !(pts[j + 1].v > 0)) j++;
+      const run = {n: j - i + 1, from: pts[i].date, to: pts[j].date};
+      out.push(Object.assign({}, pts[i], {run})); if (j > i) out.push(Object.assign({}, pts[j], {run})); i = j + 1; }
+    return out; };
   /* total per scan date over the lesions shown (a scan that measured fewer lesions than usual is marked partial) */
   function totals(S) {
     const by = new Map();
@@ -128,6 +145,54 @@
         'Latest: ' + rateTxt(lf.k) + ' (' + perMonth(lf.k) + ') ' + lf.P.label.toLowerCase() + ', ' + lf.n + ' scans' +
         (unclear ? '\nNo clear change: the likely ranges of the volumes behind this rate overlap' : '') + (lf.weak ? '\n' + WARN + ' read loosely: ' + whyTxt(lf) : '')};
   }
+  /* hover-box text: long sentences from the data are wrapped by hand (the chart library does not wrap) */
+  const wrapLines = (t, n = 76) => { const out = []; let line = ''; String(t).split(/\s+/).forEach(w => { if (line && (line + ' ' + w).length > n) { out.push(line); line = w; } else line = line ? line + ' ' + w : w; });
+    if (line) out.push(line); return out; };
+  /* a brain MRI with no measured point: why, what the report found (with the sizes it gave), what is needed. All from the data. */
+  function unmTip(u) {
+    const sizes = (LS.reports || []).filter(r => r.date === u.date && r.kind === 'size' && r.mm > 0 && !r.ambiguous).map(r => r.lesion + ' ' + r.mm + ' mm');
+    return [(u.hospital || 'Brain MRI') + (u.field ? ' · ' + u.field : '')].concat(
+      wrapLines('Not measured: ' + u.why),
+      u.report ? wrapLines('About this scan: ' + u.report + '.') : [],
+      sizes.length ? wrapLines('Sizes its report gives: ' + sizes.join(', ') + ' (drawn in the Report sizes view).') : [],
+      u.needs ? wrapLines('To measure it we need ' + u.needs + '.') : [],
+      (LS.provisional || []).some(p => p.date === u.date) ? wrapLines('The stars on this date are provisional volumes, measured on a copy rebuilt from the pictures on the hospital\'s website.') : [],
+      (() => { const po = (LS.provisional_other || []).filter(p => p.date === u.date); if (!po.length) return [];   // that copy's verdicts for the lesions without a volume
+        const gone = po.filter(p => /gone/.test(p.verdict)).map(p => p.lesion), rest = po.filter(p => !/gone/.test(p.verdict)).map(p => p.lesion);
+        return wrapLines('On that copy: ' + [gone.length ? gone.join(', ') + ' gone' : '', rest.length ? rest.join(', ') + ' could not be measured' : ''].filter(Boolean).join('; ') + '.'); })());
+  }
+  /* what a measured date's total leaves out: lesions seen but not outlined, and ones too small to outline (lesion_series.not_outlined). An entry is
+     one lesion or the candidates of one ambiguous mention ("L12/L13/L14"); kept when any of them is among the lesions shown. */
+  const shownIn = (list, S) => (list || []).filter(e => !S.length || e.split('/').some(i => S.some(l => l.id === i)));
+  const notOut = (date, S) => { const n = (LS.not_outlined || {})[date]; if (!n) return [];
+    const seen = shownIn(n.seen, S), pin = shownIn(n.tiny, S); if (!seen.length && !pin.length) return [];
+    return wrapLines('Not in this total: ' + [seen.length ? seen.join(', ') + ' (seen, could not be outlined)' : '', pin.length ? pin.join(', ') + ' (too small to outline)' : ''].filter(Boolean).join('; ') +
+      '. The total is a lower bound.'); };
+  /* hover box of an x on the bottom line: every lesion shown that was not seen, or was too small to outline, on that scan; for a single mark
+     also that lesion's own reason and how many scans in a row */
+  function censTip(c, S) { if (!c.length) return [];
+    const d = c[0].date, ids = new Set(S.map(l => l.id)), rows = MALL.filter(m => m.none && m.date === d && ids.has(m.lesion));
+    const no = rows.filter(m => m.below !== 'tiny').map(m => m.lesion), pinIds = rows.filter(m => m.below === 'tiny').map(m => m.lesion);
+    const grp = shownIn(((LS.not_outlined || {})[d] || {}).tiny, S), pin = grp.length ? grp : pinIds, out = [];
+    if (no.length) out.push(...wrapLines('Not seen on this scan: ' + no.join(', ')));
+    if (pin.length) out.push(...wrapLines('In the report, but too small for us to outline (a pinpoint or a thin streak): ' + pin.join(', ')));
+    if (c.length === 1) { const r = c[0]; if (r.m.note) out.push(...wrapLines(r.lesion + ' · ' + r.m.note + '.'));
+      if (r.run && r.run.n > 1) out.push('The same on ' + r.run.n + ' scans in a row, ' + fd(r.run.from) + ' – ' + fd(r.run.to) + '.'); }
+    out.push('The line drops to the bottom of the plot: under about 3 mm, not a measured zero.');
+    return out; }
+  /* hover box of a star: a provisional volume (or the total of them), with where it comes from and what it is not used for */
+  const PROVNOTE = 'Provisional: not used for the trends, rates or projections; to be replaced when the hospital\'s own files arrive.';
+  function provTip(r, st) {
+    if (r.total) return ['Total ' + fv(r.v) + ' · ' + r.n + ' lesion' + (r.n > 1 ? 's' : '') + ' · provisional · ' + r.field].concat(
+      r.hi > r.lo ? ['likely range ' + fv(r.lo) + ' – ' + fv(r.hi) + ' (each lesion\'s range added up)'] : [],
+      wrapLines('Measured on ' + ((LS.provisional || [])[0] || {}).source + '. A lower bound: lesions that could not be measured on it are left out.'), st, [PROVNOTE]);
+    const q = r.prov;
+    return [r.lesion + ' ' + fv(r.v) + ' · provisional · ' + q.field + (q.axial_mm ? ' · ' + q.axial_mm + ' mm wide' : ''), LNAME[r.lesion]].concat(
+      q.hi > q.lo ? ['likely range ' + fv(q.lo) + ' – ' + fv(q.hi) + ' (if the seed sat a few mm elsewhere)'] : [],
+      wrapLines('Measured on ' + q.source + '.'), q.note ? wrapLines(q.note[0].toUpperCase() + q.note.slice(1) + '.') : [], st, [PROVNOTE]); }
+  /* hover box of a hollow square: the lesion was seen on that scan but could not be outlined */
+  const seenTip = r => [r.lesion + ' seen on this scan, not outlined' + (r.seen.field ? ' · ' + r.seen.field : ''), LNAME[r.lesion]].concat(
+    wrapLines(r.seen.why[0].toUpperCase() + r.seen.why.slice(1) + '.'), ['No volume. The square sits on the line between the neighbouring scans.']);
   function toolbar(body, view) {
     const bar = document.createElement('div'); bar.className = 'ltr-bar';
     const grp = (label, key, opts) => { const s = document.createElement('span'); s.className = 'lab'; s.textContent = label; bar.append(s);
@@ -168,7 +233,8 @@
     if (r.conf === 'low' || q.conf === 'low') warn.push(WARN + ' ' + (r.conf === 'low' && q.conf === 'low' ? 'both points are' : r.conf === 'low' ? 'this point is' : 'the earlier point is') + ' low confidence: read loosely');
     if (d < MINGAP) return ['Since ' + short + ': only ' + Math.round(d) + ' days apart, too close to read a rate' + (q.field !== r.field ? ' (and a different scanner)' : '')];
     const k = Math.log(rv / qv) / d, pct = (rv / qv - 1) * 100;
-    return ['Since ' + short + ' (' + fdays(d) + '): ' + (pct > 0 ? '+' : '') + pct.toFixed(0) + '% · ' + rateTxt(k) + ' (' + perMonth(k) + ')'].concat(like ? ['(' + like + ')'] : [], warn);
+    /* a lesion that shrank to under 1% of its size is still there: one decimal, so the box never says -100% */
+    return ['Since ' + short + ' (' + fdays(d) + '): ' + (pct > 0 ? '+' : '') + (pct < -99 ? pct.toFixed(1) : pct.toFixed(0)) + '% · ' + rateTxt(k) + ' (' + perMonth(k) + ')'].concat(like ? ['(' + like + ')'] : [], warn);
   }
 
   /* Doubling times view: one row per lesion, one column per treatment period */
@@ -206,20 +272,39 @@
     box.append(cv); body.append(box); box.onmouseleave = () => setHover(null);
     const ds = [], fits = [];
     const lineDs = (label, col, pts, extra) => Object.assign({label, data: pts, parsing: true, borderColor: col, backgroundColor: col, borderWidth: 2, tension: 0, showLine: true, spanGaps: true,
-      pointStyle: p => p.raw ? shape(p.raw.field) : 'circle', pointRadius: p => p.raw && p.raw.v === 0 ? 3 : 4.5, pointHoverRadius: 7,
-      pointBackgroundColor: p => p.raw && (p.raw.v === 0 || p.raw.partial || p.raw.conf === 'low') ? 'rgba(0,0,0,0)' : col, pointBorderColor: p => p.raw && (p.raw.v === 0 || p.raw.partial || p.raw.conf === 'low') ? col : '#fff', pointBorderWidth: 1.4,
-      segment: {borderDash: s => s.p0.raw && s.p1.raw && s.p0.raw.field !== s.p1.raw.field ? [2, 3] : undefined}}, extra);
+      pointStyle: p => !p.raw ? 'circle' : p.raw.prov ? 'star' : p.raw.cens ? 'crossRot' : shape(p.raw.field), pointRadius: p => !p.raw ? 4.5 : p.raw.prov ? 6 : p.raw.v === 0 ? 3.5 : 4.5, pointHoverRadius: 7,
+      pointHitRadius: p => p.raw && p.raw.cens ? 9 : 1,   // the x marks sit on the plot's bottom edge, where only their upper half can be pointed at
+      pointBackgroundColor: p => p.raw && (p.raw.v === 0 || p.raw.partial || p.raw.conf === 'low' || p.raw.prov) ? 'rgba(0,0,0,0)' : col, pointBorderColor: p => p.raw && (p.raw.v === 0 || p.raw.partial || p.raw.conf === 'low' || p.raw.prov) ? col : '#fff', pointBorderWidth: p => p.raw && p.raw.prov ? 1.8 : 1.4,
+      /* a stretch that ends or starts at "not seen" is finely dotted and thin: when the lesion sank below what a scan shows is not known */
+      segment: {borderDash: s => !(s.p0.raw && s.p1.raw) ? undefined : (s.p0.raw.cens || s.p1.raw.cens) ? [1, 4] : (s.p0.raw.gap || s.p0.raw.prov || s.p1.raw.prov) ? [5, 4] : s.p0.raw.field !== s.p1.raw.field ? [2, 3] : undefined,
+                borderWidth: s => s.p0.raw && s.p1.raw && (s.p0.raw.cens || s.p1.raw.cens) ? 1.3 : undefined}}, extra);
+    /* Not seen / too-small points sit on the bottom line of the plot (0 on the linear scale, the axis floor on the log scale), so each
+       lesion's line drops where it shrank away instead of running straight to the next scan that measured it. */
+    const FLOOR = log ? 5 : 0, PL = {};
     S.forEach(l => {
-      const P = ptsOf(l.id).filter(p => !log || p.v > 0).map(p => ({x: pos(p.t), y: p.v, v: p.v, t: p.t, date: p.date, field: p.m.field, lesion: l.id, m: p.m,
-        lo: p.m.lo, hi: p.m.hi, conf: p.m.conf, seq: p.m.seq, seq_name: p.m.seq_name}));
-      P.forEach((p, i) => { p.prev = P.slice(0, i).reverse().find(q => q.v > 0); });
+      /* with "Before first scan" on, the estimate curves take the place of the straight stretch from the clean scan to the first scan with lesions */
+      const P = runEnds(ptsOf(l.id)).filter(p => p.v > 0 || !(V.back && BC) || p.date >= BC.first).map(p => ({x: pos(p.t), y: p.v > 0 ? p.v : FLOOR, v: p.v, t: p.t, date: p.date, field: p.m.field, lesion: l.id, m: p.m,
+        lo: p.m.lo, hi: p.m.hi, conf: p.m.conf, seq: p.m.seq, seq_name: p.m.seq_name, cens: p.v > 0 ? null : (p.m.below || 'not_seen'), run: p.run}));
+      /* provisional volumes (taken on a copy that is not the hospital's files): on the line as a star, dashed on both sides */
+      (LS.provisional || []).filter(q => q.lesion === l.id).forEach(q => P.push({x: pos(ms(q.date)), y: q.enh_mm3, v: q.enh_mm3, t: ms(q.date), date: q.date, field: q.field,
+        lesion: l.id, m: q, lo: q.lo, hi: q.hi, conf: q.conf, prov: q}));
+      P.sort((a, b) => a.t - b.t);
+      P.forEach((p, i) => { p.prev = P.slice(0, i).reverse().find(q => q.v > 0 && !q.prov); });   // rates are taken between hospital-file measurements only
+      PL[l.id] = P;
+      const SN = (LS.seen_not_outlined || []).filter(q => q.lesion === l.id).map(q => ms(q.date));   // scans that saw it without an outline
+      P.forEach((p, i) => { const b = P[i + 1]; p.gap = !!(b && SN.some(t => t > p.t && t < b.t)); });
       ds.push(lineDs(l.id, LCOL[l.id], P));
       if (V.fit === 'window') { const f = fitLog(ptsOf(l.id).map(p => Object.assign({}, p))); if (f) fits.push(Object.assign(f, {label: l.id, col: LCOL[l.id]})); }
     });
     if (V.total) {
       const T = totals(S.length ? S : LS.lesions), col = css('--ink');
       const TP = T.map(e => ({x: pos(e.t), y: e.v, v: e.v, t: e.t, date: e.date, field: e.field, n: e.n, partial: e.partial, total: true, lo: e.lo, hi: e.hi, seq: e.seq, seq_name: e.seq_name}));
-      TP.forEach((p, i) => { p.prev = p.partial ? null : TP.slice(0, i).reverse().find(q => !q.partial); });
+      const pvT = {};   // provisional volumes of the lesions shown, added up per date: a star on the total line
+      (LS.provisional || []).filter(q => (S.length ? S : LS.lesions).some(l => l.id === q.lesion)).forEach(q => { const e = pvT[q.date] || (pvT[q.date] = {v: 0, lo: 0, hi: 0, n: 0, field: q.field});
+        e.v += q.enh_mm3; e.lo += q.lo; e.hi += q.hi; e.n++; });
+      Object.entries(pvT).forEach(([d, e]) => TP.push({x: pos(ms(d)), y: e.v, v: e.v, t: ms(d), date: d, field: e.field, n: e.n, total: true, lo: e.lo, hi: e.hi, prov: {total: true}}));
+      TP.sort((a, b) => a.t - b.t);
+      TP.forEach((p, i) => { p.prev = p.partial ? null : TP.slice(0, i).reverse().find(q => !q.partial && !q.prov); });
       ds.push(lineDs('Total', col, TP, {borderWidth: 3}));
       if (V.fit === 'window') { const f = fitLog(T.filter(e => !e.partial)); if (f) fits.push(Object.assign(f, {label: 'Total', col})); }
     }
@@ -312,14 +397,36 @@
           ctx.strokeStyle = d.borderColor; ctx.globalAlpha = .55;
           ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y1); ctx.moveTo(px - 3, y0); ctx.lineTo(px + 3, y0); ctx.moveTo(px - 3, y1); ctx.lineTo(px + 3, y1); ctx.stroke(); }); });
       ctx.restore(); }};
-    const cfg = {type: 'line', plugins: [txPlugin].concat(backPlug ? [backPlug] : [], projPlug ? [projPlug] : [], [rangeBars, guide, endLab], typeof momentPlugin === 'object' ? [momentPlugin] : []), data: {datasets: ds},
+    /* Brain MRIs with no measured point (lesion_series.unmeasured): a grey diamond near the top of the plot on a dotted line at the
+       scan's date, so a scan is never silently absent from the chart; hover it for why, what the report found and what is needed.
+       Its own hidden y axis keeps it at the same height on the log and the linear scale. */
+    /* Seen on a scan but not outlinable (lesion_series.seen_not_outlined): a hollow square in the lesion's colour on its line, at
+       the height of the straight line between the neighbouring scans (there is no volume to plot). */
+    S.forEach(l => { const P = PL[l.id] || [], marks = (LS.seen_not_outlined || []).filter(q => q.lesion === l.id); if (!marks.length || !P.length) return;
+      const pts = marks.map(q => { const t = ms(q.date), x0 = pos(t), a = P.filter(p => p.t < t).pop(), b = P.find(p => p.t > t); let y;
+        if (a && b) { const f = (x0 - a.x) / ((b.x - a.x) || 1); y = log ? Math.exp(Math.log(a.y) + f * (Math.log(b.y) - Math.log(a.y))) : a.y + f * (b.y - a.y); }
+        else y = (a || b).y;
+        return {x: x0, y, t, date: q.date, lesion: l.id, seen: q}; });
+      ds.push({label: l.id + ' seen', data: pts, parsing: true, showLine: false, pointStyle: 'rect', pointRadius: 4, pointHoverRadius: 6.5,
+        pointBackgroundColor: css('--card'), pointBorderColor: LCOL[l.id], pointBorderWidth: 1.6, borderColor: LCOL[l.id], backgroundColor: LCOL[l.id]}); });
+    const UNM = (LS.unmeasured || []).map(u => ({x: pos(ms(u.date)), y: 0.955, date: u.date, unm: u})), mut = css('--muted');
+    if (UNM.length) ds.push({label: 'Not measured', data: UNM, parsing: true, yAxisID: 'yU', showLine: false, pointStyle: 'rectRot', pointRadius: 5.5, pointHoverRadius: 8,
+      pointBackgroundColor: css('--card'), pointBorderColor: mut, pointBorderWidth: 1.6, borderColor: mut, backgroundColor: mut});
+    const unmPlug = {id: 'ltrUnm', beforeDatasetsDraw(c) { if (!UNM.length) return; const {ctx, chartArea: a, scales: {x}} = c;
+      ctx.save(); ctx.beginPath(); ctx.rect(a.left, a.top, a.right - a.left, a.bottom - a.top); ctx.clip();
+      ctx.strokeStyle = mut; ctx.globalAlpha = .75; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+      UNM.forEach(q => { const px = x.getPixelForValue(q.x); if (px < a.left || px > a.right) return; ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); });
+      ctx.restore(); }};
+    const cfg = {type: 'line', plugins: [txPlugin].concat(backPlug ? [backPlug] : [], projPlug ? [projPlug] : [], [unmPlug, rangeBars, guide, endLab], typeof momentPlugin === 'object' ? [momentPlugin] : []), data: {datasets: ds},
       options: {animation: false, maintainAspectRatio: false, clip: false, layout: TLAY(),
         onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
         plugins: {legend: {display: false}, tooltip: {displayColors: false, filter: it => !it.raw.fit, callbacks: {
-          title: it => it[0] ? fd(it[0].raw.date) + (it[0].raw.proj ? ' · projected (+' + it[0].raw.proj.m.m + ' mo), not measured' : '') : '',
-          label: it => { const r = it.raw; if (r.proj) return projTip(r); const st = step(r);
+          title: it => it[0] ? fd(it[0].raw.date) + (it[0].raw.unm ? ' · brain MRI, not measured' : it[0].raw.proj ? ' · projected (+' + it[0].raw.proj.m.m + ' mo), not measured' : '') : '',
+          afterBody: its => censTip(its.map(it => it.raw).filter(r => r && r.cens), S),
+          label: it => { const r = it.raw; if (r.unm) return unmTip(r.unm); if (r.seen) return seenTip(r); if (r.cens) return []; if (r.proj) return projTip(r); const st = step(r);
+            if (r.prov) return provTip(r, st);
             if (r.total) return ['Total ' + fv(r.v) + ' · ' + r.n + ' lesion' + (r.n > 1 ? 's' : '') + (r.partial ? ' · partial scan' : '') + ' · ' + r.field + (r.seq_name ? ' ' + r.seq_name : '')]
-              .concat(r.hi > r.lo ? ['likely range ' + fv(r.lo) + ' – ' + fv(r.hi) + ' (each lesion\'s range added up)'] : [], st);
+              .concat(r.hi > r.lo ? ['likely range ' + fv(r.lo) + ' – ' + fv(r.hi) + ' (each lesion\'s range added up)'] : [], notOut(r.date, S), st);
             const m = r.m, q = [];
             if (m.lo != null && m.hi > m.lo) q.push('likely range ' + fv(m.lo) + ' – ' + fv(m.hi) + ' (if the seed sat a few mm elsewhere)');
             (m.flags || []).forEach(f => q.push((m.conf === 'low' || f === 'cut' ? WARN + ' ' : '') + FLAGW[f]));
@@ -332,7 +439,8 @@
           afterFit: s => { s.width = typeof YW === 'number' ? YW : s.width; },
           title: {display: true, text: 'mm³ (enhancing)', color: css('--muted')},
           ticks: {color: css('--muted'), callback: v => log ? ([5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000].includes(v) ? (v >= 1000 ? v / 1000 + 'k' : v) : '') : v},
-          grid: {color: css('--line')}}}}};
+          grid: {color: css('--line')}},
+          yU: {type: 'linear', display: false, min: 0, max: 1}}}};   // hidden axis of the not-measured marks; listed AFTER y, because a dataset with no yAxisID takes the first y axis
     charts.set(id, new Chart(cv, cfg));
     if (fits.length) {
       let h = '<table class="ltr-tbl"><tr><th>Trend in window</th><th>points</th><th>from</th><th>to</th><th>change / month</th><th>doubling or halving time</th></tr>';
@@ -348,7 +456,12 @@
       '<b>a dotted stretch joins a 1.5T and a 3T scan, so part of that change may be the scanner</b> (small lesions can differ up to ~2× between scanners). ' +
       '<b>Thin vertical bars = each point\'s likely range</b> (how much the volume changes if the seed is put a few mm elsewhere in the lesion). ' +
       '<b>Hollow = low confidence</b> (tiny, faint or seed-sensitive; also nothing found or a partial scan). ' + WARN + ' = a trend to read loosely (scans not like for like, or low-confidence points). ' +
-      'Scans also differ in sequence type (MPRAGE/BRAVO, plain gradient echo, SPACE/CUBE spin echo): named in the hover box; volumes compare best within one type. Total = sum of the lesions shown on each scan. ' +
+      'Scans also differ in sequence type (MPRAGE/BRAVO, plain gradient echo, SPACE/CUBE spin echo): named in the hover box; volumes compare best within one type. Total = sum of the lesions shown on each scan' +
+      (Object.keys(LS.not_outlined || {}).length ? ' (its hover box names lesions the report describes that we could not outline: the total is then a lower bound)' : '') + '. ' +
+      (UNM.length ? '<b>◇ on a dotted line = a brain MRI we could not measure</b> (' + UNM.map(q => fd(q.date)).join(', ') + '): hover it for why. ' : '') +
+      ((LS.provisional || []).length ? '<b>✳ = a provisional volume</b> (' + [...new Set(LS.provisional.map(p => p.date))].map(fd).join(', ') + '): measured on a copy rebuilt from the pictures on the hospital\'s website, not on the hospital\'s files. Its stretches are dashed, and it is not used for the trends, rates or projections; it will be replaced when the hospital\'s own files arrive. ' : '') +
+      ((LS.states || []).length ? '<b>× on the bottom line = the lesion was not seen on that scan, or was too small to outline</b>; its line drops there (finely dotted) and comes back up if a later scan measures it again. Of several such scans in a row only the first and the last are marked. ' : '') +
+      ((LS.seen_not_outlined || []).length ? '<b>□ on a line = seen on that scan but could not be outlined</b> (too faint, a thin line, or running into a vein): no volume, so the stretch through it is dashed and the square only sits on the straight line between its neighbours; hover it for why. ' : '') +
       (V.fit === 'window' ? 'Dashed = fitted steady-% trend through the points inside the time window (needs 2+ points); move or zoom the window to fit a different stretch. ' : '') +
       (V.back && BC ? 'Fine dotted lines before the first scan = the estimate described above, not measurements; the grey fan = the same for the total, from the fast to the slow doubling time. ' : '') +
       (projPlug ? '<b style="color:#e0a020">Dashed lines with hollow points after the latest scan = the projection (a scenario, not a forecast)</b>; its hollow points sit on the amber date lines (' + Projection.datesText() + '), which mark the same dates in every panel' + (log ? '' : '; on the linear scale lines that leave the top are larger than the scale (switch to Log)') +

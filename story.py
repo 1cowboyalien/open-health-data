@@ -1092,3 +1092,28 @@ def story_delete(b):
             except (KeyError, OSError, ValueError):
                 pass
     return {"ok": True}
+
+
+# ---------------- what was happening then: a records summary around a photo's date ----------------
+def context(b):
+    """Claude's summary of the records around a date (doctors, what the notes said, what was being tested for, what was
+    thought or ruled out). Kept in local/story/context/<from>_<to>.json so a range is read only once ({"again": true} redoes it)."""
+    date, span = str(b.get("date") or "")[:10], int(b.get("span") or 45)
+    if not date_ok(date) or not 1 <= span <= 400:
+        raise ValueError("a date (YYYY-MM-DD) and a span in days")
+    d0 = datetime.date.fromisoformat(date)
+    a, z = (d0 - datetime.timedelta(days=span)).isoformat(), (d0 + datetime.timedelta(days=span)).isoformat()
+    cdir = os.path.join(BASE, "context")
+    os.makedirs(cdir, exist_ok=True)
+    f = os.path.join(cdir, "%s_%s.json" % (a, z))
+    if os.path.exists(f) and not b.get("again"):
+        return dict(json.load(open(f)), cached=True)
+    body = json.dumps({"date": date, "from": a, "to": z}).encode()
+    req = urllib.request.Request(chat_server() + "/api/summary", data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=480) as r:
+        out = json.load(r)
+    if out.get("error") or not out.get("text"):
+        raise OSError(out.get("error") or "no summary came back")
+    rec = {"date": date, "from": a, "to": z, "text": out["text"], "made": now(), "seconds": out.get("seconds")}
+    json.dump(rec, open(f, "w"), indent=1, ensure_ascii=False)
+    return rec

@@ -114,8 +114,8 @@ function startContinuous() {
 }
 function stopContinuous() { if (A.cont && A.cont.state !== 'inactive') { A.cont.stop(); log('recording stopped', {part: S && S.parts}); } A.cont = null; }
 
-/* ---------------- talking: listen until a pause ---------------- */
-const SIL = 2500;       // ms of quiet that ends her turn
+/* ---------------- talking: listen until she presses End thought (or, if she chose it, a long pause) ---------------- */
+const SIL = 6000;       // ms of quiet that ends her turn, only when "end by itself" is on
 let L = null;           // the current listening turn
 function listen(questionN) {
   return new Promise(resolve => {
@@ -128,7 +128,7 @@ function listen(questionN) {
       const thr = Math.max(0.012, floor * 3);
       bars(lv / (thr * 3));
       if (lv > thr) { if (!spoke) log('erica talking', {photo: cur()}); spoke = true; quietSince = 0; }
-      else if (spoke) { if (!quietSince) quietSince = now; if (now - quietSince > SIL) L && L.finish('pause'); }
+      else if (spoke && LS.get('autoEnd', false)) { if (!quietSince) quietSince = now; if (now - quietSince > SIL) L && L.finish('pause'); }
     };
     log('listening', {photo: cur(), question: questionN});
   });
@@ -178,7 +178,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 async function converse() {   // one photo: opener, then answer -> question -> answer ... until next
   const my = ++run; let photo = cur() || '';
   log('photo shown', {photo, n: S.pos + 1});
-  let q = null;
+  let q = null, correcting = false;
   try {
     while (my === run) {
       setState({mode: 'thinking', heard: state.heard});
@@ -187,21 +187,28 @@ async function converse() {   // one photo: opener, then answer -> question -> a
       if (r.session) { S = r.session; photo = cur() || ''; drawMain(); log('photo shown', {photo, n: S.pos + 1, jumped: r.jumped}); }
       if (r.show) recShow(r.show.what, r.show.from, r.show.to, 'Claude is showing this');
       if (r.next && !r.question) return nextPhoto(my);
-      if (r.error && !r.question) { setState({mode: 'error', text: 'Couldn\'t turn that into words (' + r.error + '). Your recording is saved.'}); return; }
-      setState({mode: 'asking', question: r.question, kind: r.kind, heard: state.heard});
+      if (r.error && !r.question) { setState({mode: 'error', text: 'Your recording is saved, but it couldn\'t be turned into words: ' + r.error + '.'}); return; }
+      const recap = r.kind === 'correction' ? '' : (r.recap || '');
+      setState({mode: 'asking', question: r.question, recap, kind: r.kind, heard: state.heard});
       if (r.audio) await play(r.audio);
       if (my !== run) return;
+      if (state.wrongPending) {   // "That's not right" pressed while Claude was still speaking
+        const w = await api('voice?line=wrong'); q = {question: w.text, audio: w.audio, kind: 'correction', n: r.n}; correcting = true; log('recap wrong', {photo}); continue; }
       if (r.next) return nextPhoto(my);
-      setState({mode: 'listening', question: r.question, kind: r.kind, heard: state.heard});
+      setState({mode: 'listening', question: r.question, recap, kind: r.kind, heard: state.heard});
       const t = await listen(r.kind === 'followup' ? r.n : null);
       if (my !== run) return;
       if (t.why === 'skipq') { q = {question: 'Okay. Anything else about this one?', kind: 'opener', audio: null}; continue; }
+      if (t.why === 'wrong') {   // "That's not right": Claude asks her to say it again; her next answer corrects the recap
+        const w = await api('voice?line=wrong'); q = {question: w.text, audio: w.audio, kind: 'correction', n: r.n}; correcting = true; log('recap wrong', {photo}); continue; }
       if (!t.spoke || !t.chunks.length) { setState({mode: 'idle'}); return; }
       setState({mode: 'thinking', heard: '…'});
       const blob = wav(t.chunks, A.rate);
-      const tk = await fetch(`/story/api/take?id=${S.id}&photo=${encodeURIComponent(photo)}&rate=${A.rate}&client=${Date.now()}` + (r.kind === 'followup' ? `&question=${r.n}` : ''), {method: 'POST', body: blob}).then(x => x.json());
+      const tk = await fetch(`/story/api/take?id=${S.id}&photo=${encodeURIComponent(photo)}&rate=${A.rate}&client=${Date.now()}` + (r.kind === 'followup' || r.kind === 'correction' ? `&question=${r.n || ''}` : '') + (correcting ? '&correction=1' : ''), {method: 'POST', body: blob}).then(x => x.json());
+      correcting = false;
       if (my !== run) return;
-      if (tk.take) { S.takes.push(tk.take); setState({mode: 'thinking', heard: tk.take.text || (tk.take.error ? '(couldn\'t turn it into words; the recording is saved)' : '(nothing heard)')}); }
+      if (tk.take) { S.takes.push(tk.take); setState({mode: 'thinking', heard: tk.take.text || (tk.take.error ? '' : '(nothing heard)')}); }
+      if (tk.take && tk.take.error) { setState({mode: 'error', text: 'Your recording is saved, but it couldn\'t be turned into words: ' + tk.take.error + '. Claude can\'t answer until that works.'}); return; }
     }
   } catch (e) { if (my === run) setState({mode: 'error', text: e.message}); }
 }
@@ -314,11 +321,13 @@ function drawHome() {
   <div class="card"><b>Before you start</b>
     <div class="row" style="margin-top:8px"><span class="sub">Microphone</span><select id="mic"><option value="">Default</option></select><div class="meter"><i id="lvl"></i></div><button id="test">Test mic</button></div>
     <div class="row" style="margin-top:8px"><label><input type="checkbox" id="film" ${LS.get('filming', true) ? 'checked' : ''}> Filming: Claude speaks through the speaker (so the phones hear it)</label></div>
+    <div class="row" style="margin-top:8px"><label><input type="checkbox" id="autoend" ${LS.get('autoEnd', false) ? 'checked' : ''}> End my turn by itself when I stop talking for a few seconds (otherwise press End thought)</label></div>
     <div class="row" style="margin-top:8px"><button id="hear">Hear Claude's voice</button><span class="sub">Voice: ${esc(HOME.voice || 'Mac default')}. Change it in local/story/settings.json; Premium voices sound most natural.</span></div>
   </div>`;
   app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => begin(b.dataset.go));
   app.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => { S = (await api('session?id=' + b.dataset.rev)).session; screen = 'review'; draw(); loadDrafts(); });
   $('#film').onchange = e => LS.set('filming', e.target.checked);
+  $('#autoend').onchange = e => LS.set('autoEnd', e.target.checked);
   $('#hear').onclick = testVoice;
   $('#test').onclick = async () => { try { await openMic(); fillMics(); A.onLevel = lv => { const e = $('#lvl'); if (e) e.style.width = Math.min(100, lv * 400) + '%'; }; setTimeout(() => { A.onLevel = null; closeMic(); }, 8000); } catch (e) { err = 'Microphone: ' + e.message; drawHome(); } };
   $('#start').onclick = async () => {
@@ -381,15 +390,22 @@ function timelineHtml(t) {
 }
 function drawPrompt() {
   const el = $('#prompt'); if (!el) return;
-  const s = state, heard = s.heard ? `<div class="heard"><span class="sub">You said</span><br>${esc(s.heard)}</div>` : '';
-  if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = heard + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
-    (s.mode === 'listening' ? `<div class="ctr" style="align-items:center"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div><span class="sub">Listening… a short pause ends your turn</span><button class="big" id="done">Done talking</button></div>` : '');
-  else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Thinking of a question…' : 'Getting ready…'}</div></div>`;
-  else if (s.mode === 'error') el.innerHTML = `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button id="again">Try again</button></div></div>`;
+  const s = state, auto = LS.get('autoEnd', false);
+  const heard = s.heard ? `<div class="heard"><span class="sub">You said</span><br>${esc(s.heard)}</div>` : '';
+  const recap = s.recap ? `<div class="heard" style="background:var(--accbg)"><span class="sub">Claude heard</span><br><span style="font-family:var(--voice);font-size:17px">${esc(s.recap)}</span>
+     <div style="margin-top:6px"><button id="wrong">That's not right</button></div></div>` : '';
+  if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = recap + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
+    (s.mode === 'listening' ? `<div class="ctr" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
+       <span class="sub">${auto ? 'Listening… press End thought when you\'re done (a long pause also ends it)' : 'Listening… talk as long as you like, then press End thought'}</span></div>
+       <button class="big pri" id="done" style="font-size:20px;padding:14px 34px">✓ End thought</button></div>` : '');
+  else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Listening back to what you said…' : 'Getting ready…'}</div></div>`;
+  else if (s.mode === 'error') el.innerHTML = heard + `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button id="again">Try again</button><button class="pri" id="enext">Next photo →</button></div></div>`;
   else if (s.mode === 'idle') el.innerHTML = `<div class="q"><div class="sub">Nothing heard. Talk when you're ready, or go to the next photo.</div><div class="ctr"><button class="big" id="again">I'm ready</button></div></div>`;
   else el.innerHTML = '';
   if ($('#done')) $('#done').onclick = () => L && L.finish('button');
+  if ($('#wrong')) $('#wrong').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('wrong'); else state.wrongPending = true; };
   if ($('#again')) $('#again').onclick = () => { state = {}; converse(); };
+  if ($('#enext')) $('#enext').onclick = () => nextPhoto();
 }
 
 /* ---------------- review at the end ---------------- */

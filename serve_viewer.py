@@ -460,7 +460,7 @@ class Handler(BaseHTTPRequestHandler):
             b = json.loads(data or b"{}")
             if sub == "open-setting":
                 return self.send(200, story.open_setting(json.loads(data or b"{}")))
-            fn = {"tellers": story.teller_save, "story-save": story.story_save, "story-delete": story.story_delete,
+            fn = {"take-delete": story.take_delete, "tellers": story.teller_save, "story-save": story.story_save, "story-delete": story.story_delete,
                   "sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
                   "drafts": story.drafts, "approve": story.approve}.get(sub)
             if not fn:

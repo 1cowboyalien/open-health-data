@@ -272,7 +272,7 @@ async function converse() {   // one photo: opener, then answer -> question -> a
       if (!t.spoke || !t.chunks.length) { setState({mode: 'idle'}); return; }
       setState({mode: 'thinking', heard: '…'});
       const blob = wav(t.chunks, A.rate);
-      const tk = await fetch(`/story/api/take?id=${S.id}&photo=${encodeURIComponent(photo)}&rate=${A.rate}&client=${Date.now()}` + (r.kind === 'followup' || r.kind === 'correction' ? `&question=${r.n || ''}` : '') + (correcting ? '&correction=1' : ''), {method: 'POST', body: blob}).then(x => x.json());
+      const tk = await fetch(`/story/api/take?id=${S.id}&photo=${encodeURIComponent(photo)}&rate=${A.rate}&client=${Date.now()}` + (['followup', 'correction', 'closing'].includes(r.kind) && r.n ? `&question=${r.n}` : '') + (correcting ? '&correction=1' : ''), {method: 'POST', body: blob}).then(x => x.json());
       correcting = false;
       if (my !== run) return;
       if (tk.take) { S.takes.push(tk.take); setState({mode: 'thinking', heard: tk.take.text || (tk.take.error ? '' : '(nothing heard)')}); }
@@ -697,6 +697,30 @@ function timelineHtml(t) {
     ${labels.map(e => `<div class="lb" style="left:${Math.min(88, Math.max(12, x(ms(e.from))))}%">${esc(new Date(ms(e.from)).toLocaleDateString(undefined, {month: 'numeric', day: 'numeric'}) + ' ' + e.text.slice(0, 34))}</div>`).join('')}
     </div><div class="sub" style="text-align:center;margin-top:2px">${near.length ? 'Six weeks either side of this photo: hospital stays in red, procedures in grey' : 'Nothing in the medical timeline within six weeks of this photo'}</div>`;
 }
+const liveTakes = p => (S ? S.takes : []).filter(t => !t.deleted && (t.photo === p || (!t.photo && t.led_to === p)));
+function takesHtml() {
+  const p = cur() || '', tk = liveTakes(p);
+  if (!tk.length) return '';
+  return `<div class="card" style="margin-top:12px;padding:10px 14px"><b style="font-size:15px">What you've said about this ${p ? 'photo' : 'moment'}</b>
+    ${tk.map((t, i) => { const q = S.questions.find(q => q.n === t.question);
+      return `<div style="border-top:1px solid var(--line);padding:8px 0;margin-top:6px">${q ? `<div class="sub"><i>Claude: ${esc(q.text)}</i></div>` : ''}
+        <div class="row" style="align-items:center;margin:4px 0"><span class="sub">${i + 1} · ${Math.floor((t.seconds || 0) / 60)}:${String(Math.round((t.seconds || 0) % 60)).padStart(2, '0')}</span>
+          <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:30px;flex:1;min-width:160px"></audio></div>
+        <div style="font-size:15px;line-height:1.45">${t.text ? esc(t.text) : '<span class="sub">' + (t.error ? 'couldn\'t turn into words yet' : 'no words heard') + '</span>'}</div>
+        <div class="row" style="margin-top:4px"><button data-again="${t.n}" style="font-size:13px;padding:4px 10px">↻ Say it again</button><button data-del="${t.n}" style="font-size:13px;padding:4px 10px">🗑 Delete</button></div></div>`; }).join('')}</div>`;
+}
+function wireTakes(el) {
+  el.querySelectorAll('audio').forEach(a => { sinkTo(a); a.onplay = () => stopSound(a); });
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('Delete this recording and its words? (The sound file is kept aside on the home Mac in case you want it back.)')) return;
+    try { S = (await api('take-delete', {id: S.id, n: +b.dataset.del})).session; drawPrompt(); } catch (e) { alert(e.message); } });
+  el.querySelectorAll('[data-again]').forEach(b => b.onclick = async () => {
+    const t = S.takes.find(x => x.n === +b.dataset.again);
+    if (!confirm('Delete this recording and say it again?')) return;
+    try { S = (await api('take-delete', {id: S.id, n: t.n})).session; } catch (e) { return alert(e.message); }
+    startQ = t.question ? {question: 'Go ahead, say it again.', audio: null, kind: 'followup', n: t.question} : {question: 'Go ahead, say it again.', audio: null, kind: 'opener'};
+    state = {}; converse(); });
+}
 function drawPrompt() {
   const el = $('#prompt'); if (!el) return;
   const s = state, auto = LS.get('autoEnd', false);
@@ -706,12 +730,14 @@ function drawPrompt() {
   if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = recap + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
     (s.mode === 'listening' ? `<div class="ctr endbar" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
        <span class="sub">${auto ? 'Listening… press End thought when you\'re done (a long pause also ends it)' : 'Listening… talk as long as you like, then press End thought'}</span></div>
-       <button class="big pri" id="done" style="font-size:20px;padding:14px 34px">✓ End thought</button></div>` : '');
+       <div class="row"><button class="big pri" id="done" style="font-size:20px;padding:14px 34px">✓ End thought</button>${s.kind === 'closing' ? '<button class="big" id="cnext" style="font-size:20px;padding:14px 26px">Next photo →</button>' : ''}</div></div>` : '');
   else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Listening back to what you said…' : 'Getting ready…'}</div></div>`;
   else if (s.mode === 'error') el.innerHTML = heard + `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button class="pri" id="again">Try again</button><button id="sayagain">🎤 Say it again</button><button id="enext">Next photo →</button></div></div>`;
   else if (s.mode === 'idle') el.innerHTML = `<div class="q"><div class="sub">Nothing heard. Talk when you're ready, or go to the next photo.</div><div class="ctr"><button class="big" id="again">I'm ready</button></div></div>`;
   else el.innerHTML = '';
   if ($('#done')) $('#done').onclick = () => L && L.finish('button');
+  if ($('#cnext')) $('#cnext').onclick = () => nextPhoto();
+  const tb = document.createElement('div'); tb.innerHTML = takesHtml(); el.appendChild(tb); wireTakes(tb);
   if ($('#wrong')) $('#wrong').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('wrong'); else state.wrongPending = true; };
   if ($('#again')) $('#again').onclick = () => { state = {}; converse(); };
   if ($('#enext')) $('#enext').onclick = () => nextPhoto();
@@ -725,18 +751,18 @@ async function loadDrafts() {
   drawReview();
 }
 function drawReview() {
-  const ps = S.photos.filter(p => S.drafts[p] || S.takes.some(t => t.photo === p && t.text));
+  const ps = S.photos.filter(p => S.drafts[p] || S.takes.some(t => !t.deleted && t.photo === p && t.text));
   const left = ps.filter(p => (S.drafts[p] || {}).status !== 'approved');
   app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Stories from ${esc(S.teller || 'Erica')}: ${esc(S.title)}</h2><span class="sub">${left.length} to review</span></div>
   ${err ? `<p class="err">${esc(err)}</p>` : ''}<div id="drafts"></div>
   <div class="ctr"><button class="big pri" id="all" ${left.length ? '' : 'disabled'}>Approve all</button><button id="later">Save for later</button><button id="home">Done</button>
   <a class="sub" href="/story/api/markers.csv?id=${S.id}" style="align-self:center">Video markers (.csv)</a></div>`;
-  $('#drafts').innerHTML = ps.length ? ps.map(p => { const d = S.drafts[p] || {}, it = ITEM(p), tk = S.takes.filter(t => t.photo === p);
+  $('#drafts').innerHTML = ps.length ? ps.map(p => { const d = S.drafts[p] || {}, it = ITEM(p), tk = S.takes.filter(t => !t.deleted && t.photo === p);
     return `<div class="rv" data-p="${esc(p)}"><div><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt=""><div class="sub">${esc(fmtDate(it.t))}</div></div><div>
       <input type="text" class="ti" placeholder="Title" value="${esc(d.title || '')}" style="width:100%;margin-bottom:6px">
       <textarea class="ca" placeholder="Caption, in ${esc(S.teller || 'Erica')}'s words">${esc(d.caption || '')}</textarea>
       <div class="recs1" style="margin-top:8px">${tk.map((t, i) => `<div class="row" style="margin:4px 0;align-items:center"><span class="sub" style="min-width:110px">Recording ${i + 1}${t.seconds ? ' · ' + Math.floor(t.seconds / 60) + ':' + String(Math.round(t.seconds % 60)).padStart(2, '0') : ''}</span>
-        <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:32px;flex:1;min-width:200px;max-width:420px"></audio>
+        <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:32px;flex:1;min-width:200px;max-width:420px"></audio><button data-rdel="${t.n}" title="Delete this recording" style="font-size:13px;padding:4px 10px">🗑</button>
         <span class="sub" style="flex-basis:100%;margin-left:0">${esc((t.text || '(no words)').slice(0, 140))}${(t.text || '').length > 140 ? '…' : ''}</span></div>`).join('')}</div>
       <div class="row" style="margin-top:6px">
         <button class="au ${d.audience !== 'family' ? 'on' : ''}" data-a="everyone">Everyone</button><button class="au ${d.audience === 'family' ? 'on' : ''}" data-a="family">Family only</button>
@@ -747,6 +773,8 @@ function drawReview() {
     const p = row.dataset.p, d = S.drafts[p] = S.drafts[p] || {};
     row.querySelectorAll('.au').forEach(b => b.onclick = () => { d.audience = b.dataset.a; row.querySelectorAll('.au').forEach(x => x.classList.toggle('on', x === b)); });
     row.querySelectorAll('audio').forEach(a => { sinkTo(a); a.onplay = () => stopSound(a); });   // one recording at a time, on the chosen speaker
+    row.querySelectorAll('[data-rdel]').forEach(b => b.onclick = async () => { if (!confirm('Delete this recording and its words?')) return;
+      S = (await api('take-delete', {id: S.id, n: +b.dataset.rdel})).session; drawReview(); });
     const eb = row.querySelector('.eded'); if (eb) eb.onclick = async () => {
       if (d.status === 'approved') { const L2 = await api('stories'); const x = L2.stories.find(x => x.photo === p && x.session === S.id); if (x) return openEditor({kind: 'story', photo: p, index: x.index}); }
       await api('approve', {id: S.id, photo: p, status: d.status === 'later' ? 'later' : 'draft', title: row.querySelector('.ti').value, caption: row.querySelector('.ca').value, audience: d.audience}).catch(() => {});

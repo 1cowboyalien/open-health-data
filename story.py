@@ -206,7 +206,7 @@ def sessions():
         out.append({"id": sid, "title": s["title"], "created": s["created"], "status": s["status"], "teller": teller_of(s),
                     "updated": s.get("updated"), "pos": s["pos"], "firstPhoto": s["photos"][min(s["pos"], len(s["photos"]) - 1)] if s["photos"] else None, "count": len(s["photos"]), "done": len(s.get("done") or []),
                     "toReview": sum(1 for d in drafts.values() if d.get("status") != "approved")
-                                + sum(1 for p in s.get("done") or [] if p not in drafts and any(t["photo"] == p and t.get("text") for t in s["takes"])),
+                                + sum(1 for p in s.get("done") or [] if p not in drafts and any(t["photo"] == p and t.get("text") for t in live(s))),
                     "live": s.get("live")})
     return out
 
@@ -567,6 +567,28 @@ def jump(s, rng, after_take):
     return len(ids)
 
 
+def live(s):
+    """The session's takes without the ones the storyteller deleted."""
+    return [t for t in s["takes"] if not t.get("deleted")]
+
+
+def take_delete(b):
+    """Delete one recording (to say it again): its words leave the conversation, drafts and stories; the sound file
+    moves to takes/deleted/ in case it's wanted after all."""
+    sid, n = str(b.get("id")), int(b.get("n"))
+    with lock:
+        s = load(sid)
+        t = next(x for x in s["takes"] if x["n"] == n)
+        src = path(sid, "takes", t["file"])
+        if os.path.exists(src):
+            os.makedirs(path(sid, "takes", "deleted"), exist_ok=True)
+            os.replace(src, path(sid, "takes", "deleted", t["file"]))
+        t["deleted"] = now()
+        save(s)
+    log(sid, {"ev": "take deleted", "n": n, "photo": t["photo"]})
+    return {"session": s}
+
+
 def ask(b):
     """After a take (or at a new photo): Claude's next spoken line. Claude may also choose records to show
     (show: {what, from, to}) and photos to jump to (photos: {from, to}). Returns {question, audio, kind, show?, session?, next?}"""
@@ -574,7 +596,7 @@ def ask(b):
     s = load(sid)
     if photo and photo not in s["photos"]:
         raise ValueError("photo not in this session")
-    takes = [t for t in s["takes"] if t["photo"] == photo]
+    takes = [t for t in live(s) if t["photo"] == photo]
     asked = [q for q in s["questions"] if q["photo"] == photo and q.get("kind") == "followup"]
     maxq = int(settings()["maxQuestions"])
     if not takes:   # a new photo (or the start of an Erica-led talk): a short opener, no wait for Claude
@@ -596,7 +618,7 @@ def ask(b):
                 t.pop("error", None)
             save(s)
         last = t
-        takes = [x for x in s["takes"] if x["photo"] == photo]
+        takes = [x for x in live(s) if x["photo"] == photo]
     if not (last.get("text") or "").strip():
         if last.get("error"):
             return {"question": "", "error": last["error"], "kind": "error"}
@@ -606,7 +628,7 @@ def ask(b):
     who = teller_of(s)
     convo = []
     qs = {q["n"]: q for q in s["questions"]}
-    for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
+    for t in [t for t in live(s) if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
         if t.get("question") and t["question"] in qs:
             q = qs[t["question"]]
             if q.get("recap"):
@@ -615,7 +637,9 @@ def ask(b):
         if t.get("correction"):
             convo.append("[%s said the recap was wrong, and corrects it:]" % who)
         convo.append(who + ": " + (t.get("text") or "(nothing heard)"))
-    limit = ("This photo has had %d follow-up questions; at most %d, so if this is the last one, set next instead." % (len(asked), maxq)
+    limit = (("This photo has had %d follow-up questions (at most %d): give the recap, and set next instead of asking more." % (len(asked), maxq))
+             if len(asked) >= maxq else
+             "This photo has had %d follow-up questions; at most %d, so if this is the last one, set next instead." % (len(asked), maxq)
              if photo else "No photo yet: help her find the moment.")
     prompt = ("[Storyteller: %s]\n[%s]\n%s\n\n[%s]\n\n[The conversation so far]\n%s\n\n[%s]"
               % (teller_line(who), "Photo %d of %d in this sitting" % (s["pos"] + 1, len(s["photos"])) if photo else "The storyteller leads",
@@ -641,29 +665,28 @@ def ask(b):
             if n_added:
                 out.update(session=s, jumped=n_added)
                 log(sid, {"ev": "jump", "from": j["photos"].get("from"), "to": j["photos"].get("to"), "photos": n_added})
-        if (j.get("next") and photo and "session" not in out) or (not text and photo):
-            save(s)
-            text = "Thank you. Let's look at the next one."
-            return dict(out, question=text, recap=recap, audio="cache/" + cached_line(text), next=True, kind="closing", show=show)
+        kind = "followup"
+        if (j.get("next") and photo and "session" not in out) or (not text and photo):   # done with this photo: recap, then she decides
+            text, kind = "Thank you. Is there anything you'd like to add about this one? If not, we can go to the next photo.", "closing"
         if not text:
             text = "Tell me more."
         n = len(s["questions"]) + 1
         name = "%03d.m4a" % n
-        s["questions"].append({"n": n, "photo": photo, "text": text, "recap": recap, "file": name, "at": now(), "kind": "followup",
+        s["questions"].append({"n": n, "photo": photo, "text": text, "recap": recap, "file": name, "at": now(), "kind": kind,
                                "seconds": r.get("seconds"), "show": show})
         save(s)
         if "session" in out:
             out["session"] = s
     speak((recap + " ... " + text) if recap else text, path(sid, "questions", name))   # the recap is said first
     log(sid, {"ev": "question", "n": n, "photo": photo, "text": text, "recap": recap, "show": show})
-    return dict(out, question=text, recap=recap, audio="%s/questions/%s" % (sid, name), n=n, show=show)
+    return dict(out, question=text, recap=recap, audio="%s/questions/%s" % (sid, name), n=n, show=show, kind=kind)
 
 
 def drafts(b):
     """End of the sitting: Claude drafts a title and caption for each photo she talked about, from her own words."""
     sid = str(b.get("id"))
     s = load(sid)
-    todo = [p for p in s["photos"] if any(t["photo"] == p and (t.get("text") or "").strip() for t in s["takes"])
+    todo = [p for p in s["photos"] if any(t["photo"] == p and (t.get("text") or "").strip() for t in live(s))
             and (s["drafts"].get(p) or {}).get("status") not in ("approved",)
             and not (s["drafts"].get(p) or {}).get("caption")]
     if todo:
@@ -671,7 +694,7 @@ def drafts(b):
         parts = []
         for p in todo:
             lines = []
-            for t in [t for t in s["takes"] if t["photo"] == p or (not t["photo"] and t.get("led_to") == p)]:
+            for t in [t for t in live(s) if t["photo"] == p or (not t["photo"] and t.get("led_to") == p)]:
                 if t.get("question") in qs:
                     lines.append("Claude: " + qs[t["question"]]["text"])
                 lines.append(teller_of(s) + ": " + (t.get("text") or ""))
@@ -716,7 +739,7 @@ def approve(b):
             return {"session": s}
         qs = {q["n"]: q for q in s["questions"]}
         turns = []
-        for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
+        for t in [t for t in live(s) if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
             if t.get("question") in qs:
                 turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
             words = (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or "")
@@ -970,7 +993,7 @@ def stories_list():
             continue
         for p in s["photos"]:
             d = s["drafts"].get(p) or {}
-            talked = any((t["photo"] == p or t.get("led_to") == p) and (t.get("text") or "").strip() for t in s["takes"])
+            talked = any((t["photo"] == p or t.get("led_to") == p) and (t.get("text") or "").strip() for t in live(s))
             if talked and d.get("status") != "approved":
                 drafts.append({"session": s["id"], "sessionTitle": s["title"], "teller": teller_of(s), "photo": p, "title": d.get("title"),
                                "caption": d.get("caption"), "status": d.get("status") or "not reviewed"})
@@ -998,7 +1021,7 @@ def story_get(photo, index=None, sid=None):
         d = s["drafts"].get(photo) or {}
         qs = {q["n"]: q for q in s["questions"]}
         turns = []
-        for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
+        for t in [t for t in live(s) if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
             if t.get("question") in qs:
                 turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
             turns.append({"who": teller_of(s), "text": (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or ""),
@@ -1025,7 +1048,7 @@ def story_save(b):
             d = s["drafts"].setdefault(photo, {"status": "draft"})
             d.update(title=str(b.get("title") or "")[:120], caption=str(b.get("caption") or "")[:3000],
                      audience="family" if b.get("family_only") else "everyone", links=links, photos=photos)
-            ns = [t["n"] for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]
+            ns = [t["n"] for t in live(s) if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]
             if len(texts) == len(ns):
                 d["turn_text"] = {str(n): x for n, x in zip(ns, texts)}
             save(s)

@@ -706,11 +706,11 @@ function drawMain() {
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
   <div id="tlbox">${id ? timelineHtml(it.t) : ''}</div>
-  ${id ? `<div class="row" style="margin-top:6px;justify-content:center"><button id="ctxbtn">📋 What was happening then</button><span class="sub">a summary of her records for the range above</span></div>` : ''}</div>
+  ${id ? `<div class="row" style="margin-top:6px;justify-content:center"><span class="sub">📋 What was happening, from her records:</span>${ctxRanges().map((g, i) => `<button data-ctx="${i}" title="${esc(fmtDate(g.from) + (g.to !== g.from ? ' to ' + fmtDate(g.to) : ''))}">${esc(g.label)}</button>`).join('')}</div>` : ''}</div>
   <div class="talk"><div id="prompt"></div></div></div>
   <div id="ctxbox"></div>
   <div id="takesbox"></div>`;
-  if ($('#ctxbtn')) $('#ctxbtn').onclick = () => showContext(false);
+  app.querySelectorAll('[data-ctx]').forEach(b => b.onclick = () => showContext(false, ctxRanges()[+b.dataset.ctx]));
   $('#rectop').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); $('#rectop').textContent = REC.open ? 'Hide records' : 'Show records'; };
   recMount(); recApply();
   if (!REC.from) { REC.from = '2023-05-01'; REC.to = new Date().toISOString().slice(0, 10); }
@@ -773,21 +773,34 @@ function md(t) {   // a small Markdown reader: headings, bullets, bold, links (f
   }
   return out + (list ? '</ul>' : '');
 }
-async function showContext(again) {
+function ctxRanges() {   // the summary's choices: since the photo before this one, that day, or a few days either side
+  const it = ITEM(cur()); if (!it.t) return [];
+  const d = day(it.t), add = (x, n) => new Date(Date.parse(x + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const prev = D.items.filter(i => i.t && day(i.t) < d).sort((a, b) => b.t.localeCompare(a.t))[0];
+  const out = [];
+  if (prev) { const from = day(prev.t) < add(d, -120) ? add(d, -120) : day(prev.t);
+    out.push({from, to: d, label: 'Since the last photo' + (from !== day(prev.t) ? ' (last 4 months)' : '') + ' · ' + fmtDate(from).replace(/, \d{4}$/, '') + ' to ' + fmtDate(d).replace(/, \d{4}$/, '')}); }
+  out.push({from: d, to: d, label: 'That day'});
+  out.push({from: add(d, -3), to: add(d, 3), label: '±3 days'});
+  return out;
+}
+let lastCtx = null;
+async function showContext(again, g) {
+  g = g || lastCtx; if (!g) return; lastCtx = g;
   const box = $('#ctxbox'), it = ITEM(cur()); if (!box || !it.t) return;
-  const span = LS.get('tlspan', 45), pid = cur();
-  box.innerHTML = `<div class="card"><b>What was happening then</b><p class="sub">Claude is reading her records from around ${esc(fmtDate(it.t))} (±${span} days). This can take a minute or two; you can keep talking meanwhile.</p></div>`;
+  const pid = cur(), span = g.from === g.to ? fmtDate(g.from) : fmtDate(g.from) + ' to ' + fmtDate(g.to);
+  box.innerHTML = `<div class="card"><b>What was happening: ${esc(span)}</b><p class="sub">Claude is reading her records for those dates. This can take a minute or two; you can keep talking meanwhile.</p></div>`;
   box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
   try {
-    const r = await api('context', {date: day(it.t), span, again: !!again});
+    const r = await api('context', {date: day(it.t), from: g.from, to: g.to, again: !!again});
     if (cur() !== pid) return;   // moved on to another photo meanwhile
-    box.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><b>What was happening then: ${esc(fmtDate(r.from))} to ${esc(fmtDate(r.to))}</b>
+    box.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><b>What was happening: ${esc(r.from === r.to ? fmtDate(r.from) : fmtDate(r.from) + ' to ' + fmtDate(r.to))}</b>
       <span class="row"><span class="sub">from her records${r.cached ? ', read ' + esc((r.made || '').slice(0, 10)) : ''}</span><button id="ctxagain" style="font-size:calc(var(--t) * 0.8)">Read again</button><button id="ctxclose" style="font-size:calc(var(--t) * 0.8)">✕</button></span></div>
       <div style="line-height:1.5">${md(r.text)}</div>
       <p class="sub" style="margin-top:8px">A summary of what the records say, made by Claude; check the linked notes for the details. Not medical advice.</p></div>`;
     $('#ctxagain').onclick = () => showContext(true); $('#ctxclose').onclick = () => { box.innerHTML = ''; };
     log('records summary shown', {photo: pid, from: r.from, to: r.to});
-  } catch (e) { box.innerHTML = `<div class="card"><b>What was happening then</b><p class="err">Couldn't read the records: ${esc(e.message)}</p><button id="ctxagain">Try again</button></div>`; $('#ctxagain').onclick = () => showContext(true); }
+  } catch (e) { box.innerHTML = `<div class="card"><b>What was happening</b><p class="err">Couldn't read the records: ${esc(e.message)}</p><button id="ctxagain">Try again</button></div>`; $('#ctxagain').onclick = () => showContext(true); }
 }
 const liveTakes = p => (S ? S.takes : []).filter(t => !t.deleted && (t.photo === p || (!t.photo && t.led_to === p)));
 function takesHtml() {

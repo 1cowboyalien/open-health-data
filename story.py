@@ -201,6 +201,8 @@ def act(b):
             return {"session": s, "lost": True, "live": live}   # another device has it now
         elif a == "heartbeat":
             s["live"]["t"] = t
+        elif a == "newpart":   # the microphone changed: the whole-sitting recording starts a new file
+            s["parts"] = s.get("parts", 0) + 1
         elif a == "goto":
             s["pos"] = max(0, min(max(0, len(s["photos"]) - 1), int(b.get("pos", s["pos"]))))
         elif a == "done":

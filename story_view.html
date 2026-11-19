@@ -77,13 +77,20 @@ const day = t => (t || '').slice(0, 10);
 const fmtDate = t => { if (!t) return 'date unknown'; const d = new Date(t.slice(0, 10) + 'T12:00'); return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}); };
 
 /* ---------------- microphone, levels, recording ---------------- */
-const A = {stream: null, ctx: null, proc: null, level: 0, rec: null, pcm: null, rate: 48000, cont: null, contStart: 0, onLevel: null};
-async function openMic() {
+const A = {stream: null, ctx: null, proc: null, level: 0, rec: null, pcm: null, rate: 48000, cont: null, contStart: 0, onLevel: null, gen: 0, fallback: ''};
+async function openMic() {   // returns this opening's number: a test that closes the mic later only closes its own opening
   closeMic();
-  const filming = LS.get('filming', true), dev = LS.get('mic', '');
-  A.stream = await navigator.mediaDevices.getUserMedia({audio: Object.assign({channelCount: 1, echoCancellation: filming, noiseSuppression: false, autoGainControl: false},
-    dev ? {deviceId: {exact: dev}} : {})}).catch(() => navigator.mediaDevices.getUserMedia({audio: true}));
+  const gen = ++A.gen, filming = LS.get('filming', true), dev = LS.get('mic', '');
+  const base = {channelCount: 1, echoCancellation: filming, noiseSuppression: false, autoGainControl: false};
+  A.fallback = '';
+  try { A.stream = await navigator.mediaDevices.getUserMedia({audio: Object.assign({}, base, dev ? {deviceId: {exact: dev}} : {})}); }
+  catch (e) {
+    if (!dev) throw e;   // no microphone at all, or permission refused
+    A.stream = await navigator.mediaDevices.getUserMedia({audio: base});   // the chosen one is gone (unplugged?): use the default, and say so
+    A.fallback = 'The chosen microphone isn\'t available (unplugged?). Using the default instead.';
+  }
   A.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (A.ctx.state === 'suspended') A.ctx.resume().catch(() => {});
   A.rate = A.ctx.sampleRate;
   const src = A.ctx.createMediaStreamSource(A.stream), mute = A.ctx.createGain(); mute.gain.value = 0;
   A.proc = A.ctx.createScriptProcessor(4096, 1, 1);
@@ -95,6 +102,27 @@ async function openMic() {
   };
   src.connect(A.proc); A.proc.connect(mute); mute.connect(A.ctx.destination);
   const t = A.stream.getAudioTracks()[0]; A.label = t ? t.label : '';
+  if (t) t.onended = () => { A.fallback = 'The microphone stopped (unplugged?). Pick it again above.'; micBar(); };
+  return gen;
+}
+async function switchMic(id) {   // change microphones in the middle of a session without losing what is being said
+  LS.set('mic', id);
+  const pcm = A.pcm, onLevel = A.onLevel, rec = !!A.cont;
+  stopContinuous();
+  await openMic(); A.pcm = pcm; A.onLevel = onLevel;
+  if (rec && S) { try { S = (await api('session', {id: S.id, action: 'newpart', device: DEVICE})).session; } catch (e) {} startContinuous(); }
+  log('microphone changed', {mic: A.label}); micBar();
+}
+async function micOptions(sel, want) {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  return `<option value="">Default</option>` + devs.map(d => `<option value="${esc(d.deviceId)}" ${d.deviceId === want ? 'selected' : ''}>${esc(d.label || 'Microphone')}</option>`).join('');
+}
+function micBar() {   // the microphone picker + live level in the session's top bar
+  const w = $('#miclvl'); if (w) w.style.width = Math.min(100, A.level * 400) + '%';
+  const st = $('#micstate'); if (!st) return;
+  const off = !A.stream || (A.ctx && A.ctx.state !== 'running');
+  st.innerHTML = A.fallback ? `<span class="err">${esc(A.fallback)}</span>` : off ? '<button id="micon" class="pri">🎤 Turn the microphone on</button>' : '';
+  const b = $('#micon'); if (b) b.onclick = async () => { if (A.ctx && A.ctx.state === 'suspended') await A.ctx.resume(); else await switchMic(LS.get('mic', '')); micBar(); };
 }
 function closeMic() {
   stopContinuous();
@@ -157,7 +185,7 @@ function beep() { try { const c = new (window.AudioContext || window.webkitAudio
 
 /* ---------------- session flow ---------------- */
 const cur = () => S && S.photos[S.pos];
-let startQ = null;   // a line to start with instead of asking the server (Say it again)
+let startQ = null, micT = null;   // a line to start with instead of asking the server (Say it again)
 let run = 0, beat = null, clockT = null, state = {}, showSeries = LS.get('series', true);
 function setState(x) { state = Object.assign({}, x); if (screen === 'main') drawPrompt(); }
 
@@ -454,9 +482,9 @@ function drawCheck() {
   $('#back').onclick = $('#ckdone').onclick = () => { closeMic(); screen = 'home'; draw(); };
   $('#recheck').onclick = async () => { HEALTH = null; drawCheck(); await loadHealth(); drawCheck(); };
   $('#tmic').onclick = async () => {
-    try { await openMic(); let best = 0, t0 = Date.now();
+    try { const g = await openMic(); let best = 0, t0 = Date.now();
       A.onLevel = lv => { const e = $('#lvl'); if (e) e.style.width = Math.min(100, lv * 400) + '%'; best = Math.max(best, lv);
-        if (best > 0.03 || Date.now() - t0 > 10000) { A.onLevel = null; CK.mic = best > 0.03; CK.micName = A.label; LS.set('ck', CK); closeMic(); drawCheck(); } };
+        if (best > 0.03 || Date.now() - t0 > 10000) { A.onLevel = null; CK.mic = best > 0.03; CK.micName = A.label + (A.fallback ? ' (not the chosen one: ' + A.fallback + ')' : ''); LS.set('ck', CK); if (A.gen === g && screen === 'check') closeMic(); drawCheck(); } };
     } catch (e) { CK.mic = false; LS.set('ck', CK); drawCheck(); }
   };
   $('#tspk').onclick = testVoice;
@@ -558,7 +586,9 @@ function drawHome() {
   $('#lib').onclick = () => { screen = 'library'; LIB = null; draw(); };
   $('#autoend').onchange = e => LS.set('autoEnd', e.target.checked);
   $('#hear').onclick = testVoice;
-  $('#test').onclick = async () => { try { await openMic(); fillMics(); A.onLevel = lv => { const e = $('#lvl'); if (e) e.style.width = Math.min(100, lv * 400) + '%'; }; setTimeout(() => { A.onLevel = null; closeMic(); }, 8000); } catch (e) { err = 'Microphone: ' + e.message; drawHome(); } };
+  $('#test').onclick = async () => { try { const g = await openMic(); fillMics(); if (A.fallback) { err = A.fallback; drawHome(); }
+    A.onLevel = lv => { const e = $('#lvl'); if (e) e.style.width = Math.min(100, lv * 400) + '%'; };
+    setTimeout(() => { if (A.gen === g && screen !== 'main') { A.onLevel = null; closeMic(); } }, 8000); } catch (e) { err = 'Microphone: ' + e.message; drawHome(); } };
   const notReady = () => { const r = readySummary(); return r.bad.length ? !confirm('Not everything is ready: ' + r.bad.join(', ') + '.\n\nStart anyway?') : false; };
   app.querySelectorAll('[data-go]').forEach(b => { const go = b.onclick; b.onclick = () => notReady() || go(); });
   $('#start').onclick = async () => { if (notReady()) return;
@@ -589,8 +619,8 @@ function drawMain() {
   const media = !id ? `<div class="nophoto"><div style="font-size:22px">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
                                     : `<img src="/photos/web/${encodeURIComponent(id)}.jpg" alt="">`;
   app.innerHTML = `<div class="top"><span class="sub">${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
-    <span class="row"><span class="pill">Mic: ${esc((A.label || 'default').slice(0, 28))}</span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
-  <div class="stage"><div><div id="photo">${media}</div>
+    <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:190px;padding:2px 6px;font-size:13px"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:60px;height:6px"><i id="miclvl"></i></span></span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
+  <div class="stage"><div><div id="micstate"></div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
   ${id ? timelineHtml(it.t) : ''}</div>
@@ -603,7 +633,11 @@ function drawMain() {
   if ($('#ser')) $('#ser').onchange = e => { showSeries = e.target.checked; LS.set('series', showSeries); drawMain(); };
   app.querySelectorAll('.strip .t').forEach(t => t.onclick = () => +t.dataset.p !== S.pos && goTo(+t.dataset.p));
   const clk = () => { const e = $('#clk'); if (e) e.textContent = new Date().toLocaleTimeString(); const r = $('#rec'); if (r && A.cont) { const s = Math.floor((Date.now() - A.contStart) / 1000); r.textContent = '● Recording ' + [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); } };
-  clk(); clockT = setInterval(clk, 500);
+  clk(); clockT = setInterval(() => { clk(); }, 500);
+  clearInterval(micT); micT = setInterval(micBar, 120); micBar();
+  micOptions($('#micsel'), LS.get('mic', '')).then(h => { const m = $('#micsel'); if (!m) return; m.innerHTML = h;
+    if (A.label) [...m.options].forEach(o => { if (o.textContent === A.label) o.selected = true; });
+    m.onchange = () => switchMic(m.value); });
   drawPrompt();
 }
 function timelineHtml(t) {

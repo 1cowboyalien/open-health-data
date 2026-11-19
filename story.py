@@ -452,6 +452,19 @@ def ask(b):
     words = re.sub(r"[^a-z ]", "", (last.get("text") or "").lower()).strip()
     if photo and words in ("next", "next photo", "next one", "skip", "skip this one", "skip it", "lets move on", "move on"):
         return {"next": True, "kind": "command", "said": words}
+    if last.get("error") and not (last.get("text") or "").strip():   # it failed before (e.g. Dictation was off): try the saved recording again
+        r = transcribe(path(sid, "takes", last["file"]))
+        with lock:
+            s = load(sid)
+            t = next(x for x in s["takes"] if x["n"] == last["n"])
+            t["text"], t["segments"] = r.get("text"), r.get("segments")
+            if r.get("error"):
+                t["error"] = r["error"]
+            else:
+                t.pop("error", None)
+            save(s)
+        last = t
+        takes = [x for x in s["takes"] if x["photo"] == photo]
     if not (last.get("text") or "").strip():
         if last.get("error"):
             return {"question": "", "error": last["error"], "kind": "error"}

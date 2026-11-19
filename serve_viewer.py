@@ -10,6 +10,13 @@ Usage:
   GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
 - Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic
   nucleus spots, and <case>/masks/*.json, the automatic tissue maps).
+- Photos (photo story panels, photos_view.js): GET /photos/thumb/<id>.jpg and /photos/web/<id>.(jpg|mov|mp4) from local/photos/ only
+  (website copies made by local/photos/build_web.py, with location and camera data removed). Videos answer byte ranges
+  (Safari needs them to play). GET /photos/stories.json = every story in local/photos/stories/<id>.json; a story with
+  "family_only": true is left out unless the visitor is this Mac or the home network.
+  GET /photos/edits.json = {hidden: [ids], level: {id: level}, canEdit}; POST /photos/edits {id, hidden?, level?} changes it
+  (this Mac and the home network only; local/photos/photo_edits.json, previous copy kept as photo_edits.prev.json).
+  A hidden photo is shown by the Edit mode at home but is 404 for everyone else; originals are never touched.
 - GET  /api/edits  -> {"rev": n, "edits": {...}}  from local/med_edits.json (the same file the
   build scripts read, so moments, medication changes and saved ranges survive reloads/rebuilds).
 - POST /api/edits  {"rev": n, "edits": {...}} saves them. If someone saved in between (rev differs)
@@ -30,6 +37,11 @@ Usage:
   (localStorage "labs.*") when that browser has none yet. start_view.js adds the "Start view" button.
   POST /api/start-view {"keys": {...}} replaces it: this Mac and the home network only (the previous one is
   kept as local/start_view.prev.json).
+- Story sessions ("Tell your story", story.py + story_view.html): GET /story is the page Erica uses to talk about her
+  photos; /story/api/... records her answers, turns them into text on this Mac, asks Claude for a spoken follow-up
+  question (through the chat server) and saves approved stories to local/photos/stories/. All of it answers only this
+  Mac and the home network (VPN included). The browser only allows the microphone on a secure page, so start the
+  viewer with --https-port 8767 (certificate: python3 serve_viewer.py --make-cert) and open https://<this Mac>:8767/story.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -47,6 +59,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import usage
+import story
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL = os.path.join(HERE, "local")
@@ -55,6 +68,17 @@ EDITS = os.path.join(LOCAL, "med_edits.json")
 HIST = os.path.join(LOCAL, "edits_history")
 IMG_TYPES = (".nii.gz", ".obj")
 KEEP = 300
+PHOTO_EDITS = os.path.join(LOCAL, "photos", "photo_edits.json")
+
+
+def read_photo_edits():
+    """{hidden: {id: {at}}, level: {id: level}} from local/photos/photo_edits.json (empty if missing)."""
+    try:
+        e = json.load(open(PHOTO_EDITS))
+        return {"hidden": dict(e.get("hidden") or {}), "level": dict(e.get("level") or {})}
+    except (OSError, ValueError):
+        return {"hidden": {}, "level": {}}
+
 MAXBODY = 5_000_000
 lock = threading.Lock()
 USAGE = None   # usage.Usage, set in __main__
@@ -201,6 +225,64 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             conn.close()
 
+    def photos(self, rel):
+        base = os.path.realpath(os.path.join(LOCAL, "photos"))
+        if rel == "edits.json":
+            e = read_photo_edits()
+            return self.send(200, {"hidden": sorted(e["hidden"]), "level": e["level"], "canEdit": usage.is_local_request(self)})
+        if rel == "stories.json":
+            home = usage.is_local_request(self)
+            out = {}
+            sd = os.path.join(base, "stories")
+            for f in sorted(os.listdir(sd)) if os.path.isdir(sd) else []:
+                if not f.endswith(".json"):
+                    continue
+                try:
+                    st = json.load(open(os.path.join(sd, f)))
+                except (OSError, ValueError):
+                    continue
+                keep = [x for x in st.get("stories", []) if home or not x.get("family_only")]
+                if keep:
+                    out[f[:-5]] = keep
+            return self.send(200, {"stories": out, "home": home})
+        sub, _, name = rel.partition("/")
+        if os.path.splitext(name)[0] in read_photo_edits()["hidden"] and not usage.is_local_request(self):
+            return self.send(404, {"error": "not found"})   # hidden from the website: only the home Edit mode still sees it
+        f = os.path.realpath(os.path.join(base, rel))
+        ok = (sub in ("thumb", "web") and "/" not in name and f.startswith(os.path.join(base, sub) + os.sep)
+              and os.path.isfile(f))
+        types = {".jpg": "image/jpeg", ".mov": "video/quicktime", ".mp4": "video/mp4"}
+        ext = os.path.splitext(f)[1].lower()
+        if not ok or ext not in types or (sub == "thumb" and ext != ".jpg"):
+            return self.send(404, {"error": "not found"})
+        if ext == ".jpg":
+            return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True)
+        size = os.path.getsize(f)
+        m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+        a, b = 0, size - 1
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                a = int(m.group(1)); b = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            else:
+                a = max(0, size - int(m.group(2)))
+            if a > b:
+                self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
+        self.send_response(206 if m else 200)
+        self.send_header("Content-Type", types[ext])
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(b - a + 1))
+        if m:
+            self.send_header("Content-Range", f"bytes {a}-{b}/{size}")
+        self.send_header("Cache-Control", "private, max-age=86400")
+        self.end_headers()
+        with open(f, "rb") as fh:
+            fh.seek(a); left = b - a + 1
+            while left > 0:
+                chunk = fh.read(min(262144, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk); left -= len(chunk); self._bytes += len(chunk)
+
     def do_GET(self):
         self.logged(self.get)
 
@@ -260,6 +342,10 @@ class Handler(BaseHTTPRequestHandler):
                     and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots / tissue maps, one file per slide
                 return self.send(200, open(f, "rb").read(), "application/json")
             return self.send(404, {"error": "not found"})
+        if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
+            return self.photos(urllib.parse.unquote(path[len("/photos/"):]))
+        if path == "/story" or path.startswith("/story/"):
+            return self.story_get(path)
         if path == "/api/edits":
             with lock:
                 rev, edits = read_edits()
@@ -281,6 +367,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": USAGE.events(self, self._vid, body)})
         if self.path.split("?")[0] == "/api/start-view":
             return self.save_start()
+        if self.path.split("?")[0] == "/photos/edits":
+            return self.save_photo_edit()
+        if self.path.split("?")[0].startswith("/story/api/"):
+            return self.story_post(self.path.split("?")[0][len("/story/api/"):])
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -299,6 +389,98 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(409, {"rev": rev, "edits": cur})
             write_edits(rev + 1, edits)
         self.send(200, {"rev": rev + 1})
+
+    # ---- story sessions (story.py): this Mac and the home network only ----
+    def story_get(self, path):
+        if not usage.is_local_request(self):
+            return self.send(404, {"error": "not found"})
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        try:
+            if path in ("/story", "/story/"):
+                return self.send(200, open(os.path.join(HERE, "story_view.html"), "rb").read(), "text/html; charset=utf-8")
+            if path == "/story/api/photos":
+                return self.send(200, story.photo_data())
+            if path == "/story/api/sessions":
+                return self.send(200, {"sessions": story.sessions(), "settings": story.settings(), "voice": story.voice_name()})
+            if path == "/story/api/voice":   # a fixed line in Claude's voice, to try the speakers
+                return self.send(200, {"audio": "cache/" + story.cached_line("Hi Erica. I'm ready when you are.")})
+            if path == "/story/api/session":
+                return self.send(200, {"session": story.load(q.get("id", [""])[0])})
+            if path == "/story/api/markers.csv":
+                sid = q.get("id", [""])[0]
+                return self.send(200, story.markers_csv(sid), "text/csv; charset=utf-8",
+                                 headers=(("Content-Disposition", f'attachment; filename="{sid}-markers.csv"'),))
+            if path.startswith("/story/audio/"):
+                f = story.audio_file(urllib.parse.unquote(path[len("/story/audio/"):]))
+                if not f:
+                    return self.send(404, {"error": "not found"})
+                return self.send(200, open(f, "rb").read(), "audio/wav" if f.endswith(".wav") else "audio/mp4", cache=True)
+        except KeyError as e:
+            return self.send(404, {"error": str(e)})
+        self.send(404, {"error": "not found"})
+
+    def story_post(self, sub):
+        if not usage.is_local_request(self):
+            return self.send(403, {"error": "only from this Mac or the home network"})
+        n = int(self.headers.get("Content-Length") or 0)
+        if n < 0 or n > 200_000_000:
+            return self.send(413, {"error": "too large"})
+        data = self.rfile.read(n) if n else b""
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
+        try:
+            if sub == "take":   # body = WAV
+                return self.send(200, story.take(q.get("id", ""), q.get("photo", ""), data,
+                                                 {"client": q.get("client"), "rate": q.get("rate"), "question": int(q["question"]) if q.get("question", "").isdigit() else None}))
+            if sub == "continuous":   # body = a slice of the whole-sitting recording
+                return self.send(200, story.continuous(q.get("id", ""), q.get("part", "0"), data, q.get("ext", "webm")))
+            b = json.loads(data or b"{}")
+            fn = {"sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
+                  "drafts": story.drafts, "approve": story.approve}.get(sub)
+            if not fn:
+                return self.send(404, {"error": "not found"})
+            return self.send(200, fn(b))
+        except KeyError as e:
+            return self.send(404, {"error": str(e)})
+        except (ValueError, TypeError) as e:
+            return self.send(400, {"error": str(e)})
+        except OSError as e:   # chat server down, say/afconvert failed, ...
+            return self.send(502, {"error": str(e)})
+
+    def save_photo_edit(self):
+        """Hide/restore one photo or change its label (this Mac and the home network only)."""
+        if not usage.is_local_request(self):
+            return self.send(403, {"error": "only from this Mac or the home network"})
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0 or n > 4000:
+            return self.send(413, {"error": "empty or too large"})
+        try:
+            b = json.loads(self.rfile.read(n))
+            pid = str(b["id"])
+            if not re.fullmatch(r"[A-Za-z0-9_\-]{1,120}", pid) or not os.path.exists(os.path.join(LOCAL, "photos", "thumb", pid + ".jpg")):
+                raise ValueError("unknown photo")
+            if "level" in b and b["level"] not in ("everyday", "medical", "graphic", None):
+                raise ValueError("bad level")
+        except Exception as e:  # noqa: BLE001
+            return self.send(400, {"error": str(e)})
+        with lock:
+            e = read_photo_edits()
+            if "hidden" in b:
+                if b["hidden"]:
+                    e["hidden"][pid] = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+                else:
+                    e["hidden"].pop(pid, None)
+            if "level" in b:
+                if b["level"]:
+                    e["level"][pid] = b["level"]
+                else:
+                    e["level"].pop(pid, None)
+            if os.path.exists(PHOTO_EDITS):
+                shutil.copy2(PHOTO_EDITS, PHOTO_EDITS.replace(".json", ".prev.json"))
+            tmp = PHOTO_EDITS + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(e, f, indent=1)
+            os.replace(tmp, PHOTO_EDITS)
+        self.send(200, {"hidden": sorted(e["hidden"]), "level": e["level"], "canEdit": True})
 
     def save_start(self):
         """Replace the start view (this Mac and the home network only)."""
@@ -336,10 +518,37 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--lan", action="store_true", help="listen on all network interfaces (home Wi-Fi only)")
     ap.add_argument("--port", type=int, default=8766)
+    ap.add_argument("--https-port", type=int, help="also serve https here (needed for the story page's microphone)")
+    ap.add_argument("--make-cert", action="store_true", help="make a self-signed certificate in local/tls/ and stop")
     a = ap.parse_args()
+    TLS = os.path.join(LOCAL, "tls")
+    if a.make_cert:
+        import subprocess
+        os.makedirs(TLS, exist_ok=True)
+        ips = {"127.0.0.1"}
+        for dev in ("en0", "en1", "en2"):
+            r = subprocess.run(["ipconfig", "getifaddr", dev], capture_output=True, text=True)
+            if r.stdout.strip():
+                ips.add(r.stdout.strip())
+        cnf = os.path.join(TLS, "openssl.cnf")
+        open(cnf, "w").write("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=erica-viewer\n[ext]\n"
+                             "subjectAltName=" + ",".join(["DNS:localhost"] + ["IP:" + i for i in sorted(ips)]) + "\n")
+        subprocess.check_call(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825", "-keyout",
+                               os.path.join(TLS, "key.pem"), "-out", os.path.join(TLS, "cert.pem"), "-config", cnf])
+        os.chmod(os.path.join(TLS, "key.pem"), 0o600)
+        raise SystemExit("certificate for " + ", ".join(sorted(ips)) + " in " + TLS)
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     print(f"Viewer: http://127.0.0.1:{a.port}/" + ("  (also on this Mac's network address; no login)" if a.lan else ""))
     print("Edits are kept in", EDITS, "| Ctrl+C to stop")
     USAGE = usage.Usage(os.path.join(LOCAL, "usage.sqlite"))
     print(f"Usage stats: http://127.0.0.1:{a.port}/stats (this Mac and the home network only)")
+    if a.https_port:
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_cert_chain(os.path.join(TLS, "cert.pem"), os.path.join(TLS, "key.pem"))
+        hs = ThreadingHTTPServer((host, a.https_port), Handler)
+        hs.socket = ctx.wrap_socket(hs.socket, server_side=True, do_handshake_on_connect=False)
+        threading.Thread(target=hs.serve_forever, daemon=True).start()
+        print(f"Also https on port {a.https_port}: story page https://127.0.0.1:{a.https_port}/story")
     ThreadingHTTPServer((host, a.port), Handler).serve_forever()

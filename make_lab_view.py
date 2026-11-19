@@ -639,9 +639,9 @@ function kfSize(){const c=$('kfCard'),h=heights.__kf||100,fold=!!heights.__kffol
  $('kfLess').disabled=fold||h<=50;$('kfMore').disabled=fold||h>=250;$('kfLess').title='Make the Keyframes and Concern tracks shorter (now '+h+'%)'}
 /* Keyframes scroll bar: the whole record (X0..X1, plain time) as a bar under the Keyframes track, lined up with its plot area.
    The thumb is the time window; drag it to move the window (same length), click the bar to centre the window there.
-   Small dots mark every keyframe on the whole record. Hidden when the window already shows everything. */
+   Small dots mark every keyframe on the whole record. Always shown: on the whole record the thumb fills the bar. */
 let kfsM=[64,10];
-function kfScrollSync(){const sb=$('kfScroll');if(!sb)return;const full=W.a<=X0+DAY&&W.b>=X1-DAY;sb.classList.toggle('hide',full);if(full)return;
+function kfScrollSync(){const sb=$('kfScroll');if(!sb)return;sb.classList.remove('hide');
  const ch=charts.get('mtrack'),cv=$('mtrackc'),A=ch&&ch.chartArea;if(A&&cv.clientWidth){kfsM=[A.left,cv.clientWidth-A.right]}sb.style.marginLeft=kfsM[0]+'px';sb.style.marginRight=kfsM[1]+'px';
  const f=t=>Math.max(0,Math.min(1,(t-X0)/(X1-X0))),th=$('kfsThumb');th.style.left=(f(W.a)*100)+'%';th.style.width=((f(W.b)-f(W.a))*100)+'%';
  $('kfsL').textContent=th.offsetWidth>110?zStamp(W.a).slice(0,7)+' – '+zStamp(W.b).slice(0,7):'';

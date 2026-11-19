@@ -137,6 +137,8 @@ async function micOptions(sel, want) {
 function micBar() {   // the microphone picker + live level in the session's top bar
   const w = $('#miclvl'); if (w) w.style.width = Math.min(100, A.level * 400) + '%';
   const st = $('#micstate'); if (!st) return;
+  if (muted) { if (!st.querySelector('.mutebar')) { st.innerHTML = '<div class="mutebar card" style="border-color:var(--acc);padding:8px 12px;margin:0 0 8px">🔇 <b>Muted.</b> Claude is quiet and nothing is being recorded. Look around the photo, the timeline and the records as long as you like, then press <button id="unmute2" class="pri">🎤 Unmute</button> to carry on.</div>'; $('#unmute2').onclick = () => setMute(false); } return; }
+  if (st.querySelector('.mutebar')) st.innerHTML = '';
   const off = !A.stream || (A.ctx && A.ctx.state !== 'running');
   st.innerHTML = SPK_WARN && !A.fallback ? `<span class="err">${esc(SPK_WARN)}</span>` : A.fallback ? `<span class="err">${esc(A.fallback)}</span>` : off ? '<button id="micon" class="pri">🎤 Turn the microphone on</button>' : '';
   const b = $('#micon'); if (b) b.onclick = async () => { if (A.ctx && A.ctx.state === 'suspended') await A.ctx.resume(); else await switchMic(LS.get('mic', '')); micBar(); };
@@ -234,7 +236,7 @@ let run = 0, beat = null, clockT = null, state = {}, showSeries = LS.get('series
 function setState(x) { state = Object.assign({}, x); if (screen === 'main') drawPrompt(); }
 
 async function begin(sid, force) {
-  err = '';
+  err = ''; muted = false; unmuteWaiters.splice(0).forEach(f => f());
   try {
     let r = await api('session', {id: sid, action: 'claim', device: DEVICE, deviceName: DEVNAME, force: !!force});
     if (r.busy) { screen = 'busy'; S = r.session; S._busy = r.busy; return draw(); }
@@ -257,12 +259,24 @@ async function heartbeat() {
 function stopAll() { run++; if (L) L.finish('stop'); if (voice) { voice.pause(); voice = null; } clearInterval(beat); closeMic(); }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+/* mute: stay on the page, but Claude is quiet and nothing is recorded until Unmute (the whole-sitting recording pauses too) */
+let muted = false, unmuteWaiters = [];
+const waitUnmute = () => muted ? new Promise(r => unmuteWaiters.push(r)) : Promise.resolve();
+function setMute(on) {
+  if (on === muted) return;
+  muted = on;
+  if (on) { if (voice) stopSound(); if (L) L.finish('mute'); if (A.cont && A.cont.state === 'recording') A.cont.pause(); log('muted', {photo: cur()}); }
+  else { if (A.cont && A.cont.state === 'paused') A.cont.resume(); log('unmuted', {photo: cur()}); unmuteWaiters.splice(0).forEach(f => f()); }
+  const b = $('#mute'); if (b) { b.textContent = on ? '🎤 Unmute' : '🔇 Mute'; b.classList.toggle('pri', on); }
+  micBar(); drawPrompt();
+}
 async function converse() {   // one photo: opener, then answer -> question -> answer ... until next
   const my = ++run; let photo = cur() || '';
   log('photo shown', {photo, n: S.pos + 1});
   let q = startQ, correcting = false; startQ = null;
   try {
     while (my === run) {
+      await waitUnmute(); if (my !== run) return;   // muted: wait here, on the same photo
       setState({mode: 'thinking', heard: state.heard});
       const r = q ? q : await api('ask', {id: S.id, photo});
       q = null; if (my !== run) return;
@@ -272,14 +286,16 @@ async function converse() {   // one photo: opener, then answer -> question -> a
       if (r.error && !r.question) { setState({mode: 'error', text: 'Your recording is saved, but it couldn\'t be turned into words: ' + r.error + '.'}); return; }
       const recap = r.kind === 'correction' ? '' : (r.recap || '');
       setState({mode: 'asking', question: r.question, recap, kind: r.kind, heard: state.heard});
-      if (r.audio) await play(r.audio);
+      if (r.audio && !muted) await play(r.audio);
       if (my !== run) return;
       if (state.wrongPending) {   // "That's not right" pressed while Claude was still speaking
         const w = await api('voice?line=wrong'); q = {question: w.text, audio: w.audio, kind: 'correction', n: r.n}; correcting = true; log('recap wrong', {photo}); continue; }
       if (r.next) return nextPhoto(my);
+      await waitUnmute(); if (my !== run) return;
       setState({mode: 'listening', question: r.question, recap, kind: r.kind, heard: state.heard});
       const t = await listen(r.kind === 'followup' ? r.n : null);
       if (my !== run) return;
+      if (t.why === 'mute' && !(t.spoke && t.chunks.length)) { q = Object.assign({}, r, {audio: null, session: null, show: null}); continue; }   // ask the same again after Unmute, without repeating it out loud
       if (t.why === 'skipq') { q = {question: 'Okay. Anything else about this one?', kind: 'opener', audio: null}; continue; }
       if (t.why === 'wrong') {   // "That's not right": Claude asks her to say it again; her next answer corrects the recap
         const w = await api('voice?line=wrong'); q = {question: w.text, audio: w.audio, kind: 'correction', n: r.n}; correcting = true; log('recap wrong', {photo}); continue; }
@@ -681,7 +697,7 @@ function drawMain() {
     <div class="row" style="justify-content:space-between"><span class="sub"><span class="pill" style="color:var(--ink)">🗣 ${esc(S.teller || 'Erica')} telling</span> ${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
       <span class="row"><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span></span></div>
     <div class="row" style="margin-top:6px;justify-content:space-between">
-      <span class="row"><button id="back" ${S.pos ? '' : 'disabled'}>← Back</button><button id="skipq">Skip question</button><button id="next" class="pri">Next photo →</button><button id="pause">❚❚ Pause</button></span>
+      <span class="row"><button id="back" ${S.pos ? '' : 'disabled'}>← Back</button><button id="skipq">Skip question</button><button id="next" class="pri">Next photo →</button><button id="mute" class="${muted ? 'pri' : ''}" title="Stay on this page; Claude goes quiet and nothing is recorded until Unmute (key M)">${muted ? '🎤 Unmute' : '🔇 Mute'}</button><button id="pause">❚❚ Pause</button></span>
       <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:170px;padding:2px 6px;font-size:calc(var(--t) * 0.8125)"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:50px;height:6px"><i id="miclvl"></i></span></span>
         <span class="pill" style="display:inline-flex;gap:6px;align-items:center">🔊 <select id="spksel" class="spk" style="max-width:170px;padding:2px 6px;font-size:calc(var(--t) * 0.8125)"><option>…</option></select></span>
         <button id="rectop">${REC.open ? 'Hide records' : 'Show records'}</button>${sizeBtns()}</span></div></div>
@@ -690,19 +706,19 @@ function drawMain() {
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
   <div id="tlbox">${id ? timelineHtml(it.t) : ''}</div>
-  ${id ? `<div class="row" style="margin-top:6px;justify-content:center"><button id="ctxbtn">📋 What was happening then</button><span class="sub">a summary of her records for the range above</span></div>` : ''}</div>
+  ${id ? `<div class="row" style="margin-top:6px;justify-content:center"><span class="sub">📋 What was happening, from her records:</span>${ctxRanges().map((g, i) => `<button data-ctx="${i}" title="${esc(fmtDate(g.from) + (g.to !== g.from ? ' to ' + fmtDate(g.to) : ''))}">${esc(g.label)}</button>`).join('')}</div>` : ''}</div>
   <div class="talk"><div id="prompt"></div></div></div>
   <div id="ctxbox"></div>
   <div id="takesbox"></div>`;
-  if ($('#ctxbtn')) $('#ctxbtn').onclick = () => showContext(false);
+  app.querySelectorAll('[data-ctx]').forEach(b => b.onclick = () => showContext(false, ctxRanges()[+b.dataset.ctx]));
   $('#rectop').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); $('#rectop').textContent = REC.open ? 'Hide records' : 'Show records'; };
   recMount(); recApply();
   if (!REC.from) { REC.from = '2023-05-01'; REC.to = new Date().toISOString().slice(0, 10); }
-  $('#pause').onclick = pause; $('#next').onclick = () => nextPhoto(); $('#back').onclick = () => S.pos && goTo(S.pos - 1);
+  $('#pause').onclick = pause; $('#mute').onclick = () => setMute(!muted); $('#next').onclick = () => nextPhoto(); $('#back').onclick = () => S.pos && goTo(S.pos - 1);
   $('#skipq').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('skipq'); };
   if ($('#ser')) $('#ser').onchange = e => { showSeries = e.target.checked; LS.set('series', showSeries); drawMain(); };
   app.querySelectorAll('.strip .t').forEach(t => t.onclick = () => +t.dataset.p !== S.pos && goTo(+t.dataset.p));
-  const clk = () => { const e = $('#clk'); if (e) e.textContent = new Date().toLocaleTimeString(); const r = $('#rec'); if (r && A.cont) { const s = Math.floor((Date.now() - A.contStart) / 1000); r.textContent = '● Recording ' + [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); } };
+  const clk = () => { const e = $('#clk'); if (e) e.textContent = new Date().toLocaleTimeString(); const r = $('#rec'); if (r && muted) { r.textContent = '⏸ Muted: not recording'; } else if (r && A.cont) { const s = Math.floor((Date.now() - A.contStart) / 1000); r.textContent = '● Recording ' + [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); } };
   clk(); clockT = setInterval(() => { clk(); }, 500);
   clearInterval(micT); micT = setInterval(micBar, 120); micBar(); fillSpk($('#spksel'));
   micOptions($('#micsel'), LS.get('mic', '')).then(h => { const m = $('#micsel'); if (!m) return; m.innerHTML = h;
@@ -757,21 +773,34 @@ function md(t) {   // a small Markdown reader: headings, bullets, bold, links (f
   }
   return out + (list ? '</ul>' : '');
 }
-async function showContext(again) {
+function ctxRanges() {   // the summary's choices: since the photo before this one, that day, or a few days either side
+  const it = ITEM(cur()); if (!it.t) return [];
+  const d = day(it.t), add = (x, n) => new Date(Date.parse(x + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const prev = D.items.filter(i => i.t && day(i.t) < d).sort((a, b) => b.t.localeCompare(a.t))[0];
+  const out = [];
+  if (prev) { const from = day(prev.t) < add(d, -120) ? add(d, -120) : day(prev.t);
+    out.push({from, to: d, label: 'Since the last photo' + (from !== day(prev.t) ? ' (last 4 months)' : '') + ' · ' + fmtDate(from).replace(/, \d{4}$/, '') + ' to ' + fmtDate(d).replace(/, \d{4}$/, '')}); }
+  out.push({from: d, to: d, label: 'That day'});
+  out.push({from: add(d, -3), to: add(d, 3), label: '±3 days'});
+  return out;
+}
+let lastCtx = null;
+async function showContext(again, g) {
+  g = g || lastCtx; if (!g) return; lastCtx = g;
   const box = $('#ctxbox'), it = ITEM(cur()); if (!box || !it.t) return;
-  const span = LS.get('tlspan', 45), pid = cur();
-  box.innerHTML = `<div class="card"><b>What was happening then</b><p class="sub">Claude is reading her records from around ${esc(fmtDate(it.t))} (±${span} days). This can take a minute or two; you can keep talking meanwhile.</p></div>`;
+  const pid = cur(), span = g.from === g.to ? fmtDate(g.from) : fmtDate(g.from) + ' to ' + fmtDate(g.to);
+  box.innerHTML = `<div class="card"><b>What was happening: ${esc(span)}</b><p class="sub">Claude is reading her records for those dates. This can take a minute or two; you can keep talking meanwhile.</p></div>`;
   box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
   try {
-    const r = await api('context', {date: day(it.t), span, again: !!again});
+    const r = await api('context', {date: day(it.t), from: g.from, to: g.to, again: !!again});
     if (cur() !== pid) return;   // moved on to another photo meanwhile
-    box.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><b>What was happening then: ${esc(fmtDate(r.from))} to ${esc(fmtDate(r.to))}</b>
+    box.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><b>What was happening: ${esc(r.from === r.to ? fmtDate(r.from) : fmtDate(r.from) + ' to ' + fmtDate(r.to))}</b>
       <span class="row"><span class="sub">from her records${r.cached ? ', read ' + esc((r.made || '').slice(0, 10)) : ''}</span><button id="ctxagain" style="font-size:calc(var(--t) * 0.8)">Read again</button><button id="ctxclose" style="font-size:calc(var(--t) * 0.8)">✕</button></span></div>
       <div style="line-height:1.5">${md(r.text)}</div>
       <p class="sub" style="margin-top:8px">A summary of what the records say, made by Claude; check the linked notes for the details. Not medical advice.</p></div>`;
     $('#ctxagain').onclick = () => showContext(true); $('#ctxclose').onclick = () => { box.innerHTML = ''; };
     log('records summary shown', {photo: pid, from: r.from, to: r.to});
-  } catch (e) { box.innerHTML = `<div class="card"><b>What was happening then</b><p class="err">Couldn't read the records: ${esc(e.message)}</p><button id="ctxagain">Try again</button></div>`; $('#ctxagain').onclick = () => showContext(true); }
+  } catch (e) { box.innerHTML = `<div class="card"><b>What was happening</b><p class="err">Couldn't read the records: ${esc(e.message)}</p><button id="ctxagain">Try again</button></div>`; $('#ctxagain').onclick = () => showContext(true); }
 }
 const liveTakes = p => (S ? S.takes : []).filter(t => !t.deleted && (t.photo === p || (!t.photo && t.led_to === p)));
 function takesHtml() {
@@ -804,7 +833,7 @@ function drawPrompt() {
   const recap = s.recap ? `<div class="heard" style="background:var(--accbg)"><span class="sub">Claude heard</span><br><span style="font-family:var(--voice);font-size:calc(var(--t) * 1.062)">${esc(s.recap)}</span>
      <div style="margin-top:6px"><button id="wrong">That's not right</button></div></div>` : '';
   if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = recap + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
-    (s.mode === 'listening' ? `<div class="ctr endbar" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
+    (s.mode === 'listening' && !muted ? `<div class="ctr endbar" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
        <span class="sub">${auto ? 'Listening… press End thought when you\'re done (a long pause also ends it)' : 'Listening… talk as long as you like, then press End thought'}</span></div>
        <div class="row"><button class="big pri" id="done" style="font-size:calc(var(--t) * 1.25);padding:14px 34px">✓ End thought</button>${s.kind === 'closing' ? '<button class="big" id="cnext" style="font-size:calc(var(--t) * 1.25);padding:14px 26px">Next photo →</button>' : ''}</div></div>` : '');
   else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Listening back to what you said…' : 'Getting ready…'}</div></div>`;
@@ -883,6 +912,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ' && L) { e.preventDefault(); L.finish('key'); }
   if (e.key === 'n' || e.key === 'ArrowRight') nextPhoto();
   if (e.key === 'p') pause();
+  if (e.key === 'm') setMute(!muted);
 });
 window.addEventListener('beforeunload', () => { if (S && screen === 'main') navigator.sendBeacon && navigator.sendBeacon('/story/api/session', new Blob([JSON.stringify({id: S.id, action: 'pause', device: DEVICE})], {type: 'application/json'})); });
 (async () => {

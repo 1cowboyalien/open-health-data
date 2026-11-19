@@ -1098,11 +1098,17 @@ def story_delete(b):
 def context(b):
     """Claude's summary of the records around a date (doctors, what the notes said, what was being tested for, what was
     thought or ruled out). Kept in local/story/context/<from>_<to>.json so a range is read only once ({"again": true} redoes it)."""
-    date, span = str(b.get("date") or "")[:10], int(b.get("span") or 45)
-    if not date_ok(date) or not 1 <= span <= 400:
-        raise ValueError("a date (YYYY-MM-DD) and a span in days")
+    date = str(b.get("date") or "")[:10]
+    if not date_ok(date):
+        raise ValueError("a date (YYYY-MM-DD)")
     d0 = datetime.date.fromisoformat(date)
-    a, z = (d0 - datetime.timedelta(days=span)).isoformat(), (d0 + datetime.timedelta(days=span)).isoformat()
+    if date_ok(b.get("from")) and date_ok(b.get("to")):   # an exact range: that day, a few days, or since the last photo
+        a, z = sorted([b["from"], b["to"]])
+        if (datetime.date.fromisoformat(z) - datetime.date.fromisoformat(a)).days > 400:
+            raise ValueError("a range of at most 400 days")
+    else:
+        span = int(b.get("span") or 3)
+        a, z = (d0 - datetime.timedelta(days=span)).isoformat(), (d0 + datetime.timedelta(days=span)).isoformat()
     cdir = os.path.join(BASE, "context")
     os.makedirs(cdir, exist_ok=True)
     f = os.path.join(cdir, "%s_%s.json" % (a, z))

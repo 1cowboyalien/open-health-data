@@ -14,7 +14,8 @@
    (store 'photo.graphic').
    Stories: fetched from /photos/stories.json = {stories: {<id>: [{title?, caption?, told?, family_only?, turns: [{who, text, audio?}]} | {text}]}};
    Stories told on the story page (story_view.html) carry a caption in her words and the conversation; at home each of her answers
-   can be played (audio = <session>/takes/NNN.wav, served by /story/audio/, home network only).
+   can be played (audio = <session>/takes/NNN.wav, served by /story/audio/, home network only); links and more photos added in the
+   story editor are listed under it. labs.html#date=YYYY-MM-DD opens the charts around that date (links saved with a story).
    the server leaves out family-only stories for visitors outside the home network. The words are shown as they were said.
    Data: PHOTO_DATA = {title, teller, chapters: [{from, title, about}], items: [{id, kind: photo|video, ext, t, tz?, sure, src?, chapter, level,
                        people?, caption?, note?, w?, h?, seconds?, session?, display?: 'intro', panels?, ask?}]}. */
@@ -281,7 +282,11 @@
       (s.caption && s.turns ? '<details><summary class="sub">The conversation (' + s.turns.length + ')</summary>' : '') +
       (s.turns || [{who: TELLER, text: s.text}]).map(x => '<div class="turn ' + (x.who === TELLER ? 'teller' : 'other') + '"><span class="who">' + esc(x.who || '') +
         (x.audio && storiesHome ? ' <audio controls preload="none" src="/story/audio/' + esc(x.audio) + '"></audio>' : '') + '</span>' + esc(x.text || '') + '</div>').join('') +
-      (s.caption && s.turns ? '</details>' : '') + '</div>').join('');
+      (s.caption && s.turns ? '</details>' : '') +
+      ((s.photos || []).filter(id => ALL.some(x => x.id === id)).length ? '<div class="sub" style="margin-top:6px">More photos in this story</div><div class="moreph">' +
+        s.photos.filter(id => ALL.some(x => x.id === id)).map(id => '<a href="/photos/web/' + encodeURIComponent(id) + '.jpg" target="_blank" rel="noopener"><img src="/photos/thumb/' + encodeURIComponent(id) + '.jpg" alt="" loading="lazy"></a>').join('') + '</div>' : '') +
+      ((s.links || []).length ? '<div class="sub" style="margin-top:6px">Links</div>' + s.links.map(l => '<div><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + '</a></div>').join('') : '') +
+      '</div>').join('');
   }
   function openBox(list, k) {
     const ov = document.createElement('div'); ov.className = 'photoOv'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Photo');
@@ -353,6 +358,7 @@
 .photoNav{grid-column:1;display:flex;justify-content:center;align-items:center;gap:14px;color:#ddd;padding:8px}
 .photoNav button{font-size:22px;background:transparent;border:1px solid #555;color:#eee;border-radius:8px;padding:0 12px;cursor:pointer}.photoNav button:disabled{opacity:.3}
 .photoStory{border-top:1px solid var(--line);padding:8px 0}.photoStory .cap{font-family:Georgia,serif;font-size:16px;line-height:1.5;margin:6px 0}
+.photoStory .moreph{display:flex;gap:6px;flex-wrap:wrap}.photoStory .moreph img{height:64px;border-radius:6px;display:block}
 .photoStory audio{height:26px;vertical-align:middle;max-width:220px}.photoStory .turn{margin:6px 0;padding:6px 9px;border-radius:10px;background:var(--bg)}
 .photoStory .turn.teller{background:rgba(42,120,214,.10)}.photoStory .who{display:block;font-size:11px;color:var(--muted);font-weight:600}
 @media (max-width:760px){.photoOv{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}.photoSide{grid-row:3;grid-column:1}.photoStage img,.photoStage video{max-height:55vh}}`;
@@ -394,4 +400,7 @@
   const saved = store.get('selected', []);
   if (saved.some(mine)) sel = saved.filter(id => BYID[id] || MRD.isId(id));
   updateBar(); list(); render();
+  // labs.html#date=YYYY-MM-DD (links saved with a story): open the charts around that date
+  const hd = /date=(\d{4}-\d{2}-\d{2})/.exec(location.hash);
+  if (hd) setTimeout(() => { try { setWin(ms(hd[1]) - 30 * DAY, ms(hd[1]) + 30 * DAY); } catch (e) {} }, 0);
 })();

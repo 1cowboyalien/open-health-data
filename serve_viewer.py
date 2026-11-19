@@ -409,6 +409,10 @@ class Handler(BaseHTTPRequestHandler):
                 h = story.health()
                 h["onHomeMac"] = self.client_address[0] in ("127.0.0.1", "::1") or self.client_address[0] == self.connection.getsockname()[0]
                 return self.send(200, h)
+            if path == "/story/api/stories":   # every saved story, and drafts waiting in sessions
+                return self.send(200, story.stories_list())
+            if path == "/story/api/story":   # one story to edit: ?photo=&index= (saved) or ?photo=&session= (a draft)
+                return self.send(200, story.story_get(q.get("photo", [""])[0], q.get("index", [None])[0], q.get("session", [None])[0]))
             if path == "/story/api/session":
                 return self.send(200, {"session": story.load(q.get("id", [""])[0])})
             if path == "/story/api/markers.csv":
@@ -420,8 +424,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not f:
                     return self.send(404, {"error": "not found"})
                 return self.send(200, open(f, "rb").read(), "audio/wav" if f.endswith(".wav") else "audio/mp4", cache=True)
-        except KeyError as e:
+        except (KeyError, IndexError) as e:
             return self.send(404, {"error": str(e)})
+        except (ValueError, TypeError) as e:
+            return self.send(400, {"error": str(e)})
         self.send(404, {"error": "not found"})
 
     def story_post(self, sub):
@@ -446,12 +452,13 @@ class Handler(BaseHTTPRequestHandler):
             b = json.loads(data or b"{}")
             if sub == "open-setting":
                 return self.send(200, story.open_setting(json.loads(data or b"{}")))
-            fn = {"sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
+            fn = {"story-save": story.story_save, "story-delete": story.story_delete,
+                  "sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
                   "drafts": story.drafts, "approve": story.approve}.get(sub)
             if not fn:
                 return self.send(404, {"error": "not found"})
             return self.send(200, fn(b))
-        except KeyError as e:
+        except (KeyError, IndexError) as e:
             return self.send(404, {"error": str(e)})
         except (ValueError, TypeError) as e:
             return self.send(400, {"error": str(e)})

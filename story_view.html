@@ -45,6 +45,11 @@ textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:17px;line
 .ck{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
 .ck .st{font-size:20px;line-height:1.2}.ck .fix{font-size:14px;color:var(--ink);background:#c0392b14;border-radius:8px;padding:6px 9px;margin-top:4px}
 .ck .warn{background:#b07d2f1a}
+.bar2{height:8px;background:var(--line);border-radius:4px;overflow:hidden;flex:1;min-width:80px}.bar2 i{display:block;height:100%;background:var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;margin:8px 0}
+.grid .g{position:relative;cursor:pointer;border-radius:8px;overflow:hidden;border:2px solid transparent}.grid .g img{width:100%;height:80px;object-fit:cover;display:block}
+.grid .g.on{border-color:var(--acc)}.grid .g .ck2{position:absolute;right:4px;top:2px;color:#fff;text-shadow:0 0 3px #000}
+.lib{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}.lib img{width:72px;height:56px;object-fit:cover;border-radius:6px}
 .meter{height:8px;width:160px;background:var(--line);border-radius:4px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--ok)}
 </style></head><body>
 <div class="flash" id="flash"></div>
@@ -287,6 +292,97 @@ function recWire() {
   const f = recFrame(); if (f) f.onload = () => { const t0 = Date.now(), tick = () => recReady() ? recApply() : Date.now() - t0 < 15000 && setTimeout(tick, 300); tick(); };
 }
 
+/* ---------------- your stories: progress, sessions, saved stories, drafts ---------------- */
+let LIB = null, libOpen = null;
+async function loadLib() {
+  const [p, st, ss] = await Promise.all([api('photos'), api('stories'), api('sessions')]);
+  D = p; BY = {}; D.items.forEach(i => BY[i.id] = i); LIB = st; HOME = ss;
+}
+const thumb = id => `<img src="/photos/thumb/${encodeURIComponent(id)}.jpg" alt="" loading="lazy">`;
+function drawLib() {
+  if (!LIB) { app.innerHTML = '<div class="card">Loading your stories…</div>'; loadLib().then(drawLib).catch(e => { app.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }); return; }
+  const chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title));
+  const told = D.items.filter(i => i.told).length;
+  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Your stories</h2><button id="back">← Back</button></div>
+  <div class="card"><b>Progress</b> <span class="sub">${told} of ${D.items.length} photos have a story. Click a chapter to see its photos.</span>
+    ${chs.map((c, k) => { const all = D.items.filter(i => i.chapter === c.title), n = all.filter(i => i.told).length;
+      return `<div class="lib" style="grid-template-columns:minmax(0,1fr) 160px auto;cursor:pointer" data-ch="${k}"><div>${esc(c.title)}</div><div class="row"><div class="bar2"><i style="width:${Math.round(n / all.length * 100)}%"></i></div><span class="sub">${n}/${all.length}</span></div><span class="sub">${libOpen === k ? '▾' : '▸'}</span></div>
+      ${libOpen === k ? `<div class="sub">✓ = has a story (click to edit it) · no mark = not told yet (click to tell it)</div><div class="grid">${all.sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => `<div class="g" data-ph="${esc(i.id)}" title="${esc(fmtDate(i.t))}">${thumb(i.id)}${i.told ? '<span class="ck2">✓</span>' : ''}</div>`).join('')}</div>
+        <div class="row" style="margin-bottom:8px"><button class="pri" data-untold="${k}">Tell the ${all.length - n} untold ones</button></div>` : ''}`; }).join('')}</div>
+  ${LIB.drafts.length ? `<div class="card"><b>Waiting for review</b> <span class="sub">talked about, not saved to the gallery yet</span>
+    ${LIB.drafts.map(d => `<div class="lib">${thumb(d.photo)}<div><div>${esc(d.title || 'No title yet')}</div><div class="sub">${esc(d.sessionTitle)} · ${esc(d.status)}${d.caption ? ' · ' + esc(d.caption.slice(0, 90)) : ''}</div></div>
+      <div class="row"><button class="pri" data-ed="d|${esc(d.session)}|${esc(d.photo)}">Edit</button><button data-rev="${esc(d.session)}">Review session</button></div></div>`).join('')}</div>` : ''}
+  <div class="card"><b>Saved stories</b> <span class="sub">what the gallery shows</span>
+    ${LIB.stories.length ? LIB.stories.map(x => `<div class="lib">${thumb(x.photo)}<div><div>${esc(x.title || 'No title')}${x.family_only ? ' <span class="pill">family only</span>' : ''}</div>
+      <div class="sub">${esc((x.caption || '').slice(0, 120))}</div><div class="sub">told ${esc(x.told || '')} · ${x.turns} parts${x.links ? ' · ' + x.links + ' links' : ''}${x.photos ? ' · ' + x.photos + ' more photos' : ''}</div></div>
+      <div class="row"><button class="pri" data-ed="s|${esc(x.photo)}|${x.index}">Edit</button></div></div>`).join('') : '<p class="sub">None yet. Approved stories appear here.</p>'}</div>
+  <div class="card"><b>Sessions</b>
+    ${HOME.sessions.length ? HOME.sessions.map(x => `<div class="lib">${x.firstPhoto ? thumb(x.firstPhoto) : '<div></div>'}<div><div>${esc(x.title)}</div><div class="sub">${esc(x.status)} · ${x.done} of ${x.count} photos${x.toReview ? ' · ' + x.toReview + ' to review' : ''} · ${esc((x.updated || '').replace('T', ' ').slice(0, 16))}</div></div>
+      <div class="row">${x.status !== 'ended' ? `<button data-go="${x.id}">Continue</button>` : ''}<button data-rev="${x.id}">Review</button></div></div>`).join('') : '<p class="sub">No sessions yet.</p>'}</div>`;
+  $('#back').onclick = () => { screen = 'home'; LIB = null; loadHome(); };
+  app.querySelectorAll('[data-ch]').forEach(r => r.onclick = () => { libOpen = libOpen === +r.dataset.ch ? null : +r.dataset.ch; drawLib(); });
+  app.querySelectorAll('[data-ph]').forEach(g => g.onclick = async () => { const i = ITEM(g.dataset.ph);
+    if (i.told) return openEditor({kind: 'story', photo: i.id, index: 0});
+    const r = await api('sessions', {title: 'One photo: ' + fmtDate(i.t), photos: [i.id]}); begin(r.id); });
+  app.querySelectorAll('[data-untold]').forEach(b => b.onclick = async () => { const c = chs[+b.dataset.untold];
+    const ids = D.items.filter(i => i.chapter === c.title && !i.told).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id);
+    if (ids.length) { const r = await api('sessions', {title: c.title, photos: ids}); begin(r.id); } });
+  app.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { const [k, a, c] = b.dataset.ed.split('|');
+    openEditor(k === 'd' ? {kind: 'draft', session: a, photo: c} : {kind: 'story', photo: a, index: +c}); });
+  app.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => { S = (await api('session?id=' + b.dataset.rev)).session; screen = 'review'; draw(); loadDrafts(); });
+  app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => begin(b.dataset.go));
+}
+
+/* ---------------- editing one story: title, caption, her words, links, more photos ---------------- */
+let ED = null, pickDay = null;
+async function openEditor(t) {
+  screen = 'edit'; app.innerHTML = '<div class="card">Opening…</div>';
+  try { ED = await api('story?photo=' + encodeURIComponent(t.photo) + (t.kind === 'draft' ? '&session=' + t.session : '&index=' + t.index)); }
+  catch (e) { app.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; return; }
+  pickDay = null; drawEditor();
+}
+function edCollect() {
+  ED.title = $('#etitle').value; ED.caption = $('#ecap').value;
+  ED.links = [...app.querySelectorAll('.elink')].map(r => ({label: r.querySelector('.ll').value, url: r.querySelector('.lu').value})).filter(l => l.url.trim());
+  app.querySelectorAll('.eturn').forEach(t => { ED.turns.filter(x => x.who !== 'Claude')[+t.dataset.i].text = t.value; });
+}
+function drawEditor() {
+  const it = ITEM(ED.photo), er = ED.turns.filter(x => x.who !== 'Claude');
+  const day0 = pickDay || day(it.t), near = D.items.filter(i => i.id !== ED.photo && i.t && Math.abs(Date.parse(day(i.t)) - Date.parse(day0)) <= 7 * 864e5).sort((a, b) => (a.t || '').localeCompare(b.t || ''));
+  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">${ED.kind === 'draft' ? 'Edit draft' : 'Edit story'}</h2><span class="row"><span class="sub" id="esaved"></span><button id="eback">← Your stories</button></span></div>
+  <div class="card"><div class="rv" style="border:0;padding:0"><div>${thumb(ED.photo)}<div class="sub">${esc(fmtDate(it.t))}</div></div><div>
+    <input type="text" id="etitle" placeholder="Title" value="${esc(ED.title || '')}" style="width:100%;margin-bottom:6px">
+    <textarea id="ecap" placeholder="Caption, in her words">${esc(ED.caption || '')}</textarea>
+    <div class="row" style="margin-top:6px"><button class="au ${ED.family_only ? '' : 'on'}" data-a="0">Everyone</button><button class="au ${ED.family_only ? 'on' : ''}" data-a="1">Family only</button></div></div></div></div>
+  <div class="card"><b>Her words</b> <span class="sub">fix any words the computer got wrong; the recordings stay as they are</span>
+    ${ED.turns.map(x => x.who === 'Claude' ? `<div class="sub" style="margin:10px 0 2px"><i>Claude: ${esc(x.text)}</i></div>` :
+      `<div style="margin:6px 0">${x.audio ? `<audio controls preload="none" src="/story/audio/${esc(x.audio)}" style="height:32px;width:100%;max-width:420px"></audio>` : ''}
+       <textarea class="eturn" data-i="${er.indexOf(x)}" style="min-height:60px;font-size:15px">${esc(x.text || '')}</textarea></div>`).join('') || '<p class="sub">No recordings for this story.</p>'}</div>
+  <div class="card"><b>Links</b> <span class="sub">web pages or records that go with this story</span>
+    ${ED.links.map(l => `<div class="row elink" style="margin:6px 0"><input type="text" class="ll" placeholder="What it is" value="${esc(l.label)}" style="flex:1"><input type="text" class="lu" placeholder="https://…" value="${esc(l.url)}" style="flex:2"><button class="lx">✕</button></div>`).join('')}
+    <div class="row" style="margin-top:6px"><button id="eaddlink">+ Add a link</button><button id="eaddrec">+ Link to the records on this date</button></div></div>
+  <div class="card"><b>More photos in this story</b> <span class="sub">${ED.photos.length} added. Click a photo below to add or remove it.</span>
+    <div class="grid">${ED.photos.map(id => `<div class="g on" data-pick="${esc(id)}">${thumb(id)}<span class="ck2">✓</span></div>`).join('')}</div>
+    <div class="row"><span class="sub">Photos within a week of</span><input type="date" id="eday" value="${esc(day0)}"></div>
+    <div class="grid">${near.map(i => `<div class="g ${ED.photos.includes(i.id) ? 'on' : ''}" data-pick="${esc(i.id)}" title="${esc(fmtDate(i.t))}">${thumb(i.id)}${ED.photos.includes(i.id) ? '<span class="ck2">✓</span>' : ''}</div>`).join('') || '<p class="sub">No photos within a week of that date.</p>'}</div></div>
+  <div class="ctr"><button class="big pri" id="esave">Save</button>${ED.kind === 'draft' ? '<button class="big" id="eapprove">Save and approve</button>' : ''}
+    <button id="emore">🎤 Talk more about this photo</button>${ED.kind === 'story' ? '<button id="edel">Take off the gallery</button>' : ''}</div>`;
+  const save = async () => { edCollect(); try { ED = await api('story-save', Object.assign({}, ED, {turnTexts: ED.turns.filter(x => x.who !== 'Claude').map(x => x.text)})); $('#esaved').textContent = '✓ Saved ' + new Date().toLocaleTimeString(); } catch (e) { $('#esaved').textContent = 'Couldn\'t save: ' + e.message; } };
+  $('#esave').onclick = save;
+  $('#eback').onclick = () => { stopSound(); screen = 'library'; LIB = null; drawLib(); };
+  app.querySelectorAll('.au').forEach(b => b.onclick = () => { ED.family_only = b.dataset.a === '1'; app.querySelectorAll('.au').forEach(x => x.classList.toggle('on', x === b)); });
+  app.querySelectorAll('.lx').forEach((b, i) => b.onclick = () => { edCollect(); ED.links.splice(i, 1); drawEditor(); });
+  $('#eaddlink').onclick = () => { edCollect(); ED.links.push({label: '', url: ''}); drawEditor(); };
+  $('#eaddrec').onclick = () => { edCollect(); ED.links.push({label: 'Her records around ' + fmtDate(it.t), url: '/labs.html#date=' + day(it.t)}); drawEditor(); };
+  app.querySelectorAll('[data-pick]').forEach(g => g.onclick = () => { edCollect(); const id = g.dataset.pick; ED.photos = ED.photos.includes(id) ? ED.photos.filter(x => x !== id) : ED.photos.concat(id); drawEditor(); });
+  $('#eday').onchange = e => { edCollect(); pickDay = e.target.value; drawEditor(); };
+  $('#emore').onclick = async () => { await save(); const r = await api('sessions', {title: 'More about ' + fmtDate(it.t), photos: [ED.photo]}); begin(r.id); };
+  if ($('#eapprove')) $('#eapprove').onclick = async () => { await save(); await api('approve', {id: ED.session, photo: ED.photo, title: ED.title, caption: ED.caption, audience: ED.family_only ? 'family' : 'everyone'}); screen = 'library'; LIB = null; drawLib(); };
+  if ($('#edel')) $('#edel').onclick = async () => { if (!confirm('Take this story off the gallery? A copy is kept on the home Mac, and the recordings stay.')) return;
+    await api('story-delete', {photo: ED.photo, index: ED.index}); screen = 'library'; LIB = null; drawLib(); };
+  app.querySelectorAll('audio').forEach(a => a.onplay = () => stopSound(a));
+}
+
 /* ---------------- ready check ---------------- */
 let HEALTH = null, CK = LS.get('ck', {});   // CK: this computer's results and the filming list, remembered
 const FILMING = ['Phones charged, plugged in, with free space (an hour of 4K is about 20-25 GB)', 'Phones on Do Not Disturb or airplane mode',
@@ -423,6 +519,8 @@ function draw() {
     $('#take').onclick = () => begin(S.id, true); $('#home').onclick = () => { screen = 'home'; S = null; loadHome(); }; return; }
   if (screen === 'review') return drawReview();
   if (screen === 'check') return drawCheck();
+  if (screen === 'library') return drawLib();
+  if (screen === 'edit') return drawEditor();
 }
 
 async function loadHome() { app.innerHTML = '<div class="card">Loading…</div>'; try { HOME = await api('sessions'); } catch (e) { err = e.message; HOME = {sessions: []}; } drawHome();
@@ -432,7 +530,7 @@ function drawHome() {
   stopSound();
   const open = HOME.sessions.filter(s => s.status !== 'ended' || s.toReview);
   const chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title));
-  app.innerHTML = `<h1 style="font-weight:500;margin:6px 0 2px">Tell your story</h1><div class="sub">Look at a photo, talk about it, and Claude asks you about it, out loud. Everything stays on the home computer.</div>
+  app.innerHTML = `<div class="top" style="margin-bottom:0"><h1 style="font-weight:500;margin:6px 0 2px">Tell your story</h1><button class="big" id="lib">📚 Your stories</button></div><div class="sub">Look at a photo, talk about it, and Claude asks you about it, out loud. Everything stays on the home computer.</div>
   ${err ? `<p class="err">${esc(err)}</p>` : ''}
   ${(() => { const r = readySummary(); return `<div class="card" style="border-color:${r.ok && r.tested ? 'var(--ok)' : r.bad.length ? 'var(--red)' : 'var(--line)'}"><div class="row" style="justify-content:space-between">
      <div><b>${!HEALTH ? 'Checking the setup…' : r.bad.length ? '✗ Not ready yet: ' + esc(r.bad.join(', ')) : r.tested ? '✓ Ready: everything checked and the practice run worked' : '✓ The home Mac is ready. Do a practice run on this computer before starting.'}</b>
@@ -457,6 +555,7 @@ function drawHome() {
   app.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => { S = (await api('session?id=' + b.dataset.rev)).session; screen = 'review'; draw(); loadDrafts(); });
   $('#film').onchange = e => LS.set('filming', e.target.checked);
   $('#ready').onclick = () => { screen = 'check'; draw(); };
+  $('#lib').onclick = () => { screen = 'library'; LIB = null; draw(); };
   $('#autoend').onchange = e => LS.set('autoEnd', e.target.checked);
   $('#hear').onclick = testVoice;
   $('#test').onclick = async () => { try { await openMic(); fillMics(); A.onLevel = lv => { const e = $('#lvl'); if (e) e.style.width = Math.min(100, lv * 400) + '%'; }; setTimeout(() => { A.onLevel = null; closeMic(); }, 8000); } catch (e) { err = 'Microphone: ' + e.message; drawHome(); } };
@@ -563,13 +662,17 @@ function drawReview() {
         <span class="sub" style="flex-basis:100%;margin-left:0">${esc((t.text || '(no words)').slice(0, 140))}${(t.text || '').length > 140 ? '…' : ''}</span></div>`).join('')}</div>
       <div class="row" style="margin-top:6px">
         <button class="au ${d.audience !== 'family' ? 'on' : ''}" data-a="everyone">Everyone</button><button class="au ${d.audience === 'family' ? 'on' : ''}" data-a="family">Family only</button>
-        ${d.status === 'approved' ? '<span style="color:var(--ok)">✓ Approved</span>' : '<button class="ap pri">✓ Approve</button>'}</div>
+        ${d.status === 'approved' ? '<span style="color:var(--ok)">✓ Approved</span> <button class="eded">Edit, add links or photos</button>' : '<button class="ap pri">✓ Approve</button> <button class="eded">More: links, photos, fix words</button>'}</div>
       <details class="sub" style="margin-top:6px"><summary>The whole conversation</summary>${tk.map(t => { const q = S.questions.find(q => q.n === t.question); return (q ? `<div><i>Claude: ${esc(q.text)}</i></div>` : '') + `<div>Erica: ${esc(t.text || '(no words)')}</div>`; }).join('')}</details>
     </div></div>`; }).join('') : '<p class="sub">No stories recorded in this session yet.</p>';
   app.querySelectorAll('.rv').forEach(row => {
     const p = row.dataset.p, d = S.drafts[p] = S.drafts[p] || {};
     row.querySelectorAll('.au').forEach(b => b.onclick = () => { d.audience = b.dataset.a; row.querySelectorAll('.au').forEach(x => x.classList.toggle('on', x === b)); });
     row.querySelectorAll('audio').forEach(a => a.onplay = () => stopSound(a));   // one recording at a time
+    const eb = row.querySelector('.eded'); if (eb) eb.onclick = async () => {
+      if (d.status === 'approved') { const L2 = await api('stories'); const x = L2.stories.find(x => x.photo === p && x.session === S.id); if (x) return openEditor({kind: 'story', photo: p, index: x.index}); }
+      await api('approve', {id: S.id, photo: p, status: d.status === 'later' ? 'later' : 'draft', title: row.querySelector('.ti').value, caption: row.querySelector('.ca').value, audience: d.audience}).catch(() => {});
+      openEditor({kind: 'draft', session: S.id, photo: p}); };
     const ap = row.querySelector('.ap'); if (ap) ap.onclick = () => approve(p, row);
   });
   $('#all').onclick = async () => { for (const row of app.querySelectorAll('.rv')) if (row.querySelector('.ap')) await approve(row.dataset.p, row, true); drawReview(); };

@@ -629,6 +629,25 @@ FIX_DICTATION = "On the home Mac: System Settings > Keyboard > Dictation > turn 
 FIX_SPEECH = "On the home Mac: System Settings > Privacy & Security > Speech Recognition > turn on Story Transcribe."
 
 
+# System Settings panes on the home Mac that fix a check (opened there by POST /story/api/open-setting; opening a pane
+# changes nothing by itself: the person still flips the switch).
+SETTINGS = {
+    "dictation": ("x-apple.systempreferences:com.apple.Keyboard-Settings.extension", "Open Keyboard settings (Dictation is near the bottom)"),
+    "speech": ("x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition", "Open Privacy settings: Speech Recognition"),
+    "voices": ("x-apple.systempreferences:com.apple.preference.universalaccess?SpeakableItems", "Open Accessibility settings: Spoken Content"),
+    "storage": ("x-apple.systempreferences:com.apple.settings.Storage", "Open Storage settings"),
+}
+
+
+def open_setting(b):
+    """Open a System Settings pane on the home Mac's screen."""
+    key = str(b.get("key"))
+    if key not in SETTINGS:
+        raise ValueError("unknown setting")
+    subprocess.run(["open", SETTINGS[key][0]], timeout=20, check=True)
+    return {"opened": key, "where": "home Mac"}
+
+
 def check_dir():
     d = os.path.join(BASE, "check")
     os.makedirs(d, exist_ok=True)
@@ -707,6 +726,23 @@ def health():
             add("cert", "Secure address (for the microphone)", None, "couldn't read the certificate's date")
     else:
         add("cert", "Secure address (for the microphone)", False, "no certificate", "python3 serve_viewer.py --make-cert, then restart the viewer with --https-port 8767.")
+    # how to fix each one that isn't a green check: open the right System Settings pane, or copy the command to run
+    cmds = {"claude": "cd /Volumes/ssd70/Cancer && env -u CLAUDECODE python3 -I chat/serve_chat.py",
+            "cert": "cd /Volumes/ssd70/Cancer/open-health-data && python3 serve_viewer.py --make-cert",
+            "photos": "cd /Volumes/ssd70/Cancer/open-health-data/local/photos && python3 -I build_web.py"}
+    for c in out:
+        if c["ok"] is True:
+            continue
+        k = c["key"]
+        if k == "speech":
+            sk = "dictation" if "Dictation" in c["detail"] else "speech"
+            c["action"] = {"type": "open", "key": sk, "label": SETTINGS[sk][1]}
+        elif k == "voice":
+            c["action"] = {"type": "open", "key": "voices", "label": SETTINGS["voices"][1]}
+        elif k == "drive" and "free" in c["detail"]:
+            c["action"] = {"type": "open", "key": "storage", "label": SETTINGS["storage"][1]}
+        elif k in cmds:
+            c["action"] = {"type": "copy", "text": cmds[k], "label": "Copy the command to run on the home Mac"}
     return {"checks": out, "ok": all(c["ok"] is not False for c in out), "at": now()}
 
 
@@ -722,7 +758,9 @@ def practice(data, rate):
     r = transcribe(f)
     timing["speech"] = round(time.time() - t0, 1)
     if r.get("error"):
-        return {"error": r["error"], "fix": FIX_DICTATION if "Dictation" in r["error"] else FIX_SPEECH, "timing": timing}
+        k = "dictation" if "Dictation" in r["error"] else "speech"
+        return {"error": r["error"], "fix": FIX_DICTATION if k == "dictation" else FIX_SPEECH, "timing": timing,
+                "action": {"type": "open", "key": k, "label": SETTINGS[k][1]}}
     text = (r.get("text") or "").strip()
     if not text:
         return {"text": "", "error": "no words heard", "fix": "Check the microphone is the right one and close enough, then try again.", "timing": timing}

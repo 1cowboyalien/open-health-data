@@ -292,8 +292,33 @@ const FILMING = ['Phones charged, plugged in, with free space (an hour of 4K is 
   'Quiet room; headphones, or Filming on so Claude speaks through the speaker', 'Water nearby, and time set aside with no rush'];
 async function loadHealth() { try { HEALTH = await api('health'); } catch (e) { HEALTH = {ok: false, checks: [{label: 'Home Mac', ok: false, detail: e.message, fix: 'The website on the home Mac may need restarting.'}]}; } }
 const mark = ok => ok === true ? '<span class="st" style="color:var(--ok)">✓</span>' : ok === false ? '<span class="st" style="color:var(--red)">✗</span>' : ok === null ? '<span class="st" style="color:#b07d2f">!</span>' : '<span class="st sub">…</span>';
-function ckRow(label, ok, detail, fix, btn) {
-  return `<div class="ck">${mark(ok)}<div><div>${esc(label)}</div>${detail ? `<div class="sub">${esc(detail)}</div>` : ''}${fix && (ok === false || ok === null) ? `<div class="fix ${ok === null ? 'warn' : ''}">${esc(fix)}</div>` : ''}</div><div>${btn || ''}</div></div>`;
+/* a fix action: {type: 'open', key} opens a System Settings pane on the home Mac; {type: 'copy', text} copies a command;
+   {type: 'link', href} opens a link on this computer (its own settings, or the secure address); {type: 'run', fn} reruns a test */
+const ACTS = [];
+function actBtn(a) {
+  if (!a) return '';
+  const i = ACTS.push(a) - 1;
+  const where = a.type === 'open' && !(HEALTH && HEALTH.onHomeMac) ? ' <span class="sub">(on the home Mac\'s screen)</span>' : '';
+  return `<div style="margin-top:6px"><button class="pri" data-act="${i}">${esc(a.label)} →</button>${where}</div>`;
+}
+function wireActs() {
+  app.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+    const a = ACTS[+b.dataset.act];
+    try {
+      if (a.type === 'open') { await api('open-setting', {key: a.key}); b.textContent = HEALTH && HEALTH.onHomeMac ? 'Opened. Turn it on, then press Check again' : 'Opened on the home Mac\'s screen'; }
+      else if (a.type === 'copy') { await navigator.clipboard.writeText(a.text); b.textContent = 'Copied: paste it into Terminal on the home Mac'; }
+      else if (a.type === 'link') { window.open(a.href, a.href.startsWith('http') ? '_blank' : '_self'); }
+      else if (a.type === 'run') a.fn();
+    } catch (e) { b.textContent = 'Couldn\'t: ' + e.message; }
+  });
+}
+const IS_MAC = /Mac/.test(navigator.platform || navigator.userAgent), IS_WIN = /Win/.test(navigator.platform || navigator.userAgent);
+const LOCAL_SET = {
+  mic: IS_MAC ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone' : IS_WIN ? 'ms-settings:privacy-microphone' : '',
+  sound: IS_MAC ? 'x-apple.systempreferences:com.apple.Sound-Settings.extension' : IS_WIN ? 'ms-settings:sound' : ''};
+function ckRow(label, ok, detail, fix, btn, act) {
+  const bad = ok === false || ok === null;
+  return `<div class="ck">${mark(ok)}<div><div>${esc(label)}</div>${detail ? `<div class="sub">${esc(detail)}</div>` : ''}${(fix || act) && bad ? `<div class="fix ${ok === null ? 'warn' : ''}">${esc(fix || '')}${actBtn(act)}</div>` : ''}</div><div>${btn || ''}</div></div>`;
 }
 function readySummary() {
   const bad = (HEALTH ? HEALTH.checks.filter(c => c.ok === false).map(c => c.label) : [])
@@ -302,30 +327,32 @@ function readySummary() {
   return {bad, tested, ok: HEALTH && !bad.length};
 }
 function drawCheck() {
+  ACTS.length = 0;
   const secure = location.protocol === 'https:' || /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
   const canRec = !!(navigator.mediaDevices && window.MediaRecorder && (window.AudioContext || window.webkitAudioContext));
   const H = HEALTH ? HEALTH.checks : [];
   app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Ready check</h2><button id="back">← Back</button></div>
   <p class="sub">Everything below should be ✓ before Erica starts, so the session is about her story, not about technology. Fix the ✗ items; ! items work but could be better.</p>
   <div class="card"><b>The home Mac</b> <span class="sub">${HEALTH ? 'checked ' + esc((HEALTH.at || '').slice(11, 16)) : 'checking…'}</span>
-    ${H.map(c => ckRow(c.label, c.ok, c.detail, c.fix)).join('') || ckRow('Checking the home Mac…', undefined)}
+    ${H.map(c => ckRow(c.label, c.ok, c.detail, c.fix, '', c.action)).join('') || ckRow('Checking the home Mac…', undefined)}
     <div class="row" style="margin-top:8px"><button id="recheck">Check again</button></div></div>
   <div class="card"><b>This computer</b>
-    ${ckRow('Secure page (needed for the microphone)', secure, secure ? location.origin : 'This page was opened at ' + location.origin, 'Open the https address instead: https://' + location.hostname + ':8767/story')}
-    ${ckRow('Browser can record', canRec, canRec ? '' : 'This browser is missing recording features', 'Use an up-to-date Chrome or Safari.')}
+    ${ckRow('Secure page (needed for the microphone)', secure, secure ? location.origin : 'This page was opened at ' + location.origin, 'The microphone only works on the https address.', '', {type: 'link', href: 'https://' + location.hostname + ':8767/story', label: 'Open the secure address'})}
+    ${ckRow('Browser can record', canRec, canRec ? '' : 'This browser is missing recording features', 'Use an up-to-date Chrome or Safari.', '', {type: 'link', href: 'https://www.google.com/chrome/', label: 'Get Chrome'})}
     ${ckRow('Microphone', CK.mic, CK.mic === true ? 'heard you on ' + (CK.micName || 'the microphone') : 'Press Test, then say a few words', 'Pick the right microphone on the start screen, allow the browser to use it (the address bar shows a microphone icon), and check the DJI receiver is plugged in.',
-      '<div class="row"><div class="meter"><i id="lvl"></i></div><button id="tmic">Test</button></div>')}
+      '<div class="row"><div class="meter"><i id="lvl"></i></div><button id="tmic">Test</button></div>', LOCAL_SET.mic ? {type: 'link', href: LOCAL_SET.mic, label: 'Open this computer\'s microphone privacy settings'} : null)}
     ${ckRow('Speakers (Claude\'s voice)', CK.speakers, CK.speakers === true ? 'you heard Claude' : 'Press Play and listen', 'Turn the volume up, and check the sound output (headphones or speaker) in the computer\'s sound settings.',
-      '<div class="row"><button id="tspk">▶ Play</button><button id="heard">I heard it</button><button id="notheard">I didn\'t</button></div>')}
+      '<div class="row"><button id="tspk">▶ Play</button><button id="heard">I heard it</button><button id="notheard">I didn\'t</button></div>', LOCAL_SET.sound ? {type: 'link', href: LOCAL_SET.sound, label: 'Open this computer\'s sound settings'} : null)}
     ${ckRow('Connection to the home Mac', CK.net === undefined ? undefined : CK.net, CK.netText || 'Press Test', 'Slow connection: check the VPN is connected; recordings will still save, just more slowly.', '<button id="tnet">Test</button>')}
   </div>
   <div class="card"><b>Practice run</b> <span class="sub">the whole loop, for real, with nothing saved: you talk → words → Claude says back what it heard and asks a question</span>
     ${ckRow('Practice run', CK.practice, CK.practiceText || 'Press Start, say a sentence (for example "This is a test of the story page"), then press End thought.', CK.practiceFix || '',
-      '<div class="row"><button class="pri" id="prstart">Start</button><button id="prend" disabled>✓ End thought</button></div>')}
+      '<div class="row"><button class="pri" id="prstart">Start</button><button id="prend" disabled>✓ End thought</button></div>', CK.practiceAct || null)}
     <div id="prout"></div></div>
   <div class="card"><b>Filming day</b> <span class="sub">tick as you go (only on this computer)</span>
     ${FILMING.map((f, i) => `<div class="ck" style="grid-template-columns:28px minmax(0,1fr)"><input type="checkbox" data-f="${i}" ${(CK.film || {})[i] ? 'checked' : ''} style="width:20px;height:20px"><div>${esc(f)}</div></div>`).join('')}</div>
   <div class="ctr"><button class="big pri" id="ckdone">${readySummary().ok ? '✓ All set: back to start' : 'Back to start'}</button></div>`;
+  wireActs();
   $('#back').onclick = $('#ckdone').onclick = () => { closeMic(); screen = 'home'; draw(); };
   $('#recheck').onclick = async () => { HEALTH = null; drawCheck(); await loadHealth(); drawCheck(); };
   $('#tmic').onclick = async () => {
@@ -356,7 +383,7 @@ function drawCheck() {
     try {
       const r = await fetch('/story/api/practice?rate=' + rate, {method: 'POST', body: wav(chunks, rate)}).then(x => x.json());
       const tm = r.timing || {}, total = ((performance.now() - t0) / 1000).toFixed(1);
-      CK.practice = !r.error; CK.practiceFix = r.error ? r.error + (r.fix ? '. ' + r.fix : '') : '';
+      CK.practice = !r.error; CK.practiceFix = r.error ? r.error + (r.fix ? '. ' + r.fix : '') : ''; CK.practiceAct = r.action || null;
       CK.practiceText = r.error ? (r.text ? 'heard: "' + r.text + '"' : '') : `worked in ${total} s (words ${tm.speech} s, Claude ${tm.claude} s, voice ${tm.voice} s)`;
       LS.set('ck', CK); drawCheck();
       if (!r.error) {
@@ -402,7 +429,7 @@ function drawHome() {
   ${(() => { const r = readySummary(); return `<div class="card" style="border-color:${r.ok && r.tested ? 'var(--ok)' : r.bad.length ? 'var(--red)' : 'var(--line)'}"><div class="row" style="justify-content:space-between">
      <div><b>${!HEALTH ? 'Checking the setup…' : r.bad.length ? '✗ Not ready yet: ' + esc(r.bad.join(', ')) : r.tested ? '✓ Ready: everything checked and the practice run worked' : '✓ The home Mac is ready. Do a practice run on this computer before starting.'}</b>
      <div class="sub">A quick check of the microphone, speakers, connection and the whole loop, so nothing technical gets in the way of the story.</div></div>
-     <button class="${r.ok && r.tested ? '' : 'pri'}" id="ready">Ready check</button></div></div>`; })()}
+     <button class="${r.ok && r.tested ? '' : 'pri'}" id="ready">${r.bad.length ? 'Fix it: Ready check →' : 'Ready check'}</button></div></div>`; })()}
   ${open.length ? `<div class="card"><b>Pick up where you left off</b>${open.map(s => `<div class="rv" style="grid-template-columns:80px minmax(0,1fr) auto;align-items:center">
       <img src="/photos/thumb/${encodeURIComponent(s.firstPhoto || '')}.jpg" alt="" onerror="this.style.visibility='hidden'" style="width:80px">
       <div><div>${esc(s.title)}</div><div class="sub">${s.status === 'active' && s.live ? 'Open on ' + esc(s.live.name || 'a device') : s.status === 'new' ? 'Not started' : 'Paused'} · ${s.done} of ${s.count} photos${s.toReview ? ' · ' + s.toReview + ' to review' : ''} · ${esc((s.updated || '').replace('T', ' ').slice(0, 16))}</div></div>

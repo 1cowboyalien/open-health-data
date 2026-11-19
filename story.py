@@ -291,10 +291,90 @@ def continuous(sid, part, data, ext="webm"):
 
 
 # ---------------- speech to text ----------------
+def split_at_pauses(wav, out_dir, pause=0.7, longest=25.0):
+    """Cut a 16-bit mono WAV into pieces at its pauses (Apple's recognizer starts over after a pause and keeps only the
+    last stretch, so each piece is turned into words on its own). Returns [(file, start seconds)], quiet pieces left out."""
+    import array, wave
+    w = wave.open(wav, "rb")
+    rate, n = w.getframerate(), w.getnframes()
+    if w.getsampwidth() != 2 or w.getnchannels() != 1:
+        return [(wav, 0.0)]
+    x = array.array("h", w.readframes(n)); w.close()
+    hop = int(rate * 0.05)   # 50 ms frames
+    rms = []
+    for i in range(0, len(x), hop):
+        f = x[i:i + hop]
+        rms.append((sum(v * v for v in f) / max(1, len(f))) ** 0.5 if f else 0)
+    if not rms:
+        return []
+    srt = sorted(rms)
+    floor, peak = srt[len(srt) // 5], srt[-1]
+    thr = max(floor * 3, peak * 0.04, 60)
+    loud = [r > thr for r in rms]
+    if not any(loud):
+        return []
+    # pieces: runs of sound, split where the quiet lasts at least `pause`
+    need, pieces, start, quiet = int(pause / 0.05), [], None, 0
+    for i, l in enumerate(loud + [False] * (need + 1)):
+        if l:
+            if start is None:
+                start = i
+            quiet = 0
+        elif start is not None:
+            quiet += 1
+            if quiet >= need:
+                pieces.append([start, i - quiet + 1]); start, quiet = None, 0
+    # a piece longer than `longest`: split it at its quietest frame
+    out, maxf = [], int(longest / 0.05)
+    while pieces:
+        a, b = pieces.pop(0)
+        if b - a > maxf:
+            lo, hi = a + maxf // 2, a + maxf
+            cut = min(range(lo, hi), key=lambda k: rms[k])
+            pieces[:0] = [[a, cut], [cut, b]]
+            continue
+        out.append((a, b))
+    files = []
+    pad = int(0.25 / 0.05)
+    for k, (a, b) in enumerate(out):
+        a2, b2 = max(0, a - pad), min(len(rms), b + pad)
+        f = os.path.join(out_dir, "piece-%02d.wav" % k)
+        o = wave.open(f, "wb"); o.setnchannels(1); o.setsampwidth(2); o.setframerate(rate)
+        o.writeframes(x[a2 * hop:b2 * hop].tobytes()); o.close()
+        files.append((f, a2 * 0.05))
+    return files
+
+
 def transcribe(wav):
-    """On-device speech to text with Story Transcribe.app; {"text", "segments"} or {"error"}."""
+    """On-device speech to text, piece by piece between pauses; {"text", "segments"} or {"error"}."""
     if os.environ.get("STORY_FAKE_STT"):   # testing the page without the transcriber
         return {"text": os.environ["STORY_FAKE_STT"], "segments": []}
+    d = tempfile.mkdtemp()
+    try:
+        try:
+            pieces = split_at_pauses(wav, d)
+        except Exception:   # not a plain WAV: send it whole
+            pieces = [(wav, 0.0)]
+        if not pieces:
+            return {"text": "", "segments": []}
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as pool:   # several pieces at once: each runs in its own copy of the app
+            results = list(pool.map(lambda p: transcribe_one(p[0]), pieces))
+        texts, segs = [], []
+        for (f, t0), r in zip(pieces, results):
+            if r.get("error"):
+                return r
+            if (r.get("text") or "").strip():
+                texts.append(r["text"].strip())
+            for g in r.get("segments") or []:
+                segs.append(dict(g, t=round(g.get("t", 0) + t0, 2)))
+        return {"text": " ".join(texts), "segments": segs, "pieces": len(pieces)}
+    finally:
+        __import__("shutil").rmtree(d, ignore_errors=True)
+
+
+def transcribe_one(wav):
+    """On-device speech to text of one short piece with Story Transcribe.app; {"text", "segments"} or {"error"}."""
     if not os.path.isdir(APP):
         return {"error": "the transcriber isn't built (story/build_transcribe.sh)"}
     fd, out = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(out)

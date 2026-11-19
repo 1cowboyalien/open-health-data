@@ -10,6 +10,7 @@ lab charts on the same time axis (rows: med_timeline.py; drawing and editing: me
 Changes made in the viewer can be exported to local/med_edits.json; it is built back in here.
 If local/procedures/procedures.json exists, a Procedures section is added (procedures_view.js).
 If local/dna/dna.json exists, a DNA section is added (dna_view.js).
+If local/photos/photos_view.json exists, a photo story section is added (photos_view.js).
 If local/ask.json exists, Ask features are added (ask_view.js; needs a separate local chat server).
 
 The same test from different hospitals is combined by LOINC code (by name when there's
@@ -1286,6 +1287,7 @@ __IMGJS__
 __MSJS__
 __PROCJS__
 __PATHJS__
+__PHOTOJS__
 __DNAJS__
 __ASKJS__
 </script><script>
@@ -1324,6 +1326,14 @@ procjs = ""
 if os.path.exists(proc_json):
     procjs = ("const PROC_DATA=" + open(proc_json).read().strip().replace("</", "<\\/") + ";\n"
               + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "procedures_view.js")).read())
+# Photo story (Library → photo story section): only if local/photos/photos_view.json exists. It is made outside this repo by the
+# private local/photos/build_web.py (dates, chapters, people, notes; no location or camera data); the viewer server serves
+# the website copies from local/photos/{thumb,web}/ and the stories from local/photos/stories/; drawn by photos_view.js.
+photo_json = os.path.join(os.path.dirname(out), "photos", "photos_view.json")
+photojs = ""
+if os.path.exists(photo_json):
+    photojs = ("const PHOTO_DATA=" + open(photo_json).read().strip().replace("</", "<\\/") + ";\n"
+               + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "photos_view.js")).read())
 # Pathology (Library → Pathology): only if local/pathology/pathology.json exists. It is made outside this repo
 # (cases, stains, results, slide photo file names); the viewer server serves the photos from local/pathology/.
 path_json = os.path.join(os.path.dirname(out), "pathology", "pathology.json")
@@ -1348,12 +1358,13 @@ if os.path.exists(ask_json):
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ask_view.js")).read())
 # Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
 msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__DNAJS__", dnajs).replace("__ASKJS__", askjs).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__PHOTOJS__", photojs).replace("__DNAJS__", dnajs).replace("__ASKJS__", askjs).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
       + ("; imaging: local/imaging/imaging.json" if imgjs else "")
       + ("; procedures: local/procedures/procedures.json" if procjs else "")
       + ("; pathology: local/pathology/pathology.json" if pathjs else "")
+      + ("; photos: local/photos/photos_view.json" if photojs else "")
       + ("; dna: local/dna/dna.json" if dnajs else "")
       + ("; ask: local/ask.json" if askjs else ""))

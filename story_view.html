@@ -47,6 +47,7 @@ textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:calc(var(
 .recs{margin-top:16px}.recs .bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.recs .bar button{font-size:calc(var(--t) * 0.875);padding:5px 11px}
 .recs iframe{width:100%;height:600px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
 .nophoto{min-height:300px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:30px;gap:10px;background:#0000000d;border-radius:12px}
+#ctxbox a{color:var(--acc);text-decoration:underline}#ctxbox h4{font-size:calc(var(--t) * 1.05)}
 .topbar{position:sticky;top:0;z-index:6;background:var(--bg);padding:6px 0 8px;margin-bottom:10px;border-bottom:1px solid var(--line)}
 .topbar .row{gap:6px}.topbar button{padding:5px 11px}
 .stage{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stage .talk{display:flex;flex-direction:column}
@@ -688,9 +689,12 @@ function drawMain() {
   <div class="stage"><div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
-  <div id="tlbox">${id ? timelineHtml(it.t) : ''}</div></div>
+  <div id="tlbox">${id ? timelineHtml(it.t) : ''}</div>
+  ${id ? `<div class="row" style="margin-top:6px;justify-content:center"><button id="ctxbtn">📋 What was happening then</button><span class="sub">a summary of her records for the range above</span></div>` : ''}</div>
   <div class="talk"><div id="prompt"></div></div></div>
+  <div id="ctxbox"></div>
   <div id="takesbox"></div>`;
+  if ($('#ctxbtn')) $('#ctxbtn').onclick = () => showContext(false);
   $('#rectop').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); $('#rectop').textContent = REC.open ? 'Hide records' : 'Show records'; };
   recMount(); recApply();
   if (!REC.from) { REC.from = '2023-05-01'; REC.to = new Date().toISOString().slice(0, 10); }
@@ -739,6 +743,36 @@ function timelineHtml(t) {   // the photo's place in time: dates, month ticks, t
 }
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-span]'); if (!b || screen !== 'main') return;
   LS.set('tlspan', +b.dataset.span); const box = document.querySelector('#tlbox'); if (box) box.innerHTML = timelineHtml(ITEM(cur()).t); });
+/* ---------------- what was happening then: Claude reads her records around the photo's date ---------------- */
+function md(t) {   // a small Markdown reader: headings, bullets, bold, links (files open through the chat server's file view)
+  const inl = x => esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, a, u) =>
+    '<a href="' + (/^https?:/.test(u) ? u : '/ask/file?path=' + encodeURIComponent(u.replace(/^\/Volumes\/ssd70\/Cancer\//, '').replace(/#.*$/, ''))) + '" target="_blank" rel="noopener">' + a + '</a>');
+  let out = '', list = false;
+  for (const line of String(t || '').split('\n')) {
+    const h = /^#{1,4}\s+(.*)/.exec(line), li = /^\s*[-*]\s+(.*)/.exec(line);
+    if (li) { if (!list) { out += '<ul style="margin:4px 0 8px 18px;padding:0">'; list = true; } out += '<li>' + inl(li[1]) + '</li>'; continue; }
+    if (list) { out += '</ul>'; list = false; }
+    if (h) out += '<h4 style="margin:12px 0 4px">' + inl(h[1]) + '</h4>';
+    else if (line.trim()) out += '<p style="margin:4px 0">' + inl(line) + '</p>';
+  }
+  return out + (list ? '</ul>' : '');
+}
+async function showContext(again) {
+  const box = $('#ctxbox'), it = ITEM(cur()); if (!box || !it.t) return;
+  const span = LS.get('tlspan', 45), pid = cur();
+  box.innerHTML = `<div class="card"><b>What was happening then</b><p class="sub">Claude is reading her records from around ${esc(fmtDate(it.t))} (±${span} days). This can take a minute or two; you can keep talking meanwhile.</p></div>`;
+  box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  try {
+    const r = await api('context', {date: day(it.t), span, again: !!again});
+    if (cur() !== pid) return;   // moved on to another photo meanwhile
+    box.innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><b>What was happening then: ${esc(fmtDate(r.from))} to ${esc(fmtDate(r.to))}</b>
+      <span class="row"><span class="sub">from her records${r.cached ? ', read ' + esc((r.made || '').slice(0, 10)) : ''}</span><button id="ctxagain" style="font-size:calc(var(--t) * 0.8)">Read again</button><button id="ctxclose" style="font-size:calc(var(--t) * 0.8)">✕</button></span></div>
+      <div style="line-height:1.5">${md(r.text)}</div>
+      <p class="sub" style="margin-top:8px">A summary of what the records say, made by Claude; check the linked notes for the details. Not medical advice.</p></div>`;
+    $('#ctxagain').onclick = () => showContext(true); $('#ctxclose').onclick = () => { box.innerHTML = ''; };
+    log('records summary shown', {photo: pid, from: r.from, to: r.to});
+  } catch (e) { box.innerHTML = `<div class="card"><b>What was happening then</b><p class="err">Couldn't read the records: ${esc(e.message)}</p><button id="ctxagain">Try again</button></div>`; $('#ctxagain').onclick = () => showContext(true); }
+}
 const liveTakes = p => (S ? S.takes : []).filter(t => !t.deleted && (t.photo === p || (!t.photo && t.led_to === p)));
 function takesHtml() {
   const p = cur() || '', tk = liveTakes(p);

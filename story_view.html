@@ -36,6 +36,7 @@ textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:17px;line
 .rv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:14px 0;border-top:1px solid var(--line)}
 .rv img{width:150px;border-radius:8px}
 .err{color:var(--red);font-size:14px}
+@media (max-width:899px){.endbar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--card);border-top:1px solid var(--line);padding:10px;margin:0}}
 .recs{margin-top:16px}.recs .bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.recs .bar button{font-size:14px;padding:5px 11px}
 .recs iframe{width:100%;height:600px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
 .nophoto{min-height:300px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:30px;gap:10px;background:#0000000d;border-radius:12px}
@@ -151,6 +152,7 @@ function beep() { try { const c = new (window.AudioContext || window.webkitAudio
 
 /* ---------------- session flow ---------------- */
 const cur = () => S && S.photos[S.pos];
+let startQ = null;   // a line to start with instead of asking the server (Say it again)
 let run = 0, beat = null, clockT = null, state = {}, showSeries = LS.get('series', true);
 function setState(x) { state = Object.assign({}, x); if (screen === 'main') drawPrompt(); }
 
@@ -181,7 +183,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 async function converse() {   // one photo: opener, then answer -> question -> answer ... until next
   const my = ++run; let photo = cur() || '';
   log('photo shown', {photo, n: S.pos + 1});
-  let q = null, correcting = false;
+  let q = startQ, correcting = false; startQ = null;
   try {
     while (my === run) {
       setState({mode: 'thinking', heard: state.heard});
@@ -519,17 +521,18 @@ function drawPrompt() {
   const recap = s.recap ? `<div class="heard" style="background:var(--accbg)"><span class="sub">Claude heard</span><br><span style="font-family:var(--voice);font-size:17px">${esc(s.recap)}</span>
      <div style="margin-top:6px"><button id="wrong">That's not right</button></div></div>` : '';
   if (s.mode === 'asking' || s.mode === 'listening') el.innerHTML = recap + `<div class="q"><div class="who">${s.mode === 'asking' ? '🔊 Claude, speaking' : 'Claude asked'}</div><div class="say">${esc(s.question)}</div></div>` +
-    (s.mode === 'listening' ? `<div class="ctr" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
+    (s.mode === 'listening' ? `<div class="ctr endbar" style="align-items:center;flex-direction:column"><div class="row"><div class="bars" id="bars">${'<span></span>'.repeat(11)}</div>
        <span class="sub">${auto ? 'Listening… press End thought when you\'re done (a long pause also ends it)' : 'Listening… talk as long as you like, then press End thought'}</span></div>
        <button class="big pri" id="done" style="font-size:20px;padding:14px 34px">✓ End thought</button></div>` : '');
   else if (s.mode === 'thinking') el.innerHTML = heard + `<div class="q"><div class="who">Claude</div><div class="sub">${s.heard ? 'Listening back to what you said…' : 'Getting ready…'}</div></div>`;
-  else if (s.mode === 'error') el.innerHTML = heard + `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button id="again">Try again</button><button class="pri" id="enext">Next photo →</button></div></div>`;
+  else if (s.mode === 'error') el.innerHTML = heard + `<div class="q"><div class="err">${esc(s.text)}</div><div class="ctr"><button class="pri" id="again">Try again</button><button id="sayagain">🎤 Say it again</button><button id="enext">Next photo →</button></div></div>`;
   else if (s.mode === 'idle') el.innerHTML = `<div class="q"><div class="sub">Nothing heard. Talk when you're ready, or go to the next photo.</div><div class="ctr"><button class="big" id="again">I'm ready</button></div></div>`;
   else el.innerHTML = '';
   if ($('#done')) $('#done').onclick = () => L && L.finish('button');
   if ($('#wrong')) $('#wrong').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('wrong'); else state.wrongPending = true; };
   if ($('#again')) $('#again').onclick = () => { state = {}; converse(); };
   if ($('#enext')) $('#enext').onclick = () => nextPhoto();
+  if ($('#sayagain')) $('#sayagain').onclick = () => { startQ = {question: 'Go ahead, I\'m listening.', audio: null, kind: 'opener'}; state = {}; converse(); };
 }
 
 /* ---------------- review at the end ---------------- */

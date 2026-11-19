@@ -577,8 +577,8 @@ def approve(b):
         d.update({"title": str(b.get("title") or d.get("title") or "")[:120],
                   "caption": str(b.get("caption") or d.get("caption") or "")[:3000],
                   "audience": "family" if b.get("audience") == "family" else "everyone"})
-        if b.get("status") == "later":
-            d["status"] = "later"
+        if b.get("status") in ("later", "draft"):   # keep for later, or just save the text without approving
+            d["status"] = "later" if b["status"] == "later" else (d.get("status") if d.get("status") not in (None, "approved") else "draft")
             save(s)
             return {"session": s}
         qs = {q["n"]: q for q in s["questions"]}
@@ -586,10 +586,12 @@ def approve(b):
         for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
             if t.get("question") in qs:
                 turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
-            if (t.get("text") or "").strip():
-                turns.append({"who": "Erica", "text": t["text"], "audio": "%s/takes/%s" % (sid, t["file"])})
+            words = (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or "")
+            if words.strip():
+                turns.append({"who": "Erica", "text": words, "audio": "%s/takes/%s" % (sid, t["file"])})
         story = {"title": d["title"], "caption": d["caption"], "told": time.strftime("%-m/%-d/%Y"),
-                 "family_only": d["audience"] == "family", "session": sid, "turns": turns}
+                 "family_only": d["audience"] == "family", "session": sid, "turns": turns,
+                 "links": d.get("links") or [], "photos": d.get("photos") or []}
         os.makedirs(STORIES, exist_ok=True)
         f = os.path.join(STORIES, photo + ".json")
         try:
@@ -791,3 +793,139 @@ def practice(data, rate):
     speak((recap + " ... " + say) if recap else say, os.path.join(d, "practice.m4a"))
     timing["voice"] = round(time.time() - t0, 1)
     return {"text": text, "recap": recap, "question": say, "audio": "check/practice.m4a?t=%d" % time.time(), "timing": timing}
+
+
+# ---------------- your stories: list, edit, delete ----------------
+def read_stories(photo):
+    f = os.path.join(STORIES, photo + ".json")
+    try:
+        return json.load(open(f))
+    except (OSError, ValueError):
+        return {"stories": []}
+
+
+def write_stories(photo, cur):
+    os.makedirs(STORIES, exist_ok=True)
+    f = os.path.join(STORIES, photo + ".json")
+    if os.path.exists(f):   # keep the previous version
+        __import__("shutil").copy2(f, os.path.join(check_dir(), "last-" + photo + ".json"))
+    if not cur.get("stories"):
+        if os.path.exists(f):
+            os.remove(f)
+        return
+    tmp = f + ".tmp"
+    json.dump(cur, open(tmp, "w"), indent=1, ensure_ascii=False)
+    os.replace(tmp, f)
+
+
+def stories_list():
+    """Every saved story (what the gallery shows), newest first, plus drafts still waiting in sessions."""
+    out = []
+    for f in sorted(os.listdir(STORIES)) if os.path.isdir(STORIES) else []:
+        if not f.endswith(".json"):
+            continue
+        p = f[:-5]
+        for i, st in enumerate(read_stories(p).get("stories", [])):
+            out.append({"photo": p, "index": i, "title": st.get("title"), "caption": st.get("caption") or st.get("text"),
+                        "family_only": bool(st.get("family_only")), "told": st.get("told"), "session": st.get("session"),
+                        "turns": len(st.get("turns") or []), "links": len(st.get("links") or []), "photos": len(st.get("photos") or [])})
+    drafts = []
+    for sm in sessions():
+        try:
+            s = load(sm["id"])
+        except (KeyError, OSError, ValueError):
+            continue
+        for p in s["photos"]:
+            d = s["drafts"].get(p) or {}
+            talked = any((t["photo"] == p or t.get("led_to") == p) and (t.get("text") or "").strip() for t in s["takes"])
+            if talked and d.get("status") != "approved":
+                drafts.append({"session": s["id"], "sessionTitle": s["title"], "photo": p, "title": d.get("title"),
+                               "caption": d.get("caption"), "status": d.get("status") or "not reviewed"})
+    return {"stories": sorted(out, key=lambda x: x.get("told") or "", reverse=True), "drafts": drafts}
+
+
+def clean_links(links):
+    out = []
+    for l in (links or [])[:30]:
+        url, label = str((l or {}).get("url") or "").strip(), str((l or {}).get("label") or "").strip()[:120]
+        if re.match(r"^(https?://|/)[^\s<>\"']{1,1000}$", url):
+            out.append({"label": label or url, "url": url})
+    return out
+
+
+def clean_photos(ids, main):
+    known = {i["id"] for i in photo_data()["items"]}
+    return [p for p in dict.fromkeys(str(x) for x in (ids or [])) if p in known and p != main][:40]
+
+
+def story_get(photo, index=None, sid=None):
+    """One story to edit: a saved one (photo + index) or a session's draft (sid + photo), with its turns."""
+    if sid:
+        s = load(sid)
+        d = s["drafts"].get(photo) or {}
+        qs = {q["n"]: q for q in s["questions"]}
+        turns = []
+        for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
+            if t.get("question") in qs:
+                turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
+            turns.append({"who": "Erica", "text": (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or ""),
+                          "audio": "%s/takes/%s" % (sid, t["file"]), "n": t["n"]})
+        return {"kind": "draft", "session": sid, "photo": photo, "title": d.get("title", ""), "caption": d.get("caption", ""),
+                "family_only": d.get("audience") == "family", "turns": turns, "links": d.get("links") or [],
+                "photos": d.get("photos") or [], "status": d.get("status") or "draft"}
+    st = read_stories(photo)["stories"][int(index)]
+    return dict(st, kind="story", photo=photo, index=int(index), links=st.get("links") or [], photos=st.get("photos") or [])
+
+
+def story_save(b):
+    """Save an edit: title, caption, who sees it, fixed words in her answers, links, extra photos."""
+    photo = str(b.get("photo"))
+    if not PID.match(photo):
+        raise ValueError("bad photo")
+    links, photos = clean_links(b.get("links")), clean_photos(b.get("photos"), photo)
+    texts = [str(x)[:20000] for x in (b.get("turnTexts") or [])]
+    if b.get("kind") == "draft":
+        sid = str(b.get("session"))
+        with lock:
+            s = load(sid)
+            d = s["drafts"].setdefault(photo, {"status": "draft"})
+            d.update(title=str(b.get("title") or "")[:120], caption=str(b.get("caption") or "")[:3000],
+                     audience="family" if b.get("family_only") else "everyone", links=links, photos=photos)
+            ns = [t["n"] for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]
+            if len(texts) == len(ns):
+                d["turn_text"] = {str(n): x for n, x in zip(ns, texts)}
+            save(s)
+        log(sid, {"ev": "draft edited", "photo": photo})
+        return story_get(photo, sid=sid)
+    with lock:
+        cur = read_stories(photo)
+        i = int(b.get("index"))
+        st = cur["stories"][i]
+        st.update(title=str(b.get("title") or "")[:120], caption=str(b.get("caption") or "")[:3000],
+                  family_only=bool(b.get("family_only")), links=links, photos=photos, edited=now())
+        er = [t for t in st.get("turns") or [] if t.get("who") != "Claude"]
+        if len(texts) == len(er):
+            for t, x in zip(er, texts):
+                t["text"] = x
+        write_stories(photo, cur)
+    return story_get(photo, i)
+
+
+def story_delete(b):
+    """Take a saved story off the gallery. It is kept in local/story/check/deleted-stories.jsonl, and its recordings stay."""
+    photo, i = str(b.get("photo")), int(b.get("index"))
+    with lock:
+        cur = read_stories(photo)
+        st = cur["stories"].pop(i)
+        with open(os.path.join(check_dir(), "deleted-stories.jsonl"), "a") as f:
+            f.write(json.dumps({"photo": photo, "deleted": now(), "story": st}, ensure_ascii=False) + "\n")
+        write_stories(photo, cur)
+        if st.get("session"):   # its draft goes back to 'to review' in its session
+            try:
+                s = load(st["session"])
+                if photo in s["drafts"]:
+                    s["drafts"][photo]["status"] = "draft"
+                    save(s)
+            except (KeyError, OSError, ValueError):
+                pass
+    return {"ok": True}

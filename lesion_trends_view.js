@@ -20,7 +20,7 @@
   const LS = IMG_DATA.lesion_series;
   if (!LS || !LS.measured || !LS.measured.length) return;
   const H0 = 380;
-  const V0 = {total: true, scale: 'log', fit: 'window', hidden: [], tx: true, back: false, psc: 'full'};   // opens with the total and the fitted trends (doubling times) showing
+  const V0 = {total: true, scale: 'linear', fit: 'window', hidden: [], tx: true, back: false, psc: 'full'};   // opens with the total and the fitted trends (doubling times) showing
   const GR = IMG_DATA.growth || {};
   const PJ = GR.projection && GR.projection.lesions && GR.projection.lesions.length ? GR.projection : null;   // forward scenarios
   const BC = GR.backcast || null;                                                                              // start-of-growth estimate
@@ -228,7 +228,11 @@
     /* trend labels in a column just inside the right edge of the plot (the plot keeps the shared edges, so the scrub line
        lines up with the other panels), each on a dark backing and joined to its line's end by a thin leader */
     let projShown = false;   // the projection is drawn in the same right-hand part: the trend labels then stay in the table under the chart
-    const endLab = {id: 'ltrEnd', afterDatasetsDraw(c) { if (!fits.length || projShown) return; const {ctx, chartArea: a, scales: {x, y}} = c;
+    const endLab = {id: 'ltrEnd', afterDatasetsDraw(c) {
+      if (V.fit === 'window' && !fits.length) {   // Trend is on but nothing could be fitted: say why instead of showing nothing
+        const {ctx, chartArea: a} = c; ctx.save(); ctx.font = '11px system-ui'; ctx.fillStyle = css('--muted'); ctx.textBaseline = 'top';
+        ctx.fillText('Trend: needs 2 or more scans inside the time window' + (S.length || V.total ? '' : ' (and a lesion or Total shown)') + '; move or widen the window', a.left + 6, a.top + 4); ctx.restore(); }
+      if (!fits.length || projShown) return; const {ctx, chartArea: a, scales: {x, y}} = c;
       ctx.save(); ctx.font = 'bold 10.5px system-ui'; ctx.textBaseline = 'middle';
       const L = fits.map(f => ({f, px: Math.min(a.right, x.getPixelForValue(pos(f.t1))), ey: y.getPixelForValue(f.f(f.t1)), txt: f.label + ' ' + rateTxt(f.k) + (f.weak ? ' ' + WARN : '')}))
         .filter(o => o.px >= a.left).map(o => Object.assign(o, {py: Math.max(a.top + 7, Math.min(a.bottom - 7, o.ey)), w: ctx.measureText(o.txt).width})).sort((p, q) => p.py - q.py);

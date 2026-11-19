@@ -32,6 +32,7 @@ Start by reading `HANDOFF.md` in this folder. It has the full state of the proje
 - Serve it with `python3 serve_viewer.py` (port 8766, this Mac only; `--lan` for the home Wi-Fi). Don't use `python3 -m http.server` for it any more: that lists every private file in `local/` and doesn't save shared edits.
 - Usage stats and a health meter: `/stats` on the viewer (this Mac and the home network only; `usage.py`, `usage.js`, `stats_view.html`). Visits are logged to the private `local/usage.sqlite`; the page reports only control/panel code names, never health values or Ask text.
 - Start view (what a new visitor lands on): the "Start view" button next to Clear saves the current view to private `local/start_view.json` (this Mac and the home network only; `start_view.js`, injected by `serve_viewer.py`). Browsers that already have their own view keep it until they use "Put this browser back".
+- Top bar fold (`navfold.js`, built into the page): on phones the pinned bar starts folded to one line (time window + Controls ▾); ▴ Fold folds it anywhere. A Keyframes panel pinned to the top bar folds to its title line once you scroll into the charts (click to open; folds again after ~150 px). Fold choice is kept in localStorage `navfold.*`, not in the Start view.
 - Shared edits live in `local/med_edits.json` (backups in `local/edits_history/`). Don't delete or overwrite it without asking: it holds the user's moments and medication changes.
 
 ## Knowledge Base

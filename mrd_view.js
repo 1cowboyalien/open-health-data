@@ -358,7 +358,7 @@ const MRD = (() => {
   /* ---------- the full Signatera page (One test view) ---------- */
   function page() {
     const s = $('mrd');
-    const stage = '<span class="pmove"><button data-mm="top" title="Move this panel to the top" aria-label="Move the Signatera panel to the top">⤒</button><button data-mm="-1" title="Move this panel up" aria-label="Move the Signatera panel up">↑</button><button data-mm="1" title="Move this panel down" aria-label="Move the Signatera panel down">↓</button><button data-mm="bottom" title="Move this panel to the bottom" aria-label="Move the Signatera panel to the bottom">⤓</button></span>';
+    const stage = '<span class="pmove"><button data-mm="top" title="Move this panel to the top" aria-label="Move the Signatera panel to the top">⤒</button><button data-mm="-1" title="Move this panel up" aria-label="Move the Signatera panel up">↑</button><button data-mm="1" title="Move this panel down" aria-label="Move the Signatera panel down">↓</button><button data-mm="bottom" title="Move this panel to the bottom" aria-label="Move the Signatera panel to the bottom">⤓</button></span><button data-mmin title="Minimize this panel to its title bar (click again to open it)">' + minLabel('__det') + '</button>';
     s.classList.add('mrdp');
     s.innerHTML = `<div class="dethead" style="margin-top:16px"><div><h2>Signatera <span class="sub">ctDNA · ${esc(LAST.vendor || 'Natera')} · tumor-informed MRD test</span></h2><div class="sub" data-r="desc"></div></div>${stage}</div>
 <div class="stats" data-r="stats"></div>
@@ -368,6 +368,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   <div class="sub">Natera reports positions on hs37d5 (GRCh37 / hg19). GRCh38 positions come from the UCSC hg19→hg38 chain file, cross-checked with Ensembl (which also confirmed the reference base at both). Both are kept. Genes and effects: Ensembl VEP (GRCh38, one standard transcript per variant); hover an effect for the exact notation. Natera picks these mutations as trackable markers of the tumor, so most are not known cancer drivers.</div>
   <div style="overflow-x:auto;margin-top:8px"><table data-r="pos"></table></div></div>` : ''}
 <div class="card"><b>All draws</b> <span class="sub" data-r="tsub"></span><div style="overflow-x:auto"><table data-r="tbl"></table></div></div>`;
+    s.querySelector('[data-mmin]').onclick = () => setMin('__det', !isMin('__det'));
     s.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => moveStage('__det', b.dataset.mm === 'top' || b.dataset.mm === 'bottom' ? b.dataset.mm : +b.dataset.mm));
     const o = mode === 'single' ? stageOrder() : [], i = o.indexOf('__det');
     s.querySelector('[data-mm="top"]').disabled = s.querySelector('[data-mm="-1"]').disabled = i <= 0;

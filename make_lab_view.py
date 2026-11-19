@@ -232,7 +232,7 @@ button:hover{border-color:var(--muted)}button.on{background:var(--accent);border
 .sw{width:10px;height:10px;border-radius:2px;display:inline-block}
 .hide{display:none!important}
 .dethead{display:flex;align-items:flex-start;gap:8px}.dethead>div{flex:1}.dethead .pmove{margin-top:4px}
-.pmove{display:inline-flex;gap:2px}
+.pmove{display:inline-flex;gap:2px}section.pmin>:not(.dethead){display:none!important}.dethead #detMin,.dethead [data-mmin]{margin:4px 0 0 4px;font-size:12px;padding:0 7px}#kfCard>.mhead{flex-wrap:nowrap;align-items:flex-start}#kfCard .mleft{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;flex:1;min-width:0}#kfCard .kfright{display:flex;align-items:center;flex:none}#kfCard .kfright .mtbtn{margin-left:0;gap:3px}@media (max-width:760px){#kfCard>.mhead{flex-wrap:wrap}#kfCard .kfright{flex-wrap:wrap;margin-left:auto}}
 .nrow .datebtn{font-weight:600;padding:1px 7px;font-size:12px;min-width:78px}.nrow #wml{font-weight:400;color:var(--ink2);min-width:0}.nrow #saveRange{margin-left:2px}
 .pdlg{left:50%;top:28%;transform:translateX(-50%);z-index:70;font-size:13px;min-width:300px;max-width:440px}.pdlg .pdmsg{white-space:pre-line}.pdlg input{font-size:13px;padding:4px 6px}
 .calpop{position:fixed;z-index:45;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:12px;display:flex;flex-direction:column;gap:6px;min-width:230px}
@@ -245,9 +245,9 @@ body.viewonly #saveRange,body.viewonly .redit{display:none!important}
 body.viewonly #mAdd,body.viewonly #txAdd,body.viewonly #txImport,body.viewonly .ptpop button:not(.pclose),body.viewonly #mLinks button,body.viewonly .madd{display:none!important}.pmove button{padding:0 7px;font-size:12px}
 .navpin .mcard{margin-top:6px;padding:4px 16px 2px}.mhead{display:flex;align-items:center;gap:8px;font-size:12px}.mhead b{font-size:13px}.mhead .mtbtn{margin-left:auto;display:flex;gap:4px}.mhead .mtbtn button{font-size:11px;padding:1px 7px}
 .mtrack{position:relative;height:64px}
-.kfbar{display:inline-flex;align-items:center;gap:2px;padding-left:8px;margin-left:4px;border-left:1px solid var(--line)}.kfbar button{font-size:11px;padding:1px 7px}.kfbar .pmove{margin-left:4px}
+.kfbar,.pbar{display:inline-flex;align-items:center;gap:2px;padding-left:8px;margin-left:4px;border-left:1px solid var(--line)}.kfbar button,.pbar button{font-size:11px;padding:1px 7px}.kfbar .pmove,.pbar .pmove{margin-right:4px}
 .mcard.unpinned{padding:8px 16px 6px}.mcard.kffold .mtrack,.mcard.kffold .mstrack{display:none}.mcard.kffold #kfFold{background:var(--accent);border-color:var(--accent);color:#fff}
-#msRow .mhead{margin-top:4px}.mstrack{position:relative;height:74px}
+.kfscroll{position:relative;height:14px;margin:2px 0 4px;border-radius:7px;background:var(--line);cursor:pointer;touch-action:none;user-select:none}.kfsdots{position:absolute;inset:0;pointer-events:none}.kfsdots i{position:absolute;top:5px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--muted);opacity:.8}.kfsthumb{position:absolute;top:0;bottom:0;min-width:18px;border-radius:7px;background:var(--accent);opacity:.55;cursor:grab}.kfscroll:hover .kfsthumb,.kfscroll.drag .kfsthumb{opacity:.8}.kfscroll.drag .kfsthumb{cursor:grabbing}.kfsl{position:absolute;left:50%;top:-1px;transform:translateX(-50%);font-size:10px;line-height:14px;color:#fff;white-space:nowrap;pointer-events:none}.mcard.kffold .kfscroll{margin-top:4px}#msRow .mhead{margin-top:4px}.mstrack{position:relative;height:74px}
 .msrng{position:relative;display:inline-block;width:150px;height:18px;vertical-align:middle}
 .msrng .trk,.msrng .fill{position:absolute;top:7px;height:4px;border-radius:2px}.msrng .trk{left:0;right:0;background:var(--line)}
 .msrng .fill{background:linear-gradient(90deg,#1baf7a,#e2a028,#c82828)}
@@ -278,7 +278,7 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 @media (max-width:760px){.navpin{margin:-14px -14px 0;padding:10px 14px}}
 .txh{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}.txh b{font-size:15px;font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:5px}.chips button{font-size:12px;padding:2px 9px;border-radius:12px}
-.txh .ctl{margin-left:auto;display:flex;gap:4px}.txh .ctl button{padding:1px 8px;font-size:12px}
+.txh .ctl{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;align-items:center}.txh>.pbar{flex:none}.txh .ctl{flex:1 1 auto;min-width:0}@media (min-width:761px){.txh{flex-wrap:nowrap;align-items:flex-start}.txh>b{white-space:nowrap}}.txh .ctl button{padding:1px 8px;font-size:12px}
 #txInfo{min-height:20px;margin-top:4px}.shape{display:inline-flex;align-items:center;gap:5px}
 #txBody{position:relative}
 .whybox{margin-top:8px;padding:6px 10px;border-left:3px solid var(--accent);background:var(--bg);font-size:12px;color:var(--ink2)}.whybox b{display:block;font-size:12px;color:var(--ink);margin-bottom:2px}
@@ -291,6 +291,8 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 .fld input,.fld select,.fld textarea{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
 .fld input[type=checkbox]{width:16px;height:16px;align-self:flex-start}
 @media (max-width:760px){.wrap{grid-template-columns:1fr}aside{position:static;max-height:40vh;border-right:0;border-bottom:1px solid var(--line)}main{padding:14px}}
+/* one size for every panel header button (move, size, Minimize, ×, and the blue on/off toggles) */
+#kfCard>.mhead button,#msRow .mhead button,.txh button,.cmph button,.dethead button{font-size:11px!important;padding:1px 7px!important;line-height:17px;border-radius:7px}
 </style></head><body>
 <div class="wrap">
 <aside><h1>Library</h1><div class="sub" id="meta"></div>
@@ -313,17 +315,17 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
-<div class="card mcard" id="kfCard"><div class="mhead"><b>Keyframes</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span><span class="mtbtn"><button id="mAdd" title="Add a keyframe: your own note on the timeline">+ Keyframe</button><button id="mRowK" title="Switch the keyframes (the ones without a concern rating) on or off. Off: greyed out, no lines on the charts, and ◀ ▶ skip them">Keyframes</button><button id="mRowC" title="Switch the rated keyframes (the Concern marks) on or off. Off: greyed out here and on the Concern graph, no lines on the charts, and ◀ ▶ skip them">Concern</button><button id="mLines" title="Show or hide the keyframe lines across all charts">Lines: on</button></span><span class="kfbar" role="group" aria-label="Keyframes panel size and place"><button id="kfLess" title="Make the Keyframes and Concern tracks shorter" aria-label="Shorter">−</button><button id="kfMore" title="Make the Keyframes and Concern tracks taller" aria-label="Taller">+</button><button id="kfFold" title="Fold the Keyframes panel to just this bar (click again to open it)" aria-label="Fold the Keyframes panel">▾</button><span class="pmove"><button id="kfTop" title="Pin to the top bar (stays in view while you scroll)" aria-label="Pin Keyframes to the top bar">⤒</button><button id="kfUp" title="Move this panel up (from the first place: pin it to the top bar)" aria-label="Move Keyframes up">↑</button><button id="kfDown" title="Move this panel down, among the charts" aria-label="Move Keyframes down">↓</button><button id="kfBottom" title="Move this panel to the bottom" aria-label="Move Keyframes to the bottom">⤓</button></span></span></div>
+<div class="card mcard" id="kfCard"><div class="mhead"><span class="mleft"><b>Keyframes</b><span class="sub">your own notes on the timeline</span><span class="mklegend" id="mKinds"></span><span class="mnav" id="mNav"></span></span><span class="kfright"><span class="mtbtn"><button id="mAdd" title="Add a keyframe: your own note on the timeline">+ Keyframe</button><button id="mRowK" title="Switch the keyframes (the ones without a concern rating) on or off. Off: greyed out, no lines on the charts, and ◀ ▶ skip them">Keyframes</button><button id="mRowC" title="Switch the rated keyframes (the Concern marks) on or off. Off: greyed out here and on the Concern graph, no lines on the charts, and ◀ ▶ skip them">Concern</button><button id="mLines" title="Show or hide the keyframe lines across all charts">Lines: on</button></span><span class="kfbar" role="group" aria-label="Keyframes panel place and size"><span class="pmove"><button id="kfTop" title="Pin to the top bar (stays in view while you scroll)" aria-label="Pin Keyframes to the top bar">⤒</button><button id="kfUp" title="Move this panel up (from the first place: pin it to the top bar)" aria-label="Move Keyframes up">↑</button><button id="kfDown" title="Move this panel down, among the charts" aria-label="Move Keyframes down">↓</button><button id="kfBottom" title="Move this panel to the bottom" aria-label="Move Keyframes to the bottom">⤓</button></span><button id="kfLess" title="Make the Keyframes and Concern tracks shorter" aria-label="Shorter">−</button><button id="kfMore" title="Make the Keyframes and Concern tracks taller" aria-label="Taller">+</button><button id="kfFold" title="Minimize the Keyframes panel to its title bar and the time scroll bar (click again to open it)">▾ Minimize</button></span></span></div>
 <div class="mtrack"><canvas id="mtrackc" role="img" aria-label="Keyframes: your own notes on the timeline"></canvas></div>
 <div id="msRow" class="hide"><div class="mhead"><b>Concern</b><span class="sub">keyframes you rated 1–10</span>
 <span class="msrng"><span class="trk"></span><span class="fill" id="msFill"></span><input id="msLo" type="range" min="1" max="10" step="0.5" value="1" aria-label="Lowest concern shown" title="Lowest concern shown"><input id="msHi" type="range" min="1" max="10" step="0.5" value="10" aria-label="Highest concern shown" title="Highest concern shown"></span>
 <b id="msRv"></b><span class="sub" id="msCount"></span><span class="mtbtn"><button id="msList" title="Open the milestones list (record excerpts and original PDF pages; private page on this Mac) at the last keyframe you went to">List ↗</button></span></div>
-<div class="mstrack"><canvas id="msc" role="img" aria-label="Concern rating of each milestone over time"></canvas></div></div></div>
+<div class="mstrack"><canvas id="msc" role="img" aria-label="Concern rating of each milestone over time"></canvas></div></div><div class="kfscroll hide" id="kfScroll" title="Drag to move the time window along the whole record (it keeps its length). Click the bar to jump there."><div class="kfsdots" id="kfsDots"></div><div class="kfsthumb" id="kfsThumb"><span class="kfsl" id="kfsL"></span></div></div></div>
 </div>
 <div id="ptpop" class="ptpop hide"></div><div id="calPop" class="calpop hide"></div><div id="mtip" class="ptpop mtip hide"></div><div id="mEdit" class="mpanel hide"></div>
 <div class="card" id="txCard">
-<div class="txh"><b>Treatments</b><span class="sub">ticked in the Medications list</span><span class="pmove"><button id="txTop" title="Move this panel to the top" aria-label="Move Treatments to the top">⤒</button><button id="txUp" title="Move this panel up" aria-label="Move Treatments up">↑</button><button id="txDown" title="Move this panel down" aria-label="Move Treatments down">↓</button><button id="txBottom" title="Move this panel to the bottom" aria-label="Move Treatments to the bottom">⤓</button></span>
-<span class="ctl"><span class="sub" id="txStatus"></span><button id="txAdd">+ Add medication</button><button id="txExport" title="Save your changes to a file (med_edits.json)">Export</button><button id="txImport" title="Load changes from med_edits.json">Import</button><span id="hlCtl" class="hlctl"><button id="hlOn" title="Show or hide the half-life estimate curves under each drug">Half-life: on</button><button id="hlSmall" title="Make the half-life curves shorter">−</button><button id="hlBig" title="Make the half-life curves taller">+</button></span><button id="txHide" title="Show or hide the Treatment panel's timeline">Hide</button></span>
+<div class="txh"><b>Treatments</b><span class="sub">ticked in the Medications list</span>
+<span class="ctl"><span class="sub" id="txStatus"></span><button id="txAdd">+ Add medication</button><button id="txExport" title="Save your changes to a file (med_edits.json)">Export</button><button id="txImport" title="Load changes from med_edits.json">Import</button><span id="hlCtl" class="hlctl"><button id="hlOn" title="Show or hide the half-life estimate curves under each drug">Half-life: on</button><button id="hlSmall" title="Make the half-life curves shorter">−</button><button id="hlBig" title="Make the half-life curves taller">+</button></span></span><span class="pbar" role="group" aria-label="Treatments panel place and size"><span class="pmove"><button id="txTop" title="Move this panel to the top" aria-label="Move Treatments to the top">⤒</button><button id="txUp" title="Move this panel up" aria-label="Move Treatments up">↑</button><button id="txDown" title="Move this panel down" aria-label="Move Treatments down">↓</button><button id="txBottom" title="Move this panel to the bottom" aria-label="Move Treatments to the bottom">⤓</button></span><button id="txHide" title="Minimize the Treatments panel to its title bar (click again to open it)">▾ Minimize</button></span>
 <input type="file" id="txFile" accept="application/json,.json" class="hide"></div>
 <div id="txBody"><div style="position:relative;margin-top:6px" id="txBox"><canvas id="tx" role="img" aria-label="Treatment timeline: bars are ordered periods, markers are doses"></canvas></div>
 <div class="sub" id="txEmpty"></div><div class="sub" id="txInfo"></div>
@@ -331,7 +333,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <div id="txEdit" class="hide"></div>
 <div class="legend txlegend" id="txLegend"></div></div></div>
 <section id="single">
-<div class="dethead" style="margin-top:16px"><div><h2 id="title"></h2><div class="sub" id="desc"></div></div><span class="pmove"><button id="detTop" title="Move this panel to the top" aria-label="Move the detail panel to the top">⤒</button><button id="detUp" title="Move this panel up" aria-label="Move the detail panel up">↑</button><button id="detDown" title="Move this panel down" aria-label="Move the detail panel down">↓</button><button id="detBottom" title="Move this panel to the bottom" aria-label="Move the detail panel to the bottom">⤓</button></span></div>
+<div class="dethead" style="margin-top:16px"><div><h2 id="title"></h2><div class="sub" id="desc"></div></div><span class="pmove"><button id="detTop" title="Move this panel to the top" aria-label="Move the detail panel to the top">⤒</button><button id="detUp" title="Move this panel up" aria-label="Move the detail panel up">↑</button><button id="detDown" title="Move this panel down" aria-label="Move the detail panel down">↓</button><button id="detBottom" title="Move this panel to the bottom" aria-label="Move the detail panel to the bottom">⤓</button></span><button id="detMin" title="Minimize this panel to its title bar (click again to open it)">▾ Minimize</button></div>
 <div class="stats" id="stats"></div>
 <div class="card"><div style="position:relative" id="sbox"><canvas id="c" role="img" aria-label="Trend of the selected lab test with its normal range shaded"></canvas></div>
 <div class="bar" style="margin-top:8px"><span class="sub">Height</span><button data-h="-">−</button><button data-h="+">+</button></div></div>
@@ -423,6 +425,10 @@ let cur=store.get('current',D.tests[0].id);if(!BYID[cur])cur=D.tests[0].id;
 let sel=store.get('selected',[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var)$/.test(id)));   // lab ids, or the MRD panels (mrd_view.js)
 let heights=store.get('heights',{});
 let hoverX=null;const charts=new Map();
+/* Minimize: panels folded to their title bar (ids as in the Stage: lab ids, MRD/procedure/imaging ids, 'dose:<drug>', '__det') */
+let mins=store.get('mins',{})||{};const isMin=id=>!!mins[id];
+function setMin(id,on){if(on)mins[id]=1;else delete mins[id];store.set('mins',mins);render()}
+const minLabel=id=>isMin(id)?'▸ Open':'▾ Minimize';
 
 function compressing(){return BRK!=null&&W.a<BRK&&W.b>BRK&&(W.b-W.a)>3*365*DAY}
 function pos(t){const a=W.a,b=W.b;if(!compressing())return 100*(t-a)/(b-a);
@@ -617,6 +623,7 @@ function placeTx(){const tc=$('txCard');if(mode==='compare'){const cards=[...$('
   if(i<cards.length)$('cmpList').insertBefore(tc,cards[i]);else $('cmpList').appendChild(tc)}
  else{const sg=MRD.active()?$('mrd'):$('single');if(txPos>0)sg.after(tc);else sg.before(tc)}
  const o=stageOrder(),i=o.indexOf('__tx');$('txTop').disabled=$('txUp').disabled=i<=0;$('txBottom').disabled=$('txDown').disabled=i>=o.length-1;
+ $('single').classList.toggle('pmin',isMin('__det'));$('mrd').classList.toggle('pmin',isMin('__det'));$('detMin').textContent=minLabel('__det');
  $('detTop').disabled=$('detUp').disabled=txPos>0;$('detBottom').disabled=$('detDown').disabled=txPos===0;
  if(mode==='compare'){const n=o.length;[...$('cmpList').querySelectorAll(':scope > .cmp')].forEach(c=>{const k=o.indexOf(c.dataset.id);
   c.querySelector('[data-mv="top"]').disabled=c.querySelector('[data-mv="-1"]').disabled=k<=0;
@@ -627,9 +634,28 @@ function moveKf(d){if(kfPos==null){if(d===1)kfPos=0;else if(d==='bottom')kfPos=9
  const o=stageOrder();if(d==='top'||(d===-1&&o.indexOf('__kf')<=0)){kfPos=null;store.set('kfpos',null);render();return}
  moveStage('__kf',d)}
 /* heights.__kf = size in % (100 = normal); the Keyframes track sets its own base height when it draws */
-function kfSize(){const c=$('kfCard'),h=heights.__kf||100,fold=!!heights.__kffold;c.classList.toggle('kffold',fold);
+function kfSize(){const c=$('kfCard'),h=heights.__kf||100,fold=!!heights.__kffold;c.classList.toggle('kffold',fold);$('kfFold').textContent=fold?'▸ Open':'▾ Minimize';
  c.querySelector('.mstrack').style.height=Math.round(74*h/100)+'px';
  $('kfLess').disabled=fold||h<=50;$('kfMore').disabled=fold||h>=250;$('kfLess').title='Make the Keyframes and Concern tracks shorter (now '+h+'%)'}
+/* Keyframes scroll bar: the whole record (X0..X1, plain time) as a bar under the Keyframes track, lined up with its plot area.
+   The thumb is the time window; drag it to move the window (same length), click the bar to centre the window there.
+   Small dots mark every keyframe on the whole record. Hidden when the window already shows everything. */
+let kfsM=[64,10];
+function kfScrollSync(){const sb=$('kfScroll');if(!sb)return;const full=W.a<=X0+DAY&&W.b>=X1-DAY;sb.classList.toggle('hide',full);if(full)return;
+ const ch=charts.get('mtrack'),cv=$('mtrackc'),A=ch&&ch.chartArea;if(A&&cv.clientWidth){kfsM=[A.left,cv.clientWidth-A.right]}sb.style.marginLeft=kfsM[0]+'px';sb.style.marginRight=kfsM[1]+'px';
+ const f=t=>Math.max(0,Math.min(1,(t-X0)/(X1-X0))),th=$('kfsThumb');th.style.left=(f(W.a)*100)+'%';th.style.width=((f(W.b)-f(W.a))*100)+'%';
+ $('kfsL').textContent=th.offsetWidth>110?zStamp(W.a).slice(0,7)+' – '+zStamp(W.b).slice(0,7):'';
+ const ms=(E.moments||[]).filter(m=>m.date&&momentOn(m)),key=X0+'|'+X1+'|'+ms.length;
+ if(sb.dataset.k!==key){sb.dataset.k=key;$('kfsDots').innerHTML=ms.map(m=>'<i style="left:'+(f(momentT(m))*100).toFixed(2)+'%"></i>').join('')}}
+(function(){const sb=$('kfScroll'),th=$('kfsThumb');let drag=null;
+ const tAt=x=>{const r=sb.getBoundingClientRect();return X0+Math.max(0,Math.min(1,(x-r.left)/r.width))*(X1-X0)};
+ sb.addEventListener('pointerdown',e=>{e.preventDefault();const len=W.b-W.a;
+  if(e.target===th||th.contains(e.target))drag={x:e.clientX,a:W.a,len};
+  else{shiftWin(tAt(e.clientX)-len/2,len);drag={x:e.clientX,a:W.a,len}}
+  sb.setPointerCapture(e.pointerId);sb.classList.add('drag')});
+ sb.addEventListener('pointermove',e=>{if(!drag)return;const r=sb.getBoundingClientRect();shiftWin(drag.a+(e.clientX-drag.x)/r.width*(X1-X0),drag.len)});
+ const end=()=>{drag=null;sb.classList.remove('drag')};sb.addEventListener('pointerup',end);sb.addEventListener('pointercancel',end);
+ new ResizeObserver(()=>kfScrollSync()).observe($('mtrackc'))})();
 /* redraw only the two tracks (renderBand also rebuilds the Treatment chart, which needs a full render) */
 function kfDraw(){keepScroll(()=>{renderMomentTrack();if(typeof renderConcern==='function')renderConcern()})}
 function kfResize(d){heights.__kf=Math.max(50,Math.min(250,(heights.__kf||100)+d));if(heights.__kf===100)delete heights.__kf;store.set('heights',heights);kfSize();kfDraw()}
@@ -680,8 +706,10 @@ function renderCompare(){const box=$('cmpList');box.innerHTML='';$('cmpEmpty').c
   mk('⤓','Move this panel to the bottom',()=>moveStage(id,'bottom')).dataset.mv='bottom';
   mk('−','Shorter',()=>{setH(id,hOf(id,H0)-40);render()});
   mk('+','Taller',()=>{setH(id,hOf(id,H0)+40);render()});
+  mk(minLabel(id),isMin(id)?'Open this panel again':'Minimize this panel to its title bar',()=>setMin(id,!isMin(id)));
   mk('×','Remove from comparison',()=>{toggle(id,false);list()});
   h.append(b,u,ctl);
+  if(isMin(id)){w.classList.add('pmin');w.append(h);box.appendChild(w);return}
   if(isM){const body=document.createElement('div');w.append(h,body);box.appendChild(w);MRD.panel(id,body);return}   // MRD panel: mrd_view.js draws it
   const cb=document.createElement('div');cb.style.cssText='position:relative;height:'+hOf(id,160)+'px';
   const cv=document.createElement('canvas');cv.setAttribute('role','img');cv.setAttribute('aria-label','Trend of '+t.name);cb.appendChild(cv);
@@ -694,7 +722,7 @@ const wp=$('wp');wp.min=0;wp.step=1;
 function syncWin(){wa.value=Math.round((W.a-X0)/DAY);wb.value=Math.round((W.b-X0)/DAY);const short=(W.b-W.a)<=3*DAY,dl=t=>(short?zStamp(t):zStamp(t).slice(0,10))+(NAVTZ||short?' '+zAbbr(t):'');$('wal').textContent=dl(W.a);$('wbl').textContent=dl(W.b);$('wml').textContent='Middle: '+dl((W.a+W.b)/2);
  const len=Math.round((W.b-W.a)/DAY);wp.max=Math.max(0,NDAYS-len);wp.value=Math.round((W.a-X0)/DAY);wp.disabled=+wp.max===0;
  const hrs=(W.b-W.a)/36e5;$('wlen').textContent=len>=730?(Math.round(len/36.5)/10)+' yrs':len>=60?Math.round(len/30.44)+' months':hrs<48?Math.round(hrs)+' hours':len+' days';
- $('wIn').disabled=W.b-W.a<=MINW+1;$('wOut').disabled=W.a<=X0&&W.b>=X1}
+ $('wIn').disabled=W.b-W.a<=MINW+1;$('wOut').disabled=W.a<=X0&&W.b>=X1;if(typeof kfScrollSync==='function')kfScrollSync()}
 function setWin(a,b){
  /* a window that ends past the axis (a saved Timeline preset that looks ahead, opened where Future is off or shorter): lengthen the axis to hold it */
  if(b>X1+DAY&&b<=futEnd(FUTMAX)+DAY){FUT=futFor(b-DAY);store.set('future',FUT);X1=futEnd(FUT);NDAYS=Math.round((X1-X0)/DAY);[wa,wb].forEach(e=>e.max=NDAYS);futSync()}
@@ -791,7 +819,7 @@ $('mSingle').onclick=()=>setMode('single');$('mCompare').onclick=()=>setMode('co
 $('clr').onclick=()=>{sel=[];store.set('selected',sel);updateBar();list();if(mode==='compare')render()};
 $('q').oninput=list;
 $('txUp').onclick=()=>moveTx(-1);$('txDown').onclick=()=>moveTx(1);$('detUp').onclick=()=>moveStage('__det',-1);$('detDown').onclick=()=>moveStage('__det',1);
-$('txTop').onclick=()=>moveTx('top');$('txBottom').onclick=()=>moveTx('bottom');$('detTop').onclick=()=>moveStage('__det','top');$('detBottom').onclick=()=>moveStage('__det','bottom');
+$('detMin').onclick=()=>setMin('__det',!isMin('__det'));$('txTop').onclick=()=>moveTx('top');$('txBottom').onclick=()=>moveTx('bottom');$('detTop').onclick=()=>moveStage('__det','top');$('detBottom').onclick=()=>moveStage('__det','bottom');
 $('kfUp').onclick=()=>moveKf(-1);$('kfDown').onclick=()=>moveKf(1);$('kfTop').onclick=()=>moveKf('top');$('kfBottom').onclick=()=>moveKf('bottom');
 $('kfLess').onclick=()=>kfResize(-25);$('kfMore').onclick=()=>kfResize(25);$('kfFold').onclick=kfFold;
 $('collapseAll').onclick=()=>setAllOpen(false);$('expandAll').onclick=()=>setAllOpen(true);

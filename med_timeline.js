@@ -609,7 +609,7 @@ function openMoment(m,pre){const isNew=!m;if(isNew&&!canEdit())return;m=m||Objec
  else F.title.focus()}
 function renderBand(){renderMomentTrack();if(typeof renderConcern==='function')renderConcern();   // concern graph: milestones_view.js
  hlControls();renderBandChart();renderDoses()}
-function renderBandChart(){$('txHide').textContent=txHidden?'Show':'Hide';$('txBody').classList.toggle('hide',txHidden);if(txHidden||(!TX.length&&!E.added.length))return;
+function renderBandChart(){$('txHide').textContent=txHidden?'▸ Open':'▾ Minimize';$('txBody').classList.toggle('hide',txHidden);if(txHidden||(!TX.length&&!E.added.length))return;
  const rows=txRows(),TK=ticks();txShown=rows;$('txEmpty').textContent=rows.length?'':txSel.length?'None of the ticked medications fall in this window.':'Tick medications in the list on the left to show them here.';
  $('txBox').querySelectorAll('.txx,.txmv').forEach(b=>b.remove());
  $('txBox').classList.toggle('hide',!rows.length);if(!rows.length)return;
@@ -750,8 +750,8 @@ function renderDoses(){const box=$('txDoses');box.innerHTML='';if(txHidden)retur
   mk('↑','Move this dose chart up',()=>mvDose(-1));if(first)ctl.lastChild.disabled=true;
   mk('↓','Move this dose chart down',()=>mvDose(1));if(last)ctl.lastChild.disabled=true;
   mk('⤓','Move this dose chart to the bottom',()=>mvDose('bottom'));if(last)ctl.lastChild.disabled=true;
-  mk('−','Shorter',()=>{setH(id,hOf(id,140)-40);render()});mk('+','Taller',()=>{setH(id,hOf(id,140)+40);render()});mk('×','Close dose chart',()=>setDoseChart(drug,false));
-  h.append(b,u,ctl);const cb=document.createElement('div');cb.style.cssText='position:relative;height:'+hOf(id,140)+'px';
+  mk('−','Shorter',()=>{setH(id,hOf(id,140)-40);render()});mk('+','Taller',()=>{setH(id,hOf(id,140)+40);render()});mk(minLabel(id),isMin(id)?'Open this dose chart again':'Minimize this dose chart to its title bar',()=>setMin(id,!isMin(id)));mk('×','Close dose chart',()=>setDoseChart(drug,false));
+  h.append(b,u,ctl);if(isMin(id)){w.classList.add('pmin');w.append(h);box.appendChild(w);return}const cb=document.createElement('div');cb.style.cssText='position:relative;height:'+hOf(id,140)+'px';
   const cv=document.createElement('canvas');cv.setAttribute('role','img');cv.setAttribute('aria-label','Dose of '+drug+' over time');cb.appendChild(cv);w.append(h,cb);box.appendChild(w);
   /* points in the window, plus the dose carried in from before it; the line breaks across gaps of more than GAP days */
   const GAP=45*DAYMS,inW=dp.pts.filter(p=>p.t>=W.a&&p.t<=W.b),before=dp.pts.filter(p=>p.t<W.a).pop(),data=[];

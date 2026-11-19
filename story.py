@@ -37,6 +37,9 @@ LIVE_SECONDS = 30          # a device that hasn't checked in for this long has l
 lock = threading.Lock()
 SID = re.compile(r"s-\d{8}-\d{6}-[a-z0-9]{4}$")
 PID = re.compile(r"[A-Za-z0-9_\-]{1,120}$")
+LINES = {"hello": "Hi Erica. I'm ready when you are.",
+         "wrong": "Sorry, I didn't get that right. Tell me again, in your own words.",
+         "more": "Take your time. Tell me more."}
 OPENERS = ["Tell me about this one.", "What's happening here?", "What do you remember about this one?",
            "Tell me the story of this one.", "What comes to mind when you see this?"]
 
@@ -243,15 +246,25 @@ def transcribe(wav):
     if not os.path.isdir(APP):
         return {"error": "the transcriber isn't built (story/build_transcribe.sh)"}
     fd, out = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(out)
-    try:
-        subprocess.run(["open", "-n", "-W", "-g", "-j", APP, "--args", wav, out], timeout=300,
+    try:   # start the app, then wait for its result file (open -W can't always wait on a background app)
+        subprocess.run(["open", "-n", "-g", "-j", APP, "--args", wav, out], timeout=30,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return json.load(open(out))
+        t0 = time.time()
+        while time.time() - t0 < 180:
+            if os.path.exists(out) and os.path.getsize(out):
+                time.sleep(0.05)
+                r = json.load(open(out))
+                if "Dictation" in str(r.get("error", "")):
+                    r["error"] = "Dictation is turned off on the home Mac (System Settings, Keyboard, Dictation)"
+                return r
+            time.sleep(0.2)
+        return {"error": "speech to text took too long"}
     except (OSError, ValueError, subprocess.SubprocessError) as e:
         return {"error": "speech to text failed: %s" % e}
     finally:
-        if os.path.exists(out):
-            os.remove(out)
+        for f in (out, out + ".log"):
+            if os.path.exists(f):
+                os.remove(f)
 
 
 def take(sid, photo, data, meta):
@@ -267,7 +280,7 @@ def take(sid, photo, data, meta):
         open(path(sid, "takes", name), "wb").write(data)
         s["takes"].append({"n": n, "photo": photo, "file": name, "at": now(), "client": meta.get("client"),
                            "seconds": round((len(data) - 44) / 2 / max(1, int(meta.get("rate") or 48000)), 1),
-                           "question": meta.get("question") or None, "text": None})
+                           "question": meta.get("question") or None, "text": None, "correction": bool(meta.get("correction"))})
         save(s)
     r = transcribe(path(sid, "takes", name))
     with lock:
@@ -449,7 +462,12 @@ def ask(b):
     qs = {q["n"]: q for q in s["questions"]}
     for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
         if t.get("question") and t["question"] in qs:
-            convo.append("Claude: " + qs[t["question"]]["text"])
+            q = qs[t["question"]]
+            if q.get("recap"):
+                convo.append("Claude (recap): " + q["recap"])
+            convo.append("Claude: " + q["text"])
+        if t.get("correction"):
+            convo.append("[Erica said the recap was wrong; she corrects it:]")
         convo.append("Erica: " + (t.get("text") or "(nothing heard)"))
     limit = ("This photo has had %d follow-up questions; at most %d, so if this is the last one, set next instead." % (len(asked), maxq)
              if photo else "No photo yet: help her find the moment.")
@@ -462,6 +480,7 @@ def ask(b):
     r = claude(prompt, s.get("claude"), image)
     j = parse_reply(r.get("text"))
     text = str(j.get("say") or "").strip()
+    recap = str(j.get("recap") or "").strip()
     show = j.get("show") if isinstance(j.get("show"), dict) else None
     if show and not (str(show.get("what", "")).split(":")[0] in TOPICS and date_ok(show.get("from")) and date_ok(show.get("to") or show.get("from"))):
         show = None
@@ -479,19 +498,19 @@ def ask(b):
         if (j.get("next") and photo and "session" not in out) or (not text and photo):
             save(s)
             text = "Thank you. Let's look at the next one."
-            return dict(out, question=text, audio="cache/" + cached_line(text), next=True, kind="closing", show=show)
+            return dict(out, question=text, recap=recap, audio="cache/" + cached_line(text), next=True, kind="closing", show=show)
         if not text:
             text = "Tell me more."
         n = len(s["questions"]) + 1
         name = "%03d.m4a" % n
-        s["questions"].append({"n": n, "photo": photo, "text": text, "file": name, "at": now(), "kind": "followup",
+        s["questions"].append({"n": n, "photo": photo, "text": text, "recap": recap, "file": name, "at": now(), "kind": "followup",
                                "seconds": r.get("seconds"), "show": show})
         save(s)
         if "session" in out:
             out["session"] = s
-    speak(text, path(sid, "questions", name))
-    log(sid, {"ev": "question", "n": n, "photo": photo, "text": text, "show": show})
-    return dict(out, question=text, audio="%s/questions/%s" % (sid, name), n=n, show=show)
+    speak((recap + " ... " + text) if recap else text, path(sid, "questions", name))   # the recap is said first
+    log(sid, {"ev": "question", "n": n, "photo": photo, "text": text, "recap": recap, "show": show})
+    return dict(out, question=text, recap=recap, audio="%s/questions/%s" % (sid, name), n=n, show=show)
 
 
 def drafts(b):

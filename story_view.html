@@ -36,12 +36,16 @@ textarea{width:100%;min-height:90px;font-family:var(--voice);font-size:17px;line
 .rv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:14px 0;border-top:1px solid var(--line)}
 .rv img{width:150px;border-radius:8px}
 .err{color:var(--red);font-size:14px}
+.recs{margin-top:16px}.recs .bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.recs .bar button{font-size:14px;padding:5px 11px}
+.recs iframe{width:100%;height:600px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.nophoto{min-height:300px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:30px;gap:10px;background:#0000000d;border-radius:12px}
 .stage{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stage .talk{display:flex;flex-direction:column}
 @media (min-width:900px){.stage{grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr)}#photo img,#photo video{max-height:62vh}.stage .talk .ctr{justify-content:flex-start}}
 .meter{height:8px;width:160px;background:var(--line);border-radius:4px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:var(--ok)}
 </style></head><body>
 <div class="flash" id="flash"></div>
 <div class="wrap" id="app">Loading…</div>
+<div class="wrap" id="recbox" style="display:none;padding-top:0"></div>
 <script>
 'use strict';
 const $ = s => document.querySelector(s), app = $('#app');
@@ -172,7 +176,7 @@ function stopAll() { run++; if (L) L.finish('stop'); if (voice) { voice.pause();
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 async function converse() {   // one photo: opener, then answer -> question -> answer ... until next
-  const my = ++run, photo = cur();
+  const my = ++run; let photo = cur() || '';
   log('photo shown', {photo, n: S.pos + 1});
   let q = null;
   try {
@@ -180,6 +184,8 @@ async function converse() {   // one photo: opener, then answer -> question -> a
       setState({mode: 'thinking', heard: state.heard});
       const r = q ? q : await api('ask', {id: S.id, photo});
       q = null; if (my !== run) return;
+      if (r.session) { S = r.session; photo = cur() || ''; drawMain(); log('photo shown', {photo, n: S.pos + 1, jumped: r.jumped}); }
+      if (r.show) recShow(r.show.what, r.show.from, r.show.to, 'Claude is showing this');
       if (r.next && !r.question) return nextPhoto(my);
       if (r.error && !r.question) { setState({mode: 'error', text: 'Couldn\'t turn that into words (' + r.error + '). Your recording is saved.'}); return; }
       setState({mode: 'asking', question: r.question, kind: r.kind, heard: state.heard});
@@ -202,6 +208,7 @@ async function converse() {   // one photo: opener, then answer -> question -> a
 async function nextPhoto(my) {
   if (my !== undefined && my !== run) return;
   run++; if (L) L.finish('stop'); if (voice) { voice.pause(); voice = null; }
+  if (!cur()) return converse();
   api('session', {id: S.id, action: 'done', photo: cur(), device: DEVICE}).catch(() => {});
   if (S.pos >= S.photos.length - 1) { log('last photo done'); return endSitting(); }
   await goTo(S.pos + 1);
@@ -220,9 +227,57 @@ async function endSitting() {
   screen = 'review'; draw(); loadDrafts();
 }
 
+/* ---------------- the records viewer, embedded under the photo ---------------- */
+const TOPICS = {photos: 'Photos over time', procedures: 'Procedures', mri: 'Brain MRI', labs: 'Labs', signatera: 'Signatera', pathology: 'Pathology'};
+const PANELS = {photos: ['photo:strip'], procedures: ['proc:timeline'], mri: ['img:brain:dates', 'img:brain:lesions'], signatera: ['mrd:ot'], pathology: ['path:slides']};
+const LABS = /^(WBC|White blood|Hemoglobin|Platelet|Neutrophil|ANC|CEA|CA 15-3|CA 27|Creatinine|ALT|AST)/i;
+let REC = {open: LS.get('recs', true), topic: 'procedures', from: null, to: null, why: ''};
+const recFrame = () => document.querySelector('#recframe');
+function recWin() { return recFrame() && recFrame().contentWindow; }
+function recReady() { try { const w = recWin(); return w && typeof w.setWin === 'function' && typeof w.onlyLab === 'function'; } catch (e) { return false; } }
+function recApply() {   // put REC (topic + dates) into the embedded viewer
+  if (!REC.open || !recReady() || !REC.from) return;
+  const w = recWin(), what = REC.topic.split(':'), day0 = Date.parse(REC.from + 'T12:00:00Z'), day1 = Date.parse((REC.to || REC.from) + 'T12:00:00Z');
+  const mid = (day0 + day1) / 2, half = Math.max(30 * 864e5, (day1 - day0) / 2 + 10 * 864e5);
+  let ids = PANELS[what[0]];
+  if (what[0] === 'labs') {
+    const want = what[1] ? new RegExp(what[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : LABS;
+    ids = w.eval('D.tests').filter(t => want.test(t.name) || (t.abbr && want.test(t.abbr))).slice(0, 6).map(t => t.id);
+    if (!ids.length) ids = w.eval('D.tests').filter(t => LABS.test(t.name)).slice(0, 6).map(t => t.id);
+  }
+  try {
+    w.eval('libHidden=true;applyLib();mode="compare";');
+    w.onlyLab('story-' + Date.now(), ids, TOPICS[what[0]] || 'Story');
+    w.setWin(mid - half, mid + half);
+    setTimeout(() => {   // scroll the viewer to the chosen panel (the always-on Keyframes and Treatments panels come first)
+      try { const h = [...w.document.querySelectorAll('.cmph b')].find(b => !/^(Keyframes|Treatments|Concern)/.test(b.textContent.trim()));
+            if (h) w.scrollTo(0, h.getBoundingClientRect().top + w.scrollY - 90); } catch (e) {}
+    }, 700);
+  } catch (e) { console.warn('records viewer:', e); }
+  const lab = $('#recwhat'); if (lab) lab.textContent = (TOPICS[what[0]] || what[0]) + (what[1] ? ': ' + what[1] : '') + ' · ' + fmtDate(new Date(mid - half).toISOString()) + ' to ' + fmtDate(new Date(mid + half).toISOString()) + (REC.why ? ' · ' + REC.why : '');
+  document.querySelectorAll('.recs .bar [data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === what[0]));
+}
+function recShow(topic, from, to, why) { REC.topic = topic || REC.topic; REC.from = from || REC.from; REC.to = to || from || REC.to; REC.why = why || ''; if (!REC.open) { REC.open = true; LS.set('recs', true); recMount(true); } recApply(); }
+function recsHtml() {
+  return `<div class="recs"><div class="bar"><b>Your records</b>${Object.entries(TOPICS).map(([k, v]) => `<button data-t="${k}">${esc(v)}</button>`).join('')}
+    <button id="rectoggle">${REC.open ? 'Hide records' : 'Show records'}</button><span class="sub" id="recwhat"></span></div>
+    ${REC.open ? '<iframe id="recframe" src="/labs.html" title="Medical records viewer"></iframe>' : ''}</div>`;
+}
+function recMount(redo) {   // the viewer lives in #recbox, outside the redrawn page, so it doesn't reload with each photo
+  const box = $('#recbox');
+  if (screen !== 'main') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (!box.dataset.ready || redo) { box.innerHTML = recsHtml(); recWire(); box.dataset.ready = '1'; }
+}
+function recWire() {
+  document.querySelectorAll('.recs .bar [data-t]').forEach(b => b.onclick = () => { recShow(b.dataset.t, null, null, 'you chose'); log('records shown', {topic: b.dataset.t}); });
+  $('#rectoggle').onclick = () => { REC.open = !REC.open; LS.set('recs', REC.open); recMount(true); };
+  const f = recFrame(); if (f) f.onload = () => { const t0 = Date.now(), tick = () => recReady() ? recApply() : Date.now() - t0 < 15000 && setTimeout(tick, 300); tick(); };
+}
+
 /* ---------------- drawing ---------------- */
 function draw() {
-  clearInterval(clockT);
+  clearInterval(clockT); if (screen !== 'main') recMount();
   if (screen === 'home') return drawHome();
   if (screen === 'sync') { app.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px"><div class="big3" id="count">3</div>
      <p class="sub">Phones rolling? On zero the screen flashes white and beeps: that moment lines up every recording. Clap too if you like.</p>
@@ -254,7 +309,8 @@ function drawHome() {
   <div class="card"><b>Start a new session</b><div class="row" style="margin-top:8px">
     <select id="ch">${chs.map(c => { const all = D.items.filter(i => i.chapter === c.title), left = all.filter(i => !i.told).length; return `<option value="${esc(c.title)}">${esc(c.title)} (${left} of ${all.length} not told yet)</option>`; }).join('')}</select>
     <label class="sub"><input type="checkbox" id="untold" checked> Only photos without a story yet</label>
-    <button class="big pri" id="start">Start</button></div></div>
+    <button class="big pri" id="start">Start</button></div>
+    <div class="row" style="margin-top:12px"><button class="big" id="free">Or start by telling a story</button><span class="sub">You say what you want to talk about; Claude finds the photos and records from then.</span></div></div>
   <div class="card"><b>Before you start</b>
     <div class="row" style="margin-top:8px"><span class="sub">Microphone</span><select id="mic"><option value="">Default</option></select><div class="meter"><i id="lvl"></i></div><button id="test">Test mic</button></div>
     <div class="row" style="margin-top:8px"><label><input type="checkbox" id="film" ${LS.get('filming', true) ? 'checked' : ''}> Filming: Claude speaks through the speaker (so the phones hear it)</label></div>
@@ -271,6 +327,7 @@ function drawHome() {
     if (!ids.length) { err = 'Every photo in that chapter already has a story. Untick "Only photos without a story yet" to go through them again.'; return drawHome(); }
     try { const r = await api('sessions', {title: ch, photos: ids}); begin(r.id); } catch (e) { err = e.message; drawHome(); }
   };
+  $('#free').onclick = async () => { try { const r = await api('sessions', {title: 'Your choice of stories', photos: [], free: true}); begin(r.id); } catch (e) { err = e.message; drawHome(); } };
   fillMics();
 }
 async function testVoice() { try { const r = await api('voice'); await play(r.audio); } catch (e) { err = 'Voice: ' + e.message; drawHome(); } }
@@ -287,17 +344,20 @@ function seriesOf(id) {
   return same.length > 1 ? same : [];
 }
 function drawMain() {
-  const id = cur(), it = ITEM(id), ser = seriesOf(id);
-  const media = it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
+  const id = cur(), it = ITEM(id), ser = id ? seriesOf(id) : [];
+  if (it.t) { REC.from = day(it.t); REC.to = day(it.t); REC.why = REC.why === 'you chose' ? REC.why : ''; }
+  const media = !id ? `<div class="nophoto"><div style="font-size:22px">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
                                     : `<img src="/photos/web/${encodeURIComponent(id)}.jpg" alt="">`;
-  app.innerHTML = `<div class="top"><span class="sub">${esc(S.title)} · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b></span>
+  app.innerHTML = `<div class="top"><span class="sub">${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
     <span class="row"><span class="pill">Mic: ${esc((A.label || 'default').slice(0, 28))}</span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
   <div class="stage"><div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
     ${showSeries ? `<div class="strip">${ser.map(p => `<div class="t ${p === id ? 'cur' : ''}" data-p="${S.photos.indexOf(p)}"><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt="">${S.done.includes(p) ? '<span class="ck">✓</span>' : ''}</div>`).join('')}</div>` : ''}` : ''}
-  ${timelineHtml(it.t)}</div>
+  ${id ? timelineHtml(it.t) : ''}</div>
   <div class="talk"><div id="prompt"></div>
   <div class="ctr"><button id="back" ${S.pos ? '' : 'disabled'}>← Back</button><button id="skipq">Skip question</button><button id="next" class="pri">Next photo →</button></div></div></div>`;
+  recMount(); recApply();
+  if (!REC.from) { REC.from = '2023-05-01'; REC.to = new Date().toISOString().slice(0, 10); }
   $('#pause').onclick = pause; $('#next').onclick = () => nextPhoto(); $('#back').onclick = () => S.pos && goTo(S.pos - 1);
   $('#skipq').onclick = () => { if (voice) { voice.pause(); voice.onended && voice.onended(); } if (L) L.finish('skipq'); };
   if ($('#ser')) $('#ser').onchange = e => { showSeries = e.target.checked; LS.set('series', showSeries); drawMain(); };

@@ -155,7 +155,7 @@ def sessions():
             continue
         drafts = s.get("drafts") or {}
         out.append({"id": sid, "title": s["title"], "created": s["created"], "status": s["status"],
-                    "updated": s.get("updated"), "pos": s["pos"], "firstPhoto": s["photos"][min(s["pos"], len(s["photos"]) - 1)], "count": len(s["photos"]), "done": len(s.get("done") or []),
+                    "updated": s.get("updated"), "pos": s["pos"], "firstPhoto": s["photos"][min(s["pos"], len(s["photos"]) - 1)] if s["photos"] else None, "count": len(s["photos"]), "done": len(s.get("done") or []),
                     "toReview": sum(1 for d in drafts.values() if d.get("status") != "approved")
                                 + sum(1 for p in s.get("done") or [] if p not in drafts and any(t["photo"] == p and t.get("text") for t in s["takes"])),
                     "live": s.get("live")})
@@ -166,13 +166,13 @@ def create(b):
     ids = [str(x) for x in b.get("photos") or [] if PID.match(str(x))]
     known = {i["id"] for i in photo_data()["items"]}
     ids = [i for i in ids if i in known]
-    if not ids:
+    if not ids and not b.get("free"):
         raise ValueError("no photos chosen")
     sid = time.strftime("s-%Y%m%d-%H%M%S-") + secrets.token_hex(2)
     os.makedirs(path(sid, "takes")); os.makedirs(path(sid, "questions"))
     s = {"id": sid, "title": str(b.get("title") or "Story session")[:120], "created": now(), "updated": now(),
          "status": "new", "photos": ids, "pos": 0, "done": [], "takes": [], "questions": [], "drafts": {},
-         "claude": None, "parts": 0, "live": None}
+         "claude": None, "parts": 0, "live": None, "free": bool(b.get("free"))}
     save(s)
     log(sid, {"ev": "created", "photos": len(ids)})
     return s
@@ -199,7 +199,7 @@ def act(b):
         elif a == "heartbeat":
             s["live"]["t"] = t
         elif a == "goto":
-            s["pos"] = max(0, min(len(s["photos"]) - 1, int(b.get("pos", s["pos"]))))
+            s["pos"] = max(0, min(max(0, len(s["photos"]) - 1), int(b.get("pos", s["pos"]))))
         elif a == "done":
             p = str(b.get("photo"))
             if p in s["photos"] and p not in s["done"]:
@@ -256,7 +256,7 @@ def transcribe(wav):
 
 def take(sid, photo, data, meta):
     """Save one answer (WAV), turn it into text, and add it to the session."""
-    if not PID.match(photo or ""):
+    if photo and not PID.match(photo):
         raise ValueError("bad photo")
     if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise ValueError("not a WAV recording")
@@ -335,7 +335,37 @@ def cached_line(text):
     return name
 
 
+TOPICS = ("photos", "mri", "labs", "signatera", "procedures", "pathology")
+
+
+def overview():
+    """The whole story in dates, for Claude to find an event she talks about: procedures, stays, radiation,
+    brain MRIs, Signatera results and how many photos there are each month."""
+    out = ["Medical timeline (from the records):"]
+    for e in timeline():
+        out.append("- %s%s: %s" % (e["from"], (" to " + e["to"]) if e.get("to") and e["to"] != e["from"] else "", e["text"]))
+    try:
+        for r in json.load(open(os.path.join(LOCAL, "imaging", "imaging.json")))["brain_mri"]:
+            out.append("- %s: brain MRI at %s (%s)" % (r["date"], r.get("hospital", ""), r.get("finding", "")))
+    except (OSError, ValueError, KeyError):
+        pass
+    try:
+        for line in open(os.path.join(LOCAL, "mrd_tests.tsv")).read().splitlines()[1:]:
+            f = line.split("\t")
+            out.append("- %s: Signatera blood test, %s" % (f[3], f[6]))
+    except (OSError, IndexError):
+        pass
+    by = {}
+    for i in photo_data()["items"]:
+        if i.get("t"):
+            by[i["t"][:7]] = by.get(i["t"][:7], 0) + 1
+    out.append("Photos per month: " + ", ".join("%s: %d" % kv for kv in sorted(by.items())))
+    return "\n".join([out[0]] + sorted(out[1:-1]) + [out[-1]])
+
+
 def photo_context(s, photo):
+    if not photo:
+        return "No photo on screen yet: Erica is choosing what to talk about.", {}
     it = next((i for i in photo_data()["items"] if i["id"] == photo), {})
     lines = ["Photo date: %s (%s)" % ((it.get("t") or "unknown")[:16].replace("T", " "),
                                        "exact, from the camera" if it.get("sure") == "exact" else "date: " + str(it.get("sure") or "unsure")),
@@ -354,60 +384,114 @@ def photo_context(s, photo):
     return "\n".join(lines), it
 
 
+def parse_reply(text):
+    """Claude answers with JSON {say, show?, photos?, next?}; plain text counts as just 'say'."""
+    m = re.search(r"\{.*\}", text or "", re.S)
+    if m:
+        try:
+            j = json.loads(m.group(0))
+            if isinstance(j, dict) and ("say" in j or "next" in j):
+                return j
+        except ValueError:
+            pass
+    t = (text or "").strip().strip('"')
+    return {"next": True} if t.upper().startswith("NEXT") else {"say": t}
+
+
+def date_ok(x):
+    return isinstance(x, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", x) is not None
+
+
+def jump(s, rng, after_take):
+    """Put the photos in a date range next in the session and move there. Returns how many were added."""
+    a, b = rng.get("from"), rng.get("to") or rng.get("from")
+    if not (date_ok(a) and date_ok(b)):
+        return 0
+    if b < a:
+        a, b = b, a
+    ids = [i["id"] for i in sorted(photo_data()["items"], key=lambda i: i.get("t") or "") if a <= (i.get("t") or "")[:10] <= b][:40]
+    if not ids:
+        return 0
+    cur = s["photos"][s["pos"]] if s["photos"] else None
+    rest = [p for p in s["photos"] if p not in ids]
+    at = rest.index(cur) + 1 if cur in rest else (rest.index(cur) if cur in rest else min(s["pos"], len(rest)))
+    s["photos"] = rest[:at] + ids + rest[at:]
+    s["pos"] = at
+    if after_take:
+        after_take["led_to"] = ids[0]   # what she said that led here goes with these photos' stories
+    return len(ids)
+
+
 def ask(b):
-    """After a take (or at a new photo): one follow-up question from Claude, spoken. {"question", "audio", "next"}"""
-    sid, photo = str(b.get("id")), str(b.get("photo"))
+    """After a take (or at a new photo): Claude's next spoken line. Claude may also choose records to show
+    (show: {what, from, to}) and photos to jump to (photos: {from, to}). Returns {question, audio, kind, show?, session?, next?}"""
+    sid, photo = str(b.get("id")), str(b.get("photo") or "")
     s = load(sid)
-    if photo not in s["photos"]:
+    if photo and photo not in s["photos"]:
         raise ValueError("photo not in this session")
     takes = [t for t in s["takes"] if t["photo"] == photo]
     asked = [q for q in s["questions"] if q["photo"] == photo and q.get("kind") == "followup"]
     maxq = int(settings()["maxQuestions"])
-    if not takes:   # a new photo: a short opener in the same voice, no wait for Claude
-        text = OPENERS[s["pos"] % len(OPENERS)]
+    if not takes:   # a new photo (or the start of an Erica-led talk): a short opener, no wait for Claude
+        text = OPENERS[s["pos"] % len(OPENERS)] if photo else "What would you like to talk about? Tell me about a day, a moment, anything."
         return {"question": text, "audio": "cache/" + cached_line(text), "kind": "opener"}
     last = takes[-1]
     words = re.sub(r"[^a-z ]", "", (last.get("text") or "").lower()).strip()
-    if words in ("next", "next photo", "next one", "skip", "skip this one", "skip it", "lets move on", "move on"):
+    if photo and words in ("next", "next photo", "next one", "skip", "skip this one", "skip it", "lets move on", "move on"):
         return {"next": True, "kind": "command", "said": words}
-    if len(asked) >= maxq:
-        text = "Thank you. Let's look at the next one."
-        return {"question": text, "audio": "cache/" + cached_line(text), "next": True, "kind": "closing"}
-    ctx, it = photo_context(s, photo)
     if not (last.get("text") or "").strip():
-        text = "I didn't catch that. Could you say it again?" if not last.get("error") else ""
-        if not text:
+        if last.get("error"):
             return {"question": "", "error": last["error"], "kind": "error"}
+        text = "I didn't catch that. Could you say it again?"
         return {"question": text, "audio": "cache/" + cached_line(text), "kind": "repeat"}
+    ctx, it = photo_context(s, photo)
     convo = []
     qs = {q["n"]: q for q in s["questions"]}
-    for t in takes:
+    for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
         if t.get("question") and t["question"] in qs:
             convo.append("Claude: " + qs[t["question"]]["text"])
         convo.append("Erica: " + (t.get("text") or "(nothing heard)"))
-    prompt = ("[Photo %d of %d in this sitting]\n%s\n\n[The conversation about this photo so far]\n%s\n\n"
-              "[Ask your next question. This photo has had %d follow-up questions; at most %d. "
-              "Answer NEXT instead if the photo feels fully told or she sounds ready to move on.]"
-              % (s["pos"] + 1, len(s["photos"]), ctx, "\n".join(convo), len(asked), maxq))
-    image = os.path.join(PHOTOS, "web", photo + ".jpg") if it.get("kind") == "photo" else os.path.join(PHOTOS, "thumb", photo + ".jpg")
+    limit = ("This photo has had %d follow-up questions; at most %d, so if this is the last one, set next instead." % (len(asked), maxq)
+             if photo else "No photo yet: help her find the moment.")
+    prompt = ("[%s]\n%s\n\n[%s]\n\n[The conversation so far]\n%s\n\n[%s]"
+              % ("Photo %d of %d in this sitting" % (s["pos"] + 1, len(s["photos"])) if photo else "Erica-led talk",
+                 ctx, overview(), "\n".join(convo), limit))
+    image = None
+    if photo:
+        image = os.path.join(PHOTOS, "web", photo + ".jpg") if it.get("kind") == "photo" else os.path.join(PHOTOS, "thumb", photo + ".jpg")
     r = claude(prompt, s.get("claude"), image)
-    text = (r.get("text") or "").strip().strip('"')
+    j = parse_reply(r.get("text"))
+    text = str(j.get("say") or "").strip()
+    show = j.get("show") if isinstance(j.get("show"), dict) else None
+    if show and not (str(show.get("what", "")).split(":")[0] in TOPICS and date_ok(show.get("from")) and date_ok(show.get("to") or show.get("from"))):
+        show = None
+    out = {"kind": "followup"}
     with lock:
         s = load(sid)
         if r.get("sessionId"):
             s["claude"] = r["sessionId"]
-        if not text or text.upper().startswith("NEXT"):
+        if isinstance(j.get("photos"), dict):
+            t = next((x for x in s["takes"] if x["n"] == last["n"]), None)
+            n_added = jump(s, j["photos"], t if t is not None and not photo else None)
+            if n_added:
+                out.update(session=s, jumped=n_added)
+                log(sid, {"ev": "jump", "from": j["photos"].get("from"), "to": j["photos"].get("to"), "photos": n_added})
+        if (j.get("next") and photo and "session" not in out) or (not text and photo):
             save(s)
             text = "Thank you. Let's look at the next one."
-            return {"question": text, "audio": "cache/" + cached_line(text), "next": True, "kind": "closing"}
+            return dict(out, question=text, audio="cache/" + cached_line(text), next=True, kind="closing", show=show)
+        if not text:
+            text = "Tell me more."
         n = len(s["questions"]) + 1
         name = "%03d.m4a" % n
         s["questions"].append({"n": n, "photo": photo, "text": text, "file": name, "at": now(), "kind": "followup",
-                               "seconds": r.get("seconds")})
+                               "seconds": r.get("seconds"), "show": show})
         save(s)
+        if "session" in out:
+            out["session"] = s
     speak(text, path(sid, "questions", name))
-    log(sid, {"ev": "question", "n": n, "photo": photo, "text": text})
-    return {"question": text, "audio": "%s/questions/%s" % (sid, name), "n": n, "kind": "followup"}
+    log(sid, {"ev": "question", "n": n, "photo": photo, "text": text, "show": show})
+    return dict(out, question=text, audio="%s/questions/%s" % (sid, name), n=n, show=show)
 
 
 def drafts(b):
@@ -422,7 +506,7 @@ def drafts(b):
         parts = []
         for p in todo:
             lines = []
-            for t in [t for t in s["takes"] if t["photo"] == p]:
+            for t in [t for t in s["takes"] if t["photo"] == p or (not t["photo"] and t.get("led_to") == p)]:
                 if t.get("question") in qs:
                     lines.append("Claude: " + qs[t["question"]]["text"])
                 lines.append("Erica: " + (t.get("text") or ""))
@@ -467,7 +551,7 @@ def approve(b):
             return {"session": s}
         qs = {q["n"]: q for q in s["questions"]}
         turns = []
-        for t in [t for t in s["takes"] if t["photo"] == photo]:
+        for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
             if t.get("question") in qs:
                 turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
             if (t.get("text") or "").strip():

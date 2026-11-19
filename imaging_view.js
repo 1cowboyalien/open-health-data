@@ -129,6 +129,9 @@
       .nvwrap .nvsecs button.open{background:var(--accent);border-color:var(--accent);color:#fff}
       .nvwrap .nvsecs button.act::after{content:' •';color:#e0a020}
       .nvwrap .nvdisp summary{display:none}
+      /* a narrow screen (a phone): the lesion list goes under the viewer instead of beside it (beside it, its 250 px left the
+         viewer and its controls about 65 px, and they ran over the list); the section buttons wrap */
+      @media (max-width:760px){.nvwrap{flex-direction:column}.nvwrap .nvside{width:auto;max-height:230px!important}.nvwrap .nvsecs{flex-wrap:wrap;margin-left:0;padding-left:0;border-left:0}}
     </style>
     <div class="nvmain"><div class="nvbar">
         <label>Scan <select data-r="scan"></select></label>
@@ -718,7 +721,10 @@
     const m = DOSE.maps.find(x => x.key === V.dose.key); const v = w.getValue(...w.mm2vox(mm)); return ` · dose here ≈ ${(v / 10).toFixed(1)} ${m.unit} (estimated)`; }
   function sizeBox(id) { if (!V.el) return; const box = V.R('box');
     const rowH = V.rowLay && box.clientWidth ? Math.max(200, Math.round(box.clientWidth / 4) + 6) : 0;   // four views in a row: one square view tall
-    const h = V.full ? Math.max(300, innerHeight - (box.getBoundingClientRect().top - V.el.getBoundingClientRect().top) - 50) : (V.size || rowH || hOf(id, PANELS[id].h0));
+    /* a narrow screen (a phone) with the panel still at its standard height: about as tall as it is wide, which is what the four
+       views take when they sit two by two (at the standard 520 px half the box was empty). A height the person chose stands. */
+    const def = hOf(id, PANELS[id].h0), sq = innerWidth <= 760 && def === PANELS[id].h0 && box.clientWidth ? Math.min(def, Math.round(box.clientWidth * 1.08)) : def;
+    const h = V.full ? Math.max(300, innerHeight - (box.getBoundingClientRect().top - V.el.getBoundingClientRect().top) - 50) : (V.size || rowH || sq);
     box.style.height = h + 'px'; V.R('list').style.maxHeight = (h + 30) + 'px';
     V.R('size').value = h; V.R('sizel').textContent = V.full ? 'full window' : V.size ? h + ' px' : 'panel height';
     if (V.nv) requestAnimationFrame(() => V.nv.resizeListener()); }

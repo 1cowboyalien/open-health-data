@@ -405,6 +405,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/story/api/voice":   # a fixed line in Claude's voice, to try the speakers
                 line = story.LINES.get(q.get("line", ["hello"])[0], story.LINES["hello"])
                 return self.send(200, {"audio": "cache/" + story.cached_line(line), "text": line})
+            if path == "/story/api/health":   # the ready check, home Mac side
+                return self.send(200, story.health())
             if path == "/story/api/session":
                 return self.send(200, {"session": story.load(q.get("id", [""])[0])})
             if path == "/story/api/markers.csv":
@@ -433,6 +435,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, story.take(q.get("id", ""), q.get("photo", ""), data,
                                                  {"client": q.get("client"), "rate": q.get("rate"), "question": int(q["question"]) if q.get("question", "").isdigit() else None,
                                                   "correction": q.get("correction") == "1"}))
+            if sub == "practice":   # body = WAV: a practice run through speech to text and Claude
+                return self.send(200, story.practice(data, q.get("rate")))
+            if sub == "speedtest":   # body = throwaway bytes, to time the upload from her computer
+                return self.send(200, {"bytes": len(data)})
             if sub == "continuous":   # body = a slice of the whole-sitting recording
                 return self.send(200, story.continuous(q.get("id", ""), q.get("part", "0"), data, q.get("ext", "webm")))
             b = json.loads(data or b"{}")

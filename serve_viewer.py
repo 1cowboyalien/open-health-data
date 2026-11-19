@@ -406,7 +406,9 @@ class Handler(BaseHTTPRequestHandler):
                 line = story.LINES.get(q.get("line", ["hello"])[0], story.LINES["hello"])
                 return self.send(200, {"audio": "cache/" + story.cached_line(line), "text": line})
             if path == "/story/api/health":   # the ready check, home Mac side
-                return self.send(200, story.health())
+                h = story.health()
+                h["onHomeMac"] = self.client_address[0] in ("127.0.0.1", "::1") or self.client_address[0] == self.connection.getsockname()[0]
+                return self.send(200, h)
             if path == "/story/api/session":
                 return self.send(200, {"session": story.load(q.get("id", [""])[0])})
             if path == "/story/api/markers.csv":
@@ -442,6 +444,8 @@ class Handler(BaseHTTPRequestHandler):
             if sub == "continuous":   # body = a slice of the whole-sitting recording
                 return self.send(200, story.continuous(q.get("id", ""), q.get("part", "0"), data, q.get("ext", "webm")))
             b = json.loads(data or b"{}")
+            if sub == "open-setting":
+                return self.send(200, story.open_setting(json.loads(data or b"{}")))
             fn = {"sessions": story.create, "session": story.act, "log": story.client_log, "ask": story.ask,
                   "drafts": story.drafts, "approve": story.approve}.get(sub)
             if not fn:

@@ -253,6 +253,12 @@ def act(b):
             s["live"]["t"] = t
         elif a == "newpart":   # the microphone changed: the whole-sitting recording starts a new file
             s["parts"] = s.get("parts", 0) + 1
+        elif a == "add":   # keep going: more photos at the end of the session (e.g. the next chapter)
+            known = {i["id"] for i in photo_data()["items"]}
+            new = [x for x in dict.fromkeys(str(y) for y in b.get("photos") or []) if x in known and x not in s["photos"]][:300]
+            if new:
+                s["photos"].extend(new)
+                s["pos"] = len(s["photos"]) - len(new)
         elif a == "goto":
             s["pos"] = max(0, min(max(0, len(s["photos"]) - 1), int(b.get("pos", s["pos"]))))
         elif a == "done":

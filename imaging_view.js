@@ -90,9 +90,15 @@
   if (typeof saveEdits === 'function') { const _save = saveEdits;
     saveEdits = function () { const mine = (E.moments || []).filter(m => m.imgView); E.moments = (E.moments || []).filter(m => !m.imgView);
       try { return _save.apply(this, arguments); } finally { E.moments.push(...mine); } }; }
-  const DDEF = {layout: 'grid', lbPlane: 'A', lbStep: '5', lbPlus: false, outline: 'fill', pixels: 'smooth', xhair: 'on', xcolor: '1,1,1,0.55',
+  const DDEF = {layout: 'auto', lbPlane: 'A', lbStep: '5', lbPlus: false, outline: 'fill', pixels: 'smooth', xhair: 'on', xcolor: '1,1,1,0.55',
                 xgap: '0', x3d: true, orient: 'edges', cbar: false, cutDepth: 0, cutAz: 180, cutEl: 20, cutFace: 'tint', les2d: 'shiny'};
   V.disp = Object.assign({}, DDEF, store.get('img.disp', {}));
+  // one-time move from the old default (grid) to 'auto' (row on wide screens, grid on tall ones)
+  if (V.disp.layout === 'grid' && !store.get('img.layoutAuto', false)) { V.disp.layout = 'auto'; store.set('img.disp', V.disp); }
+  store.set('img.layoutAuto', true);
+  const TALL = window.matchMedia('(orientation: portrait)');
+  const layOf = d => d.layout === 'auto' ? (TALL.matches ? 'grid' : 'row') : d.layout;
+  TALL.addEventListener('change', () => { if (V.disp.layout === 'auto') { applyDisplay(); sizeBox(IDV); } });
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   function viewerEl() {
     if (V.el) return V.el;
@@ -114,6 +120,12 @@
       .nvwrap .nvgrid{display:flex;flex-wrap:wrap;gap:6px 14px;padding:6px 2px}
       .nvwrap.nvfull{position:fixed;inset:0;z-index:9999;background:var(--bg);padding:10px 12px;overflow:auto}
       .nvwrap button.on{outline:1px solid var(--accent)}
+      .nvwrap .nvbar button,.nvwrap .nvbar select,.nvwrap .nvdisp select,.nvwrap .nvdisp button{font-size:11px;padding:1px 7px;line-height:17px}
+      .nvwrap .nvbar{gap:6px 8px;margin-bottom:4px}.nvwrap .nvbar.nvcol,.nvwrap .nvdisp.nvcol{display:none!important}
+      .nvwrap .nvsecs{display:inline-flex;gap:3px;margin-left:auto;padding-left:8px;border-left:1px solid var(--line)}
+      .nvwrap .nvsecs button.open{background:var(--accent);border-color:var(--accent);color:#fff}
+      .nvwrap .nvsecs button.act::after{content:' •';color:#e0a020}
+      .nvwrap .nvdisp summary{display:none}
     </style>
     <div class="nvmain"><div class="nvbar">
         <label>Scan <select data-r="scan"></select></label>
@@ -124,11 +136,12 @@
         <button type="button" data-r="cut" class="on" title="Cut the 3D view open so the lesions inside show">3D: cut open</button>
         <button type="button" data-r="radio" title="Radiologist view: the patient's right is on the screen's left (as the hospitals show it). Click for neurologist view (patient's left on the left).">L/R: radiologist</button>
         <button type="button" data-r="nose" title="Side (sagittal) view: which way the face points">Side view: face left</button>
-        <span title="Make the viewer taller or shorter (handy on big, high-resolution screens). Remembered in this browser.">Size <input data-r="size" type="range" min="300" max="2400" step="20" style="width:110px"> <span class="sub" data-r="sizel"></span></span>
         <button type="button" data-r="fit" title="Make the viewer as tall as the window">Fit height</button>
         <button type="button" data-r="full" title="Fill the whole window with the viewer (Esc to close)">⛶ Full window</button>
-        <span class="sub" data-r="status"></span></div>
-      <div class="nvbar">
+        <span class="sub" data-r="status"></span>
+        <span class="nvsecs" data-r="secs" role="group" aria-label="More controls"></span></div>
+      <div class="nvbar" data-sec="image">
+        <span title="Make the viewer taller or shorter (handy on big, high-resolution screens). Remembered in this browser.">Size <input data-r="size" type="range" min="200" max="2400" step="20" style="width:90px"> <span class="sub" data-r="sizel"></span></span>
         <span class="sub">3D zoom</span><button type="button" data-z3="-1" title="Zoom the 3D view out">−</button><button type="button" data-z3="1" title="Zoom the 3D view in">+</button>
         <span class="sub">Slice zoom</span><button type="button" data-z2="-1" title="Zoom the slice views out">−</button><button type="button" data-z2="1" title="Zoom the slice views in (around the crosshair)">+</button>
         <button type="button" data-r="zreset" title="Reset both zooms">Reset zoom</button>
@@ -141,20 +154,20 @@
         <button type="button" data-r="clesion" title="Darker brain, enhancing lesions stand out">Lesions</button>
         <label data-r="tonewrap" style="display:none" title="Shows the same tissue at the same grey on every scan date: air black, then fluid, grey matter, white matter and scalp/marrow fat at fixed levels, so scans from different scanners and sequence types look alike and the Low / Mid / High settings carry over from date to date. Display only: our measurements use the scan's own values. It also evens out how bright enhancement looks, so with this on, brightness alone does not mean 'more enhancing'; untick to see the scan's own contrast."><input type="checkbox" data-r="tone"> match brightness across scans</label>
         <span class="sub" data-r="tonel"></span></div>
-      <div class="nvbar" data-r="dosebar" title="ESTIMATED radiation dose from our model of the treatment records, not the hospitals' dose files">
+      <div class="nvbar" data-sec="dose" data-r="dosebar" title="ESTIMATED radiation dose from our model of the treatment records, not the hospitals' dose files">
         <span class="sub" style="color:#e0a020">Radiation dose (estimated)</span>
         <select data-r="dose"><option value="">off</option></select>
         <span title="How see-through the colour wash is">wash <input data-r="dop" type="range" min="0" max="100" value="35" style="width:70px"></span>
         <span title="3D view only: how solid the dose looks (low = see-through cloud; the 3D cut also slices through the dose while it's shown)">3D strength <input data-r="dblend" type="range" min="5" max="100" value="25" style="width:60px"></span>
         <label title="Isodose lines: the prescription dose and 12 Gy (combined: 100 and 60 Gy EQD2)"><input type="checkbox" data-r="dlines" checked> lines</label>
         <span class="sub" data-r="dlegend"></span></div>
-      <div class="nvbar" data-r="perfbar" title="Blood flow / blood volume from the hospital's perfusion maps, as × normal brain on the same scan (our estimate, not a reading)">
+      <div class="nvbar" data-sec="perf" data-r="perfbar" title="Blood flow / blood volume from the hospital's perfusion maps, as × normal brain on the same scan (our estimate, not a reading)">
         <span class="sub" style="color:#e05ad0">Perfusion</span>
         <select data-r="perf"><option value="">off</option><option value="asl">Blood flow (ASL)</option><option value="rcbv">Blood volume (rCBV)</option></select>
         <span title="Colour only where the map is at least this many times normal brain">show above <input data-r="pmin" type="range" min="50" max="300" step="10" style="width:70px"> <b data-r="pminl"></b></span>
         <span title="How see-through the colour wash is">wash <input data-r="pop" type="range" min="0" max="100" style="width:60px"></span>
         <span class="sub" data-r="plegend"></span></div>
-      <div class="nvbar" data-r="swellbar" title="How much more (swollen) or less (shrunk, squeezed) room the brain takes than on the normal control MRI, from a flexible fit (our estimate, not a reading). It shows large effects only and understates them.">
+      <div class="nvbar" data-sec="swell" data-r="swellbar" title="How much more (swollen) or less (shrunk, squeezed) room the brain takes than on the normal control MRI, from a flexible fit (our estimate, not a reading). It shows large effects only and understates them.">
         <span class="sub" style="color:#ff7a59">Swelling</span>
         <select data-r="swell"><option value="">off</option></select>
         <span title="Colour only where the change is beyond this. 'This scan's normal range' = outside what 95% of the lesion-free brain shows on the same scan, the fairest setting: inside it the map cannot tell a change from noise.">show beyond <select data-r="sthr"><option value="0">this scan's normal range</option><option value="5">±5%</option><option value="10">±10%</option><option value="15">±15%</option><option value="20">±20%</option><option value="30">±30%</option></select></span>
@@ -164,10 +177,10 @@
           <label title="The same fit shown as movement: a straight grid laid on the brain as it was on the control MRI, each point moved to where that tissue sits on this scan. Lines spread apart where the tissue takes more room and crowd together where it takes less. Slice views only. Large effects only, like the colour layer."><input type="checkbox" data-r="sgrid"> bent grid</label>
           <span title="How many times larger than real the movement is drawn. The real movement is a millimetre or two, too small to see at ×1.">movement × <select data-r="sgx"><option value="1">1 (real)</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="12">12</option></select></span>
           <span class="sub" data-r="sglegend"></span></span></div>
-      <div class="nvbar" data-r="views"></div>
-      <details class="nvdisp" data-r="disp"><summary>Display options</summary><div class="nvgrid">
+      <div class="nvbar" data-sec="views" data-r="views"></div>
+      <details class="nvdisp" data-sec="disp" data-r="disp" open><summary>Display options</summary><div class="nvgrid">
         <label>Layout <select data-o="layout">
-          <option value="grid">Four views · grid</option><option value="row">Four views · row</option><option value="column">Four views · column</option>
+          <option value="auto">Four views · auto (row on wide screens, grid on tall)</option><option value="grid">Four views · grid</option><option value="row">Four views · row</option><option value="column">Four views · column</option>
           <option value="hero">Hero: big axial + small views</option><option value="axial">One view · axial</option><option value="coronal">One view · coronal</option>
           <option value="sagittal">One view · sagittal</option><option value="render">3D only</option><option value="lightbox">Light box (many slices)</option></select></label>
         <label>Light box plane <select data-o="lbPlane"><option value="A">axial</option><option value="C">coronal</option><option value="S">sagittal</option></select></label>
@@ -196,6 +209,20 @@
     <div class="nvside" data-r="list"></div>`;
     const R = k => w.querySelector(`[data-r="${k}"]`);
     V.R = R; V.el = w;
+    /* the extra control rows open from small buttons at the end of the first row (remembered in this browser);
+       a dot marks a colour layer that is switched on while its row is closed */
+    const SECS = [['image', 'Zoom & contrast'], ['dose', 'Dose'], ['perf', 'Perfusion'], ['swell', 'Swelling'], ['views', 'Saved views'], ['disp', 'Display']];
+    const secOpen = store.get('img.secs', {});
+    const secSync = () => SECS.forEach(([k]) => { const row = w.querySelector(`[data-sec="${k}"]`), b = w.querySelector(`[data-secb="${k}"]`); if (!row || !b) return;
+      row.classList.toggle('nvcol', !secOpen[k]); b.classList.toggle('open', !!secOpen[k]); const dv = row.style.display === 'none' ? 'none' : ''; if (b.style.display !== dv) b.style.display = dv;
+      const sel = {dose: 'dose', perf: 'perf', swell: 'swell'}[k]; b.classList.toggle('act', !!(sel && R(sel) && R(sel).value)); });
+    SECS.forEach(([k, label]) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.secb = k; b.textContent = label;
+      b.title = 'Show or hide the ' + label.toLowerCase() + ' controls';
+      b.onclick = () => { secOpen[k] = !secOpen[k]; if (!secOpen[k]) delete secOpen[k]; store.set('img.secs', secOpen); secSync(); if (V.nv) requestAnimationFrame(() => sizeBox(IDV)); };
+      R('secs').appendChild(b); });
+    w.addEventListener('change', () => requestAnimationFrame(secSync));
+    new MutationObserver(secSync).observe(w, {attributes: true, attributeFilter: ['style'], subtree: true, childList: false});
+    requestAnimationFrame(secSync);
     R('lo').value = 0; R('hi').value = 1000;
     SCANS.forEach(s => { const o = document.createElement('option'); o.value = s.date; o.textContent = fd(s.date) + ' · ' + (s.viewing ? 'viewing only' : s.lesions.length + ' lesions'); R('scan').appendChild(o); });
     R('scan').onchange = () => load(R('scan').value).catch(() => {});   // a failed load is reported in the viewer (loadFailed)
@@ -348,7 +375,9 @@
     if (!V.scan || V.scan.date !== v.date || V.scan.sim) await load(v.date);
     if (v.tone !== undefined && !!v.tone !== !!V.tone) { V.tone = !!v.tone; store.set('img.tone', V.tone); V.R('tone').checked = V.tone; applyTone(); }
     const nv = V.nv, NV = V.NV;
-    V.disp = Object.assign({}, DDEF, v.disp || (v.single ? {layout: 'axial'} : {})); store.set('img.disp', V.disp);
+    V.disp = Object.assign({}, DDEF, v.disp || (v.single ? {layout: 'axial'} : {}));
+    if (opening && V.disp.layout === 'grid') V.disp.layout = 'auto';   // views saved with the old default open in the new one (row on wide screens, grid on tall)
+    store.set('img.disp', V.disp);
     V.el.querySelectorAll('[data-o]').forEach(c => { const k = c.dataset.o; if (c.type === 'checkbox') c.checked = !!V.disp[k]; else c.value = String(V.disp[k]); });
     V.R('op').value = v.op; nv.setOpacity(LI(), v.op / 100);
     V.cut = v.cut; V.R('cut').classList.toggle('on', V.cut); applyDisplay();
@@ -441,13 +470,14 @@
   function applyDisplay() {
     if (!V.nv) return; const nv = V.nv, NV = V.NV, d = V.disp, ST = NV.SLICE_TYPE;
     // layout
-    nv.setSliceMosaicString(''); nv.setHeroImage(0);
-    if (['grid', 'row', 'column', 'hero'].includes(d.layout)) {
+    nv.setSliceMosaicString(''); nv.setHeroImage(0); const lay = layOf(d);
+    if (['grid', 'row', 'column', 'hero'].includes(lay)) {
       nv.setSliceType(ST.MULTIPLANAR);
-      nv.setMultiplanarLayout({grid: NV.MULTIPLANAR_TYPE.GRID, row: NV.MULTIPLANAR_TYPE.ROW, column: NV.MULTIPLANAR_TYPE.COLUMN, hero: NV.MULTIPLANAR_TYPE.ROW}[d.layout]);
-      if (d.layout === 'hero') { nv.opts.heroSliceType = ST.AXIAL; nv.setHeroImage(0.6); }
-    } else if (d.layout === 'lightbox') { nv.setSliceType(ST.AXIAL); nv.setSliceMosaicString(lightboxString()); }
-    else nv.setSliceType({axial: ST.AXIAL, coronal: ST.CORONAL, sagittal: ST.SAGITTAL, render: ST.RENDER}[d.layout]);
+      nv.setMultiplanarLayout({grid: NV.MULTIPLANAR_TYPE.GRID, row: NV.MULTIPLANAR_TYPE.ROW, column: NV.MULTIPLANAR_TYPE.COLUMN, hero: NV.MULTIPLANAR_TYPE.ROW}[lay]);
+      if (lay === 'hero') { nv.opts.heroSliceType = ST.AXIAL; nv.setHeroImage(0.6); }
+    } else if (lay === 'lightbox') { nv.setSliceType(ST.AXIAL); nv.setSliceMosaicString(lightboxString()); }
+    else nv.setSliceType({axial: ST.AXIAL, coronal: ST.CORONAL, sagittal: ST.SAGITTAL, render: ST.RENDER}[lay]);
+    if (V.rowLay !== (lay === 'row')) { V.rowLay = lay === 'row'; requestAnimationFrame(() => sizeBox(IDV)); }
     // lesions filled or outlined, pixels, crosshair, labels
     // outline only = NiiVue's label outline with the fill made fully transparent (outline needs the label intent, set at load)
     nv.setAtlasOutline(d.outline === 'outline' ? 1 : 0);
@@ -679,7 +709,8 @@
   function doseAt(mm) { const w = doseVol('wash'); if (!w || !mm) return '';
     const m = DOSE.maps.find(x => x.key === V.dose.key); const v = w.getValue(...w.mm2vox(mm)); return ` · dose here ≈ ${(v / 10).toFixed(1)} ${m.unit} (estimated)`; }
   function sizeBox(id) { if (!V.el) return; const box = V.R('box');
-    const h = V.full ? Math.max(300, innerHeight - (box.getBoundingClientRect().top - V.el.getBoundingClientRect().top) - 50) : (V.size || hOf(id, PANELS[id].h0));
+    const rowH = V.rowLay && box.clientWidth ? Math.max(200, Math.round(box.clientWidth / 4) + 6) : 0;   // four views in a row: one square view tall
+    const h = V.full ? Math.max(300, innerHeight - (box.getBoundingClientRect().top - V.el.getBoundingClientRect().top) - 50) : (V.size || rowH || hOf(id, PANELS[id].h0));
     box.style.height = h + 'px'; V.R('list').style.maxHeight = (h + 30) + 'px';
     V.R('size').value = h; V.R('sizel').textContent = V.full ? 'full window' : V.size ? h + ' px' : 'panel height';
     if (V.nv) requestAnimationFrame(() => V.nv.resizeListener()); }

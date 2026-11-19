@@ -82,7 +82,7 @@
     const i = order.indexOf(k), j = order.indexOf(other); order[i] = other; order[j] = k; saveLanes(); redrawAll(); }
   function hideLane(k, h) { h ? hidden.add(k) : hidden.delete(k); saveLanes(); redrawAll(); }
   if (!document.getElementById('procCss')) { const st = document.createElement('style'); st.id = 'procCss';
-    st.textContent = '.prmv{width:17px;height:17px;padding:0;line-height:15px;font-size:11px;border-radius:4px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;flex:none}' +
+    st.textContent = '.prmv{width:14px;height:16px;padding:0;line-height:15px;font-size:11px;border-radius:4px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;flex:none}' +
       '.prmv:hover:not(:disabled){border-color:var(--line);background:var(--card);color:var(--ink)}.prmv:disabled{opacity:.25;cursor:default}';
     document.head.append(st); }
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -471,8 +471,8 @@
     const items = layerItems(), X = t => x.getPixelForValue(pos(Math.min(Math.max(t, W.a), W.b)));
     layerHits = [];
     // label in the narrow strip left of the axis (as wide as the Moments track's own margin)
-    ctx.textAlign = 'right'; ctx.font = '600 10px system-ui'; ctx.fillStyle = css('--ink'); ctx.fillText('Selected', A.left - 6, 14);
-    ctx.font = '10px system-ui'; ctx.fillStyle = css('--muted'); ctx.fillText(items.filter(i => i.kind !== 'bar').length + ' pts', A.left - 6, 27); ctx.textAlign = 'start';
+    ctx.textAlign = 'right'; ctx.font = '600 9px system-ui'; ctx.fillStyle = css('--ink'); ctx.fillText('Selected', A.left - 4, 14);
+    ctx.font = '10px system-ui'; ctx.fillStyle = css('--muted'); ctx.fillText(items.filter(i => i.kind !== 'bar').length + ' pts', A.left - 4, 27); ctx.textAlign = 'start';
     ctx.strokeStyle = css('--line'); ctx.beginPath(); ctx.moveTo(A.left, 17.5); ctx.lineTo(A.right, 17.5); ctx.stroke();
     // bars first (bottom), then visit dots (top row), fraction ticks, then procedure keyframes on the centre line
     items.filter(i => i.kind === 'bar').forEach(i => { const x0 = X(i.t), x1 = Math.max(X(i.t1), x0 + 3);

@@ -109,7 +109,7 @@ def start_tag(can_save):
     return (f"<script>window.START_VIEW={data};window.START_VIEW_CAN_SAVE={'true' if can_save else 'false'};"
             + START_SEED + "</script>").encode()
 ASK_PATHS = ("/", "/review", "/file", "/api/quick-asks", "/api/chat", "/api/conversations",
-             "/api/conversation", "/api/review")
+             "/api/conversation", "/api/review", "/api/tasks", "/api/person")
 
 
 def read_edits():

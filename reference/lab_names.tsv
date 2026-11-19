@@ -168,7 +168,7 @@ name	SpO2	SpO2	Oxygen saturation (pulse oximetry)
 name	Respirations	RR	Respiratory rate
 name	Temperature	Temp	Body temperature
 name	BMI	BMI	Body mass index
-name	Blood pressure	BP	Blood pressure (systolic / diastolic)
+name	Blood pressure	BP	Blood pressure
 token	LVOT		Left ventricular outflow tract
 token	LVIDD		Left ventricular internal diameter, diastole
 token	LVIDS		Left ventricular internal diameter, systole

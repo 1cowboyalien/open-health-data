@@ -48,6 +48,10 @@ const MRD = (() => {
   const fd = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'});
   const vnum = t => +t.split('_')[1];
   const V = t => VARS[t] || {};
+  /* each tracked variant has its own colour (V1, V2 ... in a fixed order), the same in every view and in the minimized bar */
+  const VPAL = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990', '#dcbeff', '#9a6324', '#a9a9a9', '#c0392b', '#aaffc3'];
+  const VC = t => VPAL[(vnum(t) - 1) % VPAL.length];
+  window.SIG_VCOL = VC;
   const geneTxt = t => V(t).gene ? (V(t).near ? 'near ' : '') + V(t).gene : '';
   const geneHtml = t => V(t).gene ? (V(t).near ? '<span class="ndt">near</span> ' : '') + `<i>${esc(V(t).gene)}</i>` : '';
   const effTxt = t => (V(t).effect || '') + (V(t).prot ? ' ' + V(t).prot : '');
@@ -191,9 +195,9 @@ const MRD = (() => {
     h += '<tr><th></th>' + cols.map(d => { const r = byDraw[d] || {}; return `<th data-d="${d}" class="call ${r.result === 'DETECTED' ? 'pos' : 'ndt'}">${r.result === 'DETECTED' ? r.value + ' MTM' : 'Negative'}</th>`; }).join('') + '</tr>';
     for (const t of shownT()) {
       const v = V(t);
-      h += `<tr><td class="lab" title="Variant ${vnum(t)} · ${esc(geneTxt(t))} · ${v.change_type || ''} · ${esc(effTxt(t))} · ${locTxt(t)}"><b>V${vnum(t)}</b> · ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt}${tsTag(t)}</td>` + cols.map(d => {
+      h += `<tr><td class="lab" title="Variant ${vnum(t)} · ${esc(geneTxt(t))} · ${v.change_type || ''} · ${esc(effTxt(t))} · ${locTxt(t)}"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${VC(t)}"></span><b>V${vnum(t)}</b> · ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt}${tsTag(t)}</td>` + cols.map(d => {
         const a = cell(t, d), x = a ? +a.allele_ratio : 0;
-        return x > 0 ? `<td data-d="${d}" class="c" style="background:color-mix(in srgb, ${hi} ${Math.round(alpha(x) * 100)}%, transparent);color:${alpha(x) > 0.55 ? '#fff' : 'var(--ink)'}" title="${fd(d)} · ${v.ref}>${v.alt} · ${locTxt(t)} · ${pct(x)}%">${pct(x)}</td>`
+        return x > 0 ? `<td data-d="${d}" class="c" style="background:color-mix(in srgb, ${VC(t)} ${Math.round(alpha(x) * 100)}%, transparent);color:${alpha(x) > 0.55 ? '#fff' : 'var(--ink)'}" title="${fd(d)} · ${v.ref}>${v.alt} · ${locTxt(t)} · ${pct(x)}%">${pct(x)}</td>`
                      : `<td data-d="${d}" class="c z" title="${fd(d)} · not detected">·</td>`; }).join('') + '</tr>';
     }
     h += '<tr class="cnt"><td class="lab"><b>Variants found</b></td>' + cols.map(d => `<td data-d="${d}">${posCount(d)}</td>`).join('') + '</tr>';
@@ -286,7 +290,7 @@ const MRD = (() => {
         const vis = new Set(shownT()), found = ALLELES.filter(a => vis.has(a.target_id) && +a.allele_ratio > 0), miss = ALLELES.filter(a => vis.has(a.target_id) && +a.allele_ratio === 0);
         const nofile = done.filter(r => !ADATES.includes(r.draw_date));
         cfg = {type: 'bubble', plugins: plugins(rowLabels, heads), data: {datasets: [
-          {data: found.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: rad(+a.allele_ratio), a})), backgroundColor: hi + 'cc', borderColor: hi, borderWidth: 1},
+          {data: found.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: rad(+a.allele_ratio), a})), backgroundColor: c => c.raw && c.raw.a ? VC(c.raw.a.target_id) + 'cc' : hi, borderColor: c => c.raw && c.raw.a ? VC(c.raw.a.target_id) : hi, borderWidth: 1},
           {data: miss.map(a => ({x: X(a.draw_date), y: rowOf(a.target_id), r: 2.5, a})), backgroundColor: 'transparent', borderColor: nd, borderWidth: 1},
           {data: nofile.map(r => ({x: X(r.draw_date), y: 0, r: 2.5, d: r.draw_date, v: r.value})), backgroundColor: nd, borderColor: nd, pointStyle: 'line', borderWidth: 2, rotation: 90}]},
           options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(62), clip: false,   // no extra room for big bubbles, so the plot keeps the shared edges
@@ -303,15 +307,15 @@ const MRD = (() => {
             .map(a => ({x: X(a.draw_date), y: +a.allele_ratio > 0 ? +a.allele_ratio * 100 : FLOOR, a, t: ms(a.draw_date)}))
             .flatMap((p, i, arr) => { const nx = arr[i + 1]; const gap = nx && done.some(r => !ADATES.includes(r.draw_date) && ms(r.draw_date) > p.t && ms(r.draw_date) < nx.t); return gap ? [p, {x: (p.x + nx.x) / 2, y: null}] : [p]; });
           const isOn = hoverT === t, dim = hoverT && !isOn;
-          return {type: 'line', label: 'V' + vnum(t), t, data: pts, borderColor: dim ? gridc : isOn ? hi : hi + '73', borderWidth: isOn ? 3 : 1.5, spanGaps: false,
-            pointRadius: pts.map(p => p.y === null ? 0 : p.y === FLOOR ? 2 : isOn ? 5 : 3.5), pointBackgroundColor: pts.map(p => p.y === FLOOR ? nd : dim ? gridc : hi), pointBorderWidth: 0, tension: 0, order: isOn ? 0 : 1};
+          return {type: 'line', label: 'V' + vnum(t), t, data: pts, borderColor: dim ? gridc : isOn ? VC(t) : VC(t) + 'a6', borderWidth: isOn ? 3 : 1.5, spanGaps: false,
+            pointRadius: pts.map(p => p.y === null ? 0 : p.y === FLOOR ? 2 : isOn ? 5 : 3.5), pointBackgroundColor: pts.map(p => p.y === FLOOR ? nd : dim ? gridc : VC(t)), pointBorderWidth: 0, tension: 0, order: isOn ? 0 : 1};
         });
         cfg = {type: 'line', plugins: plugins(), data: {datasets: ds}, options: {maintainAspectRatio: false, animation: false, layout: TLAY(), interaction: {mode: 'nearest', intersect: false},
           onHover: (e, els, c) => { hov(e, els, c); const t = els.length ? c.data.datasets[els[0].datasetIndex].t : null; if (t !== hoverT) { hoverT = t; setTimeout(draw, 0); } },
           plugins: {legend: {display: false}, tooltip: {callbacks: {label: tip}}},
           scales: {x: xAxis(), y: {...yw(YW), type: 'logarithmic', min: 0.0025, max: 1, grid: {color: gridc},
             afterBuildTicks: a => { a.ticks = [FLOOR, 0.01, 0.03, 0.1, 0.3, 1].map(v => ({value: v})); }, ticks: {color: css('--muted'), autoSkip: false, callback: v => v === FLOOR ? 'not found' : v + '%'}}}}};
-        R(box, 'vleg').innerHTML = hoverT ? `<span><b style="color:${hi}">V${vnum(hoverT)} · ${esc(geneTxt(hoverT))}</b> highlighted</span>` : '<span>Hover a line to highlight one variant</span>';
+        R(box, 'vleg').innerHTML = hoverT ? `<span><b style="color:${VC(hoverT)}">V${vnum(hoverT)} · ${esc(geneTxt(hoverT))}</b> highlighted</span>` : '<span>Hover a line to highlight one variant</span>';
       }
       keep(key + '#v', R(box, 'vchart').querySelector('canvas'), cfg);
     }
@@ -330,16 +334,16 @@ const MRD = (() => {
         const pts = done.map(r => { const a = mine.find(x => x.draw_date === r.draw_date);
           return a ? {x: X(r.draw_date), y: +a.allele_ratio * 100, a, k: +a.allele_ratio > 0 ? 'f' : 'n'} : {x: X(r.draw_date), y: 0, d: r.draw_date, v: r.value, k: 'u'}; });
         const last = i === tids.length - 1, card = document.createElement('div'); card.className = 'vcard';
-        card.innerHTML = `<div class="vhead"><span><b>V${vnum(t)}</b> <span class="sub">· ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt} ${(v.change_type || '').toLowerCase()} · ${esc(effTxt(t))}</span></span><span class="sub">${locHtml(t)}</span><span class="sub">found in ${nFound(t)} of ${ADATES.length} files</span>` +
+        card.innerHTML = `<div class="vhead"><span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${VC(t)}"></span><b>V${vnum(t)}</b> <span class="sub">· ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt} ${(v.change_type || '').toLowerCase()} · ${esc(effTxt(t))}</span></span><span class="sub">${locHtml(t)}</span><span class="sub">found in ${nFound(t)} of ${ADATES.length} files</span>` +
           `<span class="pk">${+peak.allele_ratio > 0 ? 'peak ' + pctS(+peak.allele_ratio) + ', ' + fd(peak.draw_date) : 'never found'}</span></div><div class="vbox" style="height:${vh + (last ? 22 : 0)}px"><canvas></canvas></div>`;
         list.appendChild(card);
         const ownMax = Math.max(...pts.map(p => p.y));
         keep(key + '#st' + t, card.querySelector('canvas'), {type: 'line', plugins: plugins(),
-          data: {datasets: [{data: pts, borderColor: hi + '99', borderWidth: 1.5, tension: 0,
+          data: {datasets: [{data: pts, borderColor: VC(t) + 'b3', borderWidth: 1.5, tension: 0,
             segment: {borderColor: s => (s.p0.raw.k === 'u' || s.p1.raw.k === 'u') ? nd + '66' : undefined, borderDash: s => (s.p0.raw.k === 'u' || s.p1.raw.k === 'u') ? [3, 3] : undefined},
             pointRadius: pts.map(p => p.k === 'f' ? 4 : p.k === 'n' ? 3 : 2), pointHoverRadius: pts.map(p => p.k === 'f' ? 6 : 4),
-            pointBackgroundColor: pts.map(p => p.k === 'f' ? hi : p.k === 'n' ? css('--card') : nd + '99'),
-            pointBorderColor: pts.map(p => p.k === 'f' ? hi : nd), pointBorderWidth: pts.map(p => p.k === 'n' ? 1.5 : 0)}]},
+            pointBackgroundColor: pts.map(p => p.k === 'f' ? VC(t) : p.k === 'n' ? css('--card') : nd + '99'),
+            pointBorderColor: pts.map(p => p.k === 'f' ? VC(t) : nd), pointBorderWidth: pts.map(p => p.k === 'n' ? 1.5 : 0)}]},
           options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(), interaction: {mode: 'nearest', axis: 'x', intersect: false},
             plugins: {legend: {display: false}, tooltip: {callbacks: {title: () => '', label: c => { const p = c.raw; return fd(p.a ? p.a.draw_date : p.d) + ': ' + (p.k === 'f' ? pctS(p.y / 100) : p.k === 'n' ? 'not found' : 'no allele file (draw reported ' + p.v + ' MTM/mL)'); }}}},
             scales: {x: xAxis(last), y: {...yw(YW), min: 0, max: sameY ? +(maxAll * 1.1).toFixed(2) : (ownMax > 0 ? undefined : 0.05), suggestedMax: ownMax * 1.15 || 0.05, grid: {color: gridc},
@@ -358,7 +362,7 @@ const MRD = (() => {
   /* ---------- the full Signatera page (One test view) ---------- */
   function page() {
     const s = $('mrd');
-    const stage = '<span class="pmove"><button data-mm="top" title="Move this panel to the top" aria-label="Move the Signatera panel to the top">⤒</button><button data-mm="-1" title="Move this panel up" aria-label="Move the Signatera panel up">↑</button><button data-mm="1" title="Move this panel down" aria-label="Move the Signatera panel down">↓</button><button data-mm="bottom" title="Move this panel to the bottom" aria-label="Move the Signatera panel to the bottom">⤓</button></span>';
+    const stage = '<span class="pmove"><button data-mm="top" title="Move this panel to the top" aria-label="Move the Signatera panel to the top">⤒</button><button data-mm="-1" title="Move this panel up" aria-label="Move the Signatera panel up">↑</button><button data-mm="1" title="Move this panel down" aria-label="Move the Signatera panel down">↓</button><button data-mm="bottom" title="Move this panel to the bottom" aria-label="Move the Signatera panel to the bottom">⤓</button></span><button data-mmin title="Minimize this panel to its title bar (click again to open it)">' + minLabel('__det') + '</button><button data-mclose title="Close this panel (bring it back with + at the top right)" aria-label="Close this panel">×</button>';
     s.classList.add('mrdp');
     s.innerHTML = `<div class="dethead" style="margin-top:16px"><div><h2>Signatera <span class="sub">ctDNA · ${esc(LAST.vendor || 'Natera')} · tumor-informed MRD test</span></h2><div class="sub" data-r="desc"></div></div>${stage}</div>
 <div class="stats" data-r="stats"></div>
@@ -368,6 +372,8 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   <div class="sub">Natera reports positions on hs37d5 (GRCh37 / hg19). GRCh38 positions come from the UCSC hg19→hg38 chain file, cross-checked with Ensembl (which also confirmed the reference base at both). Both are kept. Genes and effects: Ensembl VEP (GRCh38, one standard transcript per variant); hover an effect for the exact notation. Natera picks these mutations as trackable markers of the tumor, so most are not known cancer drivers.</div>
   <div style="overflow-x:auto;margin-top:8px"><table data-r="pos"></table></div></div>` : ''}
 <div class="card"><b>All draws</b> <span class="sub" data-r="tsub"></span><div style="overflow-x:auto"><table data-r="tbl"></table></div></div>`;
+    s.querySelector('[data-mmin]').onclick = () => setMin('__det', !isMin('__det'));
+    s.querySelector('[data-mclose]').onclick = () => setClosed('det', true);
     s.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => moveStage('__det', b.dataset.mm === 'top' || b.dataset.mm === 'bottom' ? b.dataset.mm : +b.dataset.mm));
     const o = mode === 'single' ? stageOrder() : [], i = o.indexOf('__det');
     s.querySelector('[data-mm="top"]').disabled = s.querySelector('[data-mm="-1"]').disabled = i <= 0;

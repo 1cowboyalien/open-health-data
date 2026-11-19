@@ -1,4 +1,4 @@
-"""Erica's "Tell your story" sessions: the server side of story_view.html (served by serve_viewer.py at /story).
+"""The "Tell your story" sessions (Erica first, and anyone else with a story about her journey: each session has a storyteller): the server side of story_view.html (served by serve_viewer.py at /story).
 
 Everything here answers only this Mac and the home network (VPN included); serve_viewer.py checks that first.
 Private files, all under local/story/ (never in git):
@@ -37,7 +37,7 @@ LIVE_SECONDS = 30          # a device that hasn't checked in for this long has l
 lock = threading.Lock()
 SID = re.compile(r"s-\d{8}-\d{6}-[a-z0-9]{4}$")
 PID = re.compile(r"[A-Za-z0-9_\-]{1,120}$")
-LINES = {"hello": "Hi Erica. I'm ready when you are.",
+LINES = {"hello": "Hi. I'm ready when you are.",
          "wrong": "Sorry, I didn't get that right. Tell me again, in your own words.",
          "more": "Take your time. Tell me more."}
 OPENERS = ["Tell me about this one.", "What's happening here?", "What do you remember about this one?",
@@ -46,6 +46,50 @@ OPENERS = ["Tell me about this one.", "What's happening here?", "What do you rem
 
 def now():
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+
+
+DEFAULT_TELLERS = [{"name": "Erica", "about": "Erica herself, whose story this is"},
+                   {"name": "Nina", "about": "Erica's identical twin sister"},
+                   {"name": "Dan", "about": ""}, {"name": "Kyle", "about": ""}]
+
+
+def tellers():
+    """Who can tell stories: local/story/tellers.json (Erica first), else the defaults."""
+    try:
+        t = json.load(open(os.path.join(BASE, "tellers.json")))
+        if isinstance(t, list) and t:
+            return t
+    except (OSError, ValueError):
+        pass
+    return list(DEFAULT_TELLERS)
+
+
+def teller_save(b):
+    """Add a storyteller, or change how they know Erica."""
+    name = re.sub(r"\s+", " ", str(b.get("name") or "")).strip()[:40]
+    if not re.fullmatch(r"[A-Za-z][A-Za-z .'\-]{0,39}", name):
+        raise ValueError("a name, letters only")
+    about = str(b.get("about") or "").strip()[:120]
+    with lock:
+        t = tellers()
+        cur = next((x for x in t if x["name"].lower() == name.lower()), None)
+        if cur:
+            if "about" in b:
+                cur["about"] = about
+        else:
+            t.append({"name": name, "about": about})
+        json.dump(t, open(os.path.join(BASE, "tellers.json"), "w"), indent=1, ensure_ascii=False)
+    return {"tellers": t}
+
+
+def teller_of(s):
+    return (s or {}).get("teller") or "Erica"
+
+
+def teller_line(name):
+    """How Claude should think of the person talking, from tellers.json."""
+    t = next((x for x in tellers() if x["name"] == name), {"name": name, "about": ""})
+    return "%s%s" % (name, (" (" + t["about"] + ")") if t.get("about") else " (how they know Erica isn't recorded; you may ask)")
 
 
 def settings():
@@ -68,14 +112,16 @@ def photo_data():
         hidden = set(json.load(open(os.path.join(PHOTOS, "photo_edits.json"))).get("hidden") or {})
     except (OSError, ValueError):
         hidden = set()
-    told = {}
+    told, by = {}, {}
     for f in os.listdir(STORIES) if os.path.isdir(STORIES) else []:
         if f.endswith(".json"):
             try:
-                told[f[:-5]] = len(json.load(open(os.path.join(STORIES, f))).get("stories") or [])
+                st = json.load(open(os.path.join(STORIES, f))).get("stories") or []
+                told[f[:-5]] = len(st)
+                by[f[:-5]] = sorted({x.get("teller") or "Erica" for x in st})
             except (OSError, ValueError):
                 pass
-    items = [dict(i, told=told.get(i["id"], 0)) for i in v.get("items", []) if i["id"] not in hidden]
+    items = [dict(i, told=told.get(i["id"], 0), tellers=by.get(i["id"], [])) for i in v.get("items", []) if i["id"] not in hidden]
     return {"title": v.get("title"), "teller": v.get("teller") or "Erica", "items": items,
             "chapters": v.get("chapters", []), "timeline": timeline()}
 
@@ -157,7 +203,7 @@ def sessions():
         except (KeyError, OSError, ValueError):
             continue
         drafts = s.get("drafts") or {}
-        out.append({"id": sid, "title": s["title"], "created": s["created"], "status": s["status"],
+        out.append({"id": sid, "title": s["title"], "created": s["created"], "status": s["status"], "teller": teller_of(s),
                     "updated": s.get("updated"), "pos": s["pos"], "firstPhoto": s["photos"][min(s["pos"], len(s["photos"]) - 1)] if s["photos"] else None, "count": len(s["photos"]), "done": len(s.get("done") or []),
                     "toReview": sum(1 for d in drafts.values() if d.get("status") != "approved")
                                 + sum(1 for p in s.get("done") or [] if p not in drafts and any(t["photo"] == p and t.get("text") for t in s["takes"])),
@@ -173,7 +219,11 @@ def create(b):
         raise ValueError("no photos chosen")
     sid = time.strftime("s-%Y%m%d-%H%M%S-") + secrets.token_hex(2)
     os.makedirs(path(sid, "takes")); os.makedirs(path(sid, "questions"))
-    s = {"id": sid, "title": str(b.get("title") or "Story session")[:120], "created": now(), "updated": now(),
+    names = [x["name"] for x in tellers()]
+    teller = str(b.get("teller") or "Erica")
+    if teller not in names:
+        raise ValueError("unknown storyteller: add them first")
+    s = {"id": sid, "title": str(b.get("title") or "Story session")[:120], "created": now(), "updated": now(), "teller": teller,
          "status": "new", "photos": ids, "pos": 0, "done": [], "takes": [], "questions": [], "drafts": {},
          "claude": None, "parts": 0, "live": None, "free": bool(b.get("free"))}
     save(s)
@@ -380,7 +430,7 @@ def overview():
 
 def photo_context(s, photo):
     if not photo:
-        return "No photo on screen yet: Erica is choosing what to talk about.", {}
+        return "No photo on screen yet: the storyteller is choosing what to talk about.", {}
     it = next((i for i in photo_data()["items"] if i["id"] == photo), {})
     lines = ["Photo date: %s (%s)" % ((it.get("t") or "unknown")[:16].replace("T", " "),
                                        "exact, from the camera" if it.get("sure") == "exact" else "date: " + str(it.get("sure") or "unsure")),
@@ -473,6 +523,7 @@ def ask(b):
         text = "I didn't catch that. Could you say it again?"
         return {"question": text, "audio": "cache/" + cached_line(text), "kind": "repeat"}
     ctx, it = photo_context(s, photo)
+    who = teller_of(s)
     convo = []
     qs = {q["n"]: q for q in s["questions"]}
     for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
@@ -482,12 +533,12 @@ def ask(b):
                 convo.append("Claude (recap): " + q["recap"])
             convo.append("Claude: " + q["text"])
         if t.get("correction"):
-            convo.append("[Erica said the recap was wrong; she corrects it:]")
-        convo.append("Erica: " + (t.get("text") or "(nothing heard)"))
+            convo.append("[%s said the recap was wrong, and corrects it:]" % who)
+        convo.append(who + ": " + (t.get("text") or "(nothing heard)"))
     limit = ("This photo has had %d follow-up questions; at most %d, so if this is the last one, set next instead." % (len(asked), maxq)
              if photo else "No photo yet: help her find the moment.")
-    prompt = ("[%s]\n%s\n\n[%s]\n\n[The conversation so far]\n%s\n\n[%s]"
-              % ("Photo %d of %d in this sitting" % (s["pos"] + 1, len(s["photos"])) if photo else "Erica-led talk",
+    prompt = ("[Storyteller: %s]\n[%s]\n%s\n\n[%s]\n\n[The conversation so far]\n%s\n\n[%s]"
+              % (teller_line(who), "Photo %d of %d in this sitting" % (s["pos"] + 1, len(s["photos"])) if photo else "The storyteller leads",
                  ctx, overview(), "\n".join(convo), limit))
     image = None
     if photo:
@@ -543,11 +594,11 @@ def drafts(b):
             for t in [t for t in s["takes"] if t["photo"] == p or (not t["photo"] and t.get("led_to") == p)]:
                 if t.get("question") in qs:
                     lines.append("Claude: " + qs[t["question"]]["text"])
-                lines.append("Erica: " + (t.get("text") or ""))
+                lines.append(teller_of(s) + ": " + (t.get("text") or ""))
             parts.append("PHOTO %s\n%s" % (p, "\n".join(lines)))
-        prompt = ("[End of the sitting. For each photo below, write a short title (at most 8 words, sentence case) and a caption of 1 to 4 "
-                  "sentences in Erica's own first-person words: take her sentences, drop filler (um, like, you know), "
-                  "and do not add facts, feelings or names she didn't say. Reply with JSON only: "
+        prompt = ("[End of the sitting. The storyteller was %s. For each photo below, write a short title (at most 8 words, sentence case) "
+                  "and a caption of 1 to 4 sentences in %s's own first-person words: take their sentences, drop filler (um, like, you know), "
+                  "and do not add facts, feelings or names they didn't say. Reply with JSON only: " % (teller_of(s), teller_of(s)) +
                   '{"<photo id>": {"title": "...", "caption": "..."}, ...}]\n\n' + "\n\n".join(parts))
         r = claude(prompt, s.get("claude"), None, timeout=240)
         m = re.search(r"\{.*\}", r.get("text") or "", re.S)
@@ -590,9 +641,9 @@ def approve(b):
                 turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
             words = (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or "")
             if words.strip():
-                turns.append({"who": "Erica", "text": words, "audio": "%s/takes/%s" % (sid, t["file"])})
+                turns.append({"who": teller_of(s), "text": words, "audio": "%s/takes/%s" % (sid, t["file"])})
         story = {"title": d["title"], "caption": d["caption"], "told": time.strftime("%-m/%-d/%Y"),
-                 "family_only": d["audience"] == "family", "session": sid, "turns": turns,
+                 "family_only": d["audience"] == "family", "session": sid, "turns": turns, "teller": teller_of(s),
                  "links": d.get("links") or [], "photos": d.get("photos") or []}
         os.makedirs(STORIES, exist_ok=True)
         f = os.path.join(STORIES, photo + ".json")
@@ -783,8 +834,8 @@ def practice(data, rate):
         return {"text": "", "error": "no words heard", "fix": "Check the microphone is the right one and close enough, then try again.", "timing": timing}
     t0 = time.time()
     try:
-        c = claude("[This is a practice run of the story page, to check everything works. Erica said the sentence below. "
-                   "Recap it and ask one short, light question back, as you would in a real session.]\nErica: " + text)
+        c = claude("[This is a practice run of the story page, to check everything works. Someone said the sentence below. "
+                   "Recap it and ask one short, light question back, as you would in a real session.]\nStoryteller: " + text)
         j = parse_reply(c.get("text"))
     except OSError as e:
         return {"text": text, "error": "Claude didn't answer: %s" % e, "fix": "Start the chat server on the home Mac.", "timing": timing}
@@ -828,7 +879,7 @@ def stories_list():
             continue
         p = f[:-5]
         for i, st in enumerate(read_stories(p).get("stories", [])):
-            out.append({"photo": p, "index": i, "title": st.get("title"), "caption": st.get("caption") or st.get("text"),
+            out.append({"photo": p, "index": i, "teller": st.get("teller") or "Erica", "title": st.get("title"), "caption": st.get("caption") or st.get("text"),
                         "family_only": bool(st.get("family_only")), "told": st.get("told"), "session": st.get("session"),
                         "turns": len(st.get("turns") or []), "links": len(st.get("links") or []), "photos": len(st.get("photos") or [])})
     drafts = []
@@ -841,7 +892,7 @@ def stories_list():
             d = s["drafts"].get(p) or {}
             talked = any((t["photo"] == p or t.get("led_to") == p) and (t.get("text") or "").strip() for t in s["takes"])
             if talked and d.get("status") != "approved":
-                drafts.append({"session": s["id"], "sessionTitle": s["title"], "photo": p, "title": d.get("title"),
+                drafts.append({"session": s["id"], "sessionTitle": s["title"], "teller": teller_of(s), "photo": p, "title": d.get("title"),
                                "caption": d.get("caption"), "status": d.get("status") or "not reviewed"})
     return {"stories": sorted(out, key=lambda x: x.get("told") or "", reverse=True), "drafts": drafts}
 
@@ -870,13 +921,14 @@ def story_get(photo, index=None, sid=None):
         for t in [t for t in s["takes"] if t["photo"] == photo or (not t["photo"] and t.get("led_to") == photo)]:
             if t.get("question") in qs:
                 turns.append({"who": "Claude", "text": qs[t["question"]]["text"]})
-            turns.append({"who": "Erica", "text": (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or ""),
+            turns.append({"who": teller_of(s), "text": (d.get("turn_text") or {}).get(str(t["n"]), t.get("text") or ""),
                           "audio": "%s/takes/%s" % (sid, t["file"]), "n": t["n"]})
-        return {"kind": "draft", "session": sid, "photo": photo, "title": d.get("title", ""), "caption": d.get("caption", ""),
+        return {"kind": "draft", "session": sid, "photo": photo, "teller": teller_of(s), "title": d.get("title", ""), "caption": d.get("caption", ""),
                 "family_only": d.get("audience") == "family", "turns": turns, "links": d.get("links") or [],
                 "photos": d.get("photos") or [], "status": d.get("status") or "draft"}
     st = read_stories(photo)["stories"][int(index)]
-    return dict(st, kind="story", photo=photo, index=int(index), links=st.get("links") or [], photos=st.get("photos") or [])
+    return dict(st, kind="story", photo=photo, index=int(index), links=st.get("links") or [], photos=st.get("photos") or [],
+                teller=st.get("teller") or "Erica")
 
 
 def story_save(b):

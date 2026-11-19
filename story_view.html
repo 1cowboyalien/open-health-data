@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tell your story</title>
-<!-- Erica's story sessions. Served by serve_viewer.py at /story (this Mac and the home network only); server side in story.py.
+<!-- Story sessions: Erica first, and anyone with a memory of her journey (each session has a storyteller). Served by serve_viewer.py at /story (this Mac and the home network only); server side in story.py.
      She sees a photo, talks; her answer is recorded (WAV, kept), turned into text on the home Mac, and Claude asks one spoken
      follow-up question. Captions are reviewed at the end. Pause and pick up on any device at home or on the VPN. -->
 <style>
@@ -72,6 +72,8 @@ async function api(path, body, raw) {
 const log = (ev, x) => S && api('log', {id: S.id, events: [Object.assign({ev, client: Date.now()}, x || {})]}).catch(() => {});
 
 let D = null, BY = {}, S = null, screen = 'home', err = '';
+let TELLERS = [], TELL = LS.get('teller', 'Erica');   // who is telling stories on this computer right now
+const toldBy = (i, who) => (i.tellers || []).includes(who);
 const ITEM = id => BY[id] || {};
 const day = t => (t || '').slice(0, 10);
 const fmtDate = t => { if (!t) return 'date unknown'; const d = new Date(t.slice(0, 10) + 'T12:00'); return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}); };
@@ -330,31 +332,32 @@ const thumb = id => `<img src="/photos/thumb/${encodeURIComponent(id)}.jpg" alt=
 function drawLib() {
   if (!LIB) { app.innerHTML = '<div class="card">Loading your stories…</div>'; loadLib().then(drawLib).catch(e => { app.innerHTML = '<p class="err">' + esc(e.message) + '</p>'; }); return; }
   const chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title));
-  const told = D.items.filter(i => i.told).length;
+  const told = D.items.filter(i => toldBy(i, TELL)).length;
   app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Your stories</h2><button id="back">← Back</button></div>
-  <div class="card"><b>Progress</b> <span class="sub">${told} of ${D.items.length} photos have a story. Click a chapter to see its photos.</span>
-    ${chs.map((c, k) => { const all = D.items.filter(i => i.chapter === c.title), n = all.filter(i => i.told).length;
+  <div class="card"><b>Progress for ${esc(TELL)}</b> <span class="sub">${told} of ${D.items.length} photos have a story from ${esc(TELL)} (${D.items.filter(i => i.told).length} from anyone). Click a chapter to see its photos. Change who's telling on the start screen.</span>
+    ${chs.map((c, k) => { const all = D.items.filter(i => i.chapter === c.title), n = all.filter(i => toldBy(i, TELL)).length;
       return `<div class="lib" style="grid-template-columns:minmax(0,1fr) 160px auto;cursor:pointer" data-ch="${k}"><div>${esc(c.title)}</div><div class="row"><div class="bar2"><i style="width:${Math.round(n / all.length * 100)}%"></i></div><span class="sub">${n}/${all.length}</span></div><span class="sub">${libOpen === k ? '▾' : '▸'}</span></div>
-      ${libOpen === k ? `<div class="sub">✓ = has a story (click to edit it) · no mark = not told yet (click to tell it)</div><div class="grid">${all.sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => `<div class="g" data-ph="${esc(i.id)}" title="${esc(fmtDate(i.t))}">${thumb(i.id)}${i.told ? '<span class="ck2">✓</span>' : ''}</div>`).join('')}</div>
-        <div class="row" style="margin-bottom:8px"><button class="pri" data-untold="${k}">Tell the ${all.length - n} untold ones</button></div>` : ''}`; }).join('')}</div>
+      ${libOpen === k ? `<div class="sub">✓ = ${esc(TELL)} told it (click to edit) · no mark = not told by ${esc(TELL)} yet (click to tell it)</div><div class="grid">${all.sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => `<div class="g" data-ph="${esc(i.id)}" title="${esc(fmtDate(i.t))}">${thumb(i.id)}${toldBy(i, TELL) ? '<span class="ck2">✓</span>' : ''}</div>`).join('')}</div>
+        <div class="row" style="margin-bottom:8px"><button class="pri" data-untold="${k}">${esc(TELL)}: tell the ${all.length - n} untold ones</button></div>` : ''}`; }).join('')}</div>
   ${LIB.drafts.length ? `<div class="card"><b>Waiting for review</b> <span class="sub">talked about, not saved to the gallery yet</span>
-    ${LIB.drafts.map(d => `<div class="lib">${thumb(d.photo)}<div><div>${esc(d.title || 'No title yet')}</div><div class="sub">${esc(d.sessionTitle)} · ${esc(d.status)}${d.caption ? ' · ' + esc(d.caption.slice(0, 90)) : ''}</div></div>
+    ${LIB.drafts.map(d => `<div class="lib">${thumb(d.photo)}<div><div>${esc(d.title || 'No title yet')} <span class="pill">🗣 ${esc(d.teller || 'Erica')}</span></div><div class="sub">${esc(d.sessionTitle)} · ${esc(d.status)}${d.caption ? ' · ' + esc(d.caption.slice(0, 90)) : ''}</div></div>
       <div class="row"><button class="pri" data-ed="d|${esc(d.session)}|${esc(d.photo)}">Edit</button><button data-rev="${esc(d.session)}">Review session</button></div></div>`).join('')}</div>` : ''}
   <div class="card"><b>Saved stories</b> <span class="sub">what the gallery shows</span>
-    ${LIB.stories.length ? LIB.stories.map(x => `<div class="lib">${thumb(x.photo)}<div><div>${esc(x.title || 'No title')}${x.family_only ? ' <span class="pill">family only</span>' : ''}</div>
+    ${LIB.stories.length ? LIB.stories.map(x => `<div class="lib">${thumb(x.photo)}<div><div>${esc(x.title || 'No title')} <span class="pill">🗣 ${esc(x.teller || 'Erica')}</span>${x.family_only ? ' <span class="pill">family only</span>' : ''}</div>
       <div class="sub">${esc((x.caption || '').slice(0, 120))}</div><div class="sub">told ${esc(x.told || '')} · ${x.turns} parts${x.links ? ' · ' + x.links + ' links' : ''}${x.photos ? ' · ' + x.photos + ' more photos' : ''}</div></div>
       <div class="row"><button class="pri" data-ed="s|${esc(x.photo)}|${x.index}">Edit</button></div></div>`).join('') : '<p class="sub">None yet. Approved stories appear here.</p>'}</div>
   <div class="card"><b>Sessions</b>
-    ${HOME.sessions.length ? HOME.sessions.map(x => `<div class="lib">${x.firstPhoto ? thumb(x.firstPhoto) : '<div></div>'}<div><div>${esc(x.title)}</div><div class="sub">${esc(x.status)} · ${x.done} of ${x.count} photos${x.toReview ? ' · ' + x.toReview + ' to review' : ''} · ${esc((x.updated || '').replace('T', ' ').slice(0, 16))}</div></div>
+    ${HOME.sessions.length ? HOME.sessions.map(x => `<div class="lib">${x.firstPhoto ? thumb(x.firstPhoto) : '<div></div>'}<div><div>${esc(x.title)} <span class="pill">🗣 ${esc(x.teller || 'Erica')}</span></div><div class="sub">${esc(x.status)} · ${x.done} of ${x.count} photos${x.toReview ? ' · ' + x.toReview + ' to review' : ''} · ${esc((x.updated || '').replace('T', ' ').slice(0, 16))}</div></div>
       <div class="row">${x.status !== 'ended' ? `<button data-go="${x.id}">Continue</button>` : ''}<button data-rev="${x.id}">Review</button></div></div>`).join('') : '<p class="sub">No sessions yet.</p>'}</div>`;
   $('#back').onclick = () => { screen = 'home'; LIB = null; loadHome(); };
   app.querySelectorAll('[data-ch]').forEach(r => r.onclick = () => { libOpen = libOpen === +r.dataset.ch ? null : +r.dataset.ch; drawLib(); });
   app.querySelectorAll('[data-ph]').forEach(g => g.onclick = async () => { const i = ITEM(g.dataset.ph);
-    if (i.told) return openEditor({kind: 'story', photo: i.id, index: 0});
-    const r = await api('sessions', {title: 'One photo: ' + fmtDate(i.t), photos: [i.id]}); begin(r.id); });
+    const mine = LIB.stories.find(x => x.photo === i.id && x.teller === TELL);
+    if (mine) return openEditor({kind: 'story', photo: i.id, index: mine.index});
+    const r = await api('sessions', {title: 'One photo: ' + fmtDate(i.t), photos: [i.id], teller: TELL}); begin(r.id); });
   app.querySelectorAll('[data-untold]').forEach(b => b.onclick = async () => { const c = chs[+b.dataset.untold];
-    const ids = D.items.filter(i => i.chapter === c.title && !i.told).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id);
-    if (ids.length) { const r = await api('sessions', {title: c.title, photos: ids}); begin(r.id); } });
+    const ids = D.items.filter(i => i.chapter === c.title && !toldBy(i, TELL)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id);
+    if (ids.length) { const r = await api('sessions', {title: c.title, photos: ids, teller: TELL}); begin(r.id); } });
   app.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { const [k, a, c] = b.dataset.ed.split('|');
     openEditor(k === 'd' ? {kind: 'draft', session: a, photo: c} : {kind: 'story', photo: a, index: +c}); });
   app.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => { S = (await api('session?id=' + b.dataset.rev)).session; screen = 'review'; draw(); loadDrafts(); });
@@ -377,12 +380,12 @@ function edCollect() {
 function drawEditor() {
   const it = ITEM(ED.photo), er = ED.turns.filter(x => x.who !== 'Claude');
   const day0 = pickDay || day(it.t), near = D.items.filter(i => i.id !== ED.photo && i.t && Math.abs(Date.parse(day(i.t)) - Date.parse(day0)) <= 7 * 864e5).sort((a, b) => (a.t || '').localeCompare(b.t || ''));
-  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">${ED.kind === 'draft' ? 'Edit draft' : 'Edit story'}</h2><span class="row"><span class="sub" id="esaved"></span><button id="eback">← Your stories</button></span></div>
+  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">${ED.kind === 'draft' ? 'Edit draft' : 'Edit story'} <span class="pill">🗣 ${esc(ED.teller || 'Erica')}</span></h2><span class="row"><span class="sub" id="esaved"></span><button id="eback">← Your stories</button></span></div>
   <div class="card"><div class="rv" style="border:0;padding:0"><div>${thumb(ED.photo)}<div class="sub">${esc(fmtDate(it.t))}</div></div><div>
     <input type="text" id="etitle" placeholder="Title" value="${esc(ED.title || '')}" style="width:100%;margin-bottom:6px">
-    <textarea id="ecap" placeholder="Caption, in her words">${esc(ED.caption || '')}</textarea>
+    <textarea id="ecap" placeholder="Caption, in ${esc(ED.teller || 'Erica')}'s words">${esc(ED.caption || '')}</textarea>
     <div class="row" style="margin-top:6px"><button class="au ${ED.family_only ? '' : 'on'}" data-a="0">Everyone</button><button class="au ${ED.family_only ? 'on' : ''}" data-a="1">Family only</button></div></div></div></div>
-  <div class="card"><b>Her words</b> <span class="sub">fix any words the computer got wrong; the recordings stay as they are</span>
+  <div class="card"><b>${esc(ED.teller || 'Erica')}'s words</b> <span class="sub">fix any words the computer got wrong; the recordings stay as they are</span>
     ${ED.turns.map(x => x.who === 'Claude' ? `<div class="sub" style="margin:10px 0 2px"><i>Claude: ${esc(x.text)}</i></div>` :
       `<div style="margin:6px 0">${x.audio ? `<audio controls preload="none" src="/story/audio/${esc(x.audio)}" style="height:32px;width:100%;max-width:420px"></audio>` : ''}
        <textarea class="eturn" data-i="${er.indexOf(x)}" style="min-height:60px;font-size:15px">${esc(x.text || '')}</textarea></div>`).join('') || '<p class="sub">No recordings for this story.</p>'}</div>
@@ -404,7 +407,7 @@ function drawEditor() {
   $('#eaddrec').onclick = () => { edCollect(); ED.links.push({label: 'Her records around ' + fmtDate(it.t), url: '/labs.html#date=' + day(it.t)}); drawEditor(); };
   app.querySelectorAll('[data-pick]').forEach(g => g.onclick = () => { edCollect(); const id = g.dataset.pick; ED.photos = ED.photos.includes(id) ? ED.photos.filter(x => x !== id) : ED.photos.concat(id); drawEditor(); });
   $('#eday').onchange = e => { edCollect(); pickDay = e.target.value; drawEditor(); };
-  $('#emore').onclick = async () => { await save(); const r = await api('sessions', {title: 'More about ' + fmtDate(it.t), photos: [ED.photo]}); begin(r.id); };
+  $('#emore').onclick = async () => { await save(); const r = await api('sessions', {title: 'More about ' + fmtDate(it.t), photos: [ED.photo], teller: ED.teller || 'Erica'}); begin(r.id); };
   if ($('#eapprove')) $('#eapprove').onclick = async () => { await save(); await api('approve', {id: ED.session, photo: ED.photo, title: ED.title, caption: ED.caption, audience: ED.family_only ? 'family' : 'everyone'}); screen = 'library'; LIB = null; drawLib(); };
   if ($('#edel')) $('#edel').onclick = async () => { if (!confirm('Take this story off the gallery? A copy is kept on the home Mac, and the recordings stay.')) return;
     await api('story-delete', {photo: ED.photo, index: ED.index}); screen = 'library'; LIB = null; drawLib(); };
@@ -458,7 +461,7 @@ function drawCheck() {
   const canRec = !!(navigator.mediaDevices && window.MediaRecorder && (window.AudioContext || window.webkitAudioContext));
   const H = HEALTH ? HEALTH.checks : [];
   app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Ready check</h2><button id="back">← Back</button></div>
-  <p class="sub">Everything below should be ✓ before Erica starts, so the session is about her story, not about technology. Fix the ✗ items; ! items work but could be better.</p>
+  <p class="sub">Everything below should be ✓ before a session starts, so it's about the story, not about technology. Fix the ✗ items; ! items work but could be better.</p>
   <div class="card"><b>The home Mac</b> <span class="sub">${HEALTH ? 'checked ' + esc((HEALTH.at || '').slice(11, 16)) : 'checking…'}</span>
     ${H.map(c => ckRow(c.label, c.ok, c.detail, c.fix, '', c.action)).join('') || ckRow('Checking the home Mac…', undefined)}
     <div class="row" style="margin-top:8px"><button id="recheck">Check again</button></div></div>
@@ -551,7 +554,9 @@ function draw() {
   if (screen === 'edit') return drawEditor();
 }
 
-async function loadHome() { app.innerHTML = '<div class="card">Loading…</div>'; try { HOME = await api('sessions'); } catch (e) { err = e.message; HOME = {sessions: []}; } drawHome();
+async function loadHome() { app.innerHTML = '<div class="card">Loading…</div>'; try { HOME = await api('sessions'); TELLERS = (await api('tellers')).tellers; } catch (e) { err = e.message; HOME = HOME || {sessions: []}; }
+  if (!TELLERS.some(t => t.name === TELL)) { TELL = (TELLERS[0] || {name: 'Erica'}).name; LS.set('teller', TELL); }
+  drawHome();
   if (!HEALTH) { await loadHealth(); if (screen === 'home') drawHome(); } }
 let HOME = {sessions: []};
 function drawHome() {
@@ -560,17 +565,22 @@ function drawHome() {
   const chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title));
   app.innerHTML = `<div class="top" style="margin-bottom:0"><h1 style="font-weight:500;margin:6px 0 2px">Tell your story</h1><button class="big" id="lib">📚 Your stories</button></div><div class="sub">Look at a photo, talk about it, and Claude asks you about it, out loud. Everything stays on the home computer.</div>
   ${err ? `<p class="err">${esc(err)}</p>` : ''}
+  <div class="card"><div class="row" style="justify-content:space-between"><b>Who's telling?</b><span class="sub">Erica's story first, and anyone with a memory of her journey</span></div>
+    <div class="row" style="margin-top:8px">${TELLERS.map(t => `<button class="${t.name === TELL ? 'pri' : ''}" data-tell="${esc(t.name)}" style="font-size:17px">${t.name === TELL ? '🗣 ' : ''}${esc(t.name)}</button>`).join('')}
+      <button id="addtell">+ Someone else</button></div>
+    <div class="row" style="margin-top:8px"><span class="sub">How ${esc(TELL)} knows Erica:</span><input type="text" id="tellabout" value="${esc((TELLERS.find(t => t.name === TELL) || {}).about || '')}" placeholder="e.g. her husband, her friend from work" style="flex:1;min-width:200px"><button id="savetell">Save</button></div>
+    <div id="newtell"></div></div>
   ${(() => { const r = readySummary(); return `<div class="card" style="border-color:${r.ok && r.tested ? 'var(--ok)' : r.bad.length ? 'var(--red)' : 'var(--line)'}"><div class="row" style="justify-content:space-between">
      <div><b>${!HEALTH ? 'Checking the setup…' : r.bad.length ? '✗ Not ready yet: ' + esc(r.bad.join(', ')) : r.tested ? '✓ Ready: everything checked and the practice run worked' : '✓ The home Mac is ready. Do a practice run on this computer before starting.'}</b>
      <div class="sub">A quick check of the microphone, speakers, connection and the whole loop, so nothing technical gets in the way of the story.</div></div>
      <button class="${r.ok && r.tested ? '' : 'pri'}" id="ready">${r.bad.length ? 'Fix it: Ready check →' : 'Ready check'}</button></div></div>`; })()}
   ${open.length ? `<div class="card"><b>Pick up where you left off</b>${open.map(s => `<div class="rv" style="grid-template-columns:80px minmax(0,1fr) auto;align-items:center">
       <img src="/photos/thumb/${encodeURIComponent(s.firstPhoto || '')}.jpg" alt="" onerror="this.style.visibility='hidden'" style="width:80px">
-      <div><div>${esc(s.title)}</div><div class="sub">${s.status === 'active' && s.live ? 'Open on ' + esc(s.live.name || 'a device') : s.status === 'new' ? 'Not started' : 'Paused'} · ${s.done} of ${s.count} photos${s.toReview ? ' · ' + s.toReview + ' to review' : ''} · ${esc((s.updated || '').replace('T', ' ').slice(0, 16))}</div></div>
+      <div><div>${esc(s.title)} <span class="pill">🗣 ${esc(s.teller || 'Erica')}</span></div><div class="sub">${s.status === 'active' && s.live ? 'Open on ' + esc(s.live.name || 'a device') : s.status === 'new' ? 'Not started' : 'Paused'} · ${s.done} of ${s.count} photos${s.toReview ? ' · ' + s.toReview + ' to review' : ''} · ${esc((s.updated || '').replace('T', ' ').slice(0, 16))}</div></div>
       <div class="row"><button class="pri" data-go="${s.id}">Continue</button>${s.toReview ? `<button data-rev="${s.id}">Review</button>` : ''}</div></div>`).join('')}</div>` : ''}
   <div class="card"><b>Start a new session</b><div class="row" style="margin-top:8px">
-    <select id="ch">${chs.map(c => { const all = D.items.filter(i => i.chapter === c.title), left = all.filter(i => !i.told).length; return `<option value="${esc(c.title)}">${esc(c.title)} (${left} of ${all.length} not told yet)</option>`; }).join('')}</select>
-    <label class="sub"><input type="checkbox" id="untold" checked> Only photos without a story yet</label>
+    <select id="ch">${chs.map(c => { const all = D.items.filter(i => i.chapter === c.title), left = all.filter(i => !toldBy(i, TELL)).length; return `<option value="${esc(c.title)}">${esc(c.title)} (${left} of ${all.length} not told yet by ${esc(TELL)})</option>`; }).join('')}</select>
+    <label class="sub"><input type="checkbox" id="untold" checked> Only photos ${esc(TELL)} hasn't told yet</label>
     <button class="big pri" id="start">Start</button></div>
     <div class="row" style="margin-top:12px"><button class="big" id="free">Or start by telling a story</button><span class="sub">You say what you want to talk about; Claude finds the photos and records from then.</span></div></div>
   <div class="card"><b>Before you start</b>
@@ -584,6 +594,11 @@ function drawHome() {
   $('#film').onchange = e => LS.set('filming', e.target.checked);
   $('#ready').onclick = () => { screen = 'check'; draw(); };
   $('#lib').onclick = () => { screen = 'library'; LIB = null; draw(); };
+  app.querySelectorAll('[data-tell]').forEach(b => b.onclick = () => { TELL = b.dataset.tell; LS.set('teller', TELL); err = ''; drawHome(); });
+  $('#savetell').onclick = async () => { try { TELLERS = (await api('tellers', {name: TELL, about: $('#tellabout').value})).tellers; $('#savetell').textContent = 'Saved ✓'; } catch (e) { err = e.message; drawHome(); } };
+  $('#addtell').onclick = () => { $('#newtell').innerHTML = `<div class="row" style="margin-top:8px"><input type="text" id="ntname" placeholder="Name" style="width:160px"><input type="text" id="ntabout" placeholder="How they know Erica (e.g. her friend from work)" style="flex:1;min-width:220px"><button class="pri" id="ntsave">Add</button></div>`;
+    $('#ntsave').onclick = async () => { try { TELLERS = (await api('tellers', {name: $('#ntname').value, about: $('#ntabout').value})).tellers; TELL = TELLERS[TELLERS.length - 1].name;
+      const want = $('#ntname').value.trim().toLowerCase(); const t = TELLERS.find(x => x.name.toLowerCase() === want); if (t) TELL = t.name; LS.set('teller', TELL); err = ''; drawHome(); } catch (e) { err = e.message; drawHome(); } }; $('#ntname').focus(); };
   $('#autoend').onchange = e => LS.set('autoEnd', e.target.checked);
   $('#hear').onclick = testVoice;
   $('#test').onclick = async () => { try { const g = await openMic(); fillMics(); if (A.fallback) { err = A.fallback; drawHome(); }
@@ -593,14 +608,14 @@ function drawHome() {
   app.querySelectorAll('[data-go]').forEach(b => { const go = b.onclick; b.onclick = () => notReady() || go(); });
   $('#start').onclick = async () => { if (notReady()) return;
     const ch = $('#ch').value, untold = $('#untold').checked;
-    const ids = D.items.filter(i => i.chapter === ch && (!untold || !i.told)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id);
+    const ids = D.items.filter(i => i.chapter === ch && (!untold || !toldBy(i, TELL))).sort((a, b) => (a.t || '').localeCompare(b.t || '')).map(i => i.id);
     if (!ids.length) { err = 'Every photo in that chapter already has a story. Untick "Only photos without a story yet" to go through them again.'; return drawHome(); }
-    try { const r = await api('sessions', {title: ch, photos: ids}); begin(r.id); } catch (e) { err = e.message; drawHome(); }
+    try { const r = await api('sessions', {title: ch, photos: ids, teller: TELL}); begin(r.id); } catch (e) { err = e.message; drawHome(); }
   };
-  $('#free').onclick = async () => { if (notReady()) return; try { const r = await api('sessions', {title: 'Your choice of stories', photos: [], free: true}); begin(r.id); } catch (e) { err = e.message; drawHome(); } };
+  $('#free').onclick = async () => { if (notReady()) return; try { const r = await api('sessions', {title: TELL + "'s choice of stories", photos: [], free: true, teller: TELL}); begin(r.id); } catch (e) { err = e.message; drawHome(); } };
   fillMics();
 }
-async function testVoice() { try { const r = await api('voice'); await play(r.audio); } catch (e) { err = 'Voice: ' + e.message; drawHome(); } }
+async function testVoice() { try { const r = await api('voice?name=' + encodeURIComponent(TELL)); await play(r.audio); } catch (e) { err = 'Voice: ' + e.message; drawHome(); } }
 async function fillMics() {
   const sel = $('#mic'); if (!sel || !navigator.mediaDevices) return;
   const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
@@ -618,7 +633,7 @@ function drawMain() {
   if (it.t) { REC.from = day(it.t); REC.to = day(it.t); REC.why = REC.why === 'you chose' ? REC.why : ''; }
   const media = !id ? `<div class="nophoto"><div style="font-size:22px">What would you like to talk about?</div><div class="sub">Tell Claude about a day, a moment, anything. It finds your photos and records from then.</div></div>` : it.kind === 'video' ? `<video src="/photos/web/${encodeURIComponent(id)}.${it.ext}" controls playsinline poster="/photos/thumb/${encodeURIComponent(id)}.jpg"></video>`
                                     : `<img src="/photos/web/${encodeURIComponent(id)}.jpg" alt="">`;
-  app.innerHTML = `<div class="top"><span class="sub">${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
+  app.innerHTML = `<div class="top"><span class="sub"><span class="pill" style="color:var(--ink)">🗣 ${esc(S.teller || 'Erica')} telling</span> ${esc(S.title)}${id ? ` · photo ${S.pos + 1} of ${S.photos.length}${ser.length ? ` · series of ${ser.length}` : ''} · <b style="color:var(--ink)">${esc(fmtDate(it.t))}</b>` : ' · you lead'}</span>
     <span class="row"><span class="pill" style="display:inline-flex;gap:6px;align-items:center">🎤 <select id="micsel" style="max-width:190px;padding:2px 6px;font-size:13px"><option>${esc(A.label || 'Default')}</option></select><span class="meter" style="width:60px;height:6px"><i id="miclvl"></i></span></span><span class="pill" id="rec" style="color:var(--red)">● Recording</span><span class="pill" id="clk" style="font-variant-numeric:tabular-nums"></span><button id="pause">❚❚ Pause</button></span></div>
   <div class="stage"><div><div id="micstate"></div><div id="photo">${media}</div>
   ${ser.length ? `<div class="row" style="justify-content:space-between"><span class="sub">${showSeries ? '✓ = already talked about' : ''}</span><label class="sub"><input type="checkbox" id="ser" ${showSeries ? 'checked' : ''}> Show the series</label></div>
@@ -683,21 +698,21 @@ async function loadDrafts() {
 function drawReview() {
   const ps = S.photos.filter(p => S.drafts[p] || S.takes.some(t => t.photo === p && t.text));
   const left = ps.filter(p => (S.drafts[p] || {}).status !== 'approved');
-  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Your stories: ${esc(S.title)}</h2><span class="sub">${left.length} to review</span></div>
+  app.innerHTML = `<div class="top"><h2 style="font-weight:500;margin:0">Stories from ${esc(S.teller || 'Erica')}: ${esc(S.title)}</h2><span class="sub">${left.length} to review</span></div>
   ${err ? `<p class="err">${esc(err)}</p>` : ''}<div id="drafts"></div>
   <div class="ctr"><button class="big pri" id="all" ${left.length ? '' : 'disabled'}>Approve all</button><button id="later">Save for later</button><button id="home">Done</button>
   <a class="sub" href="/story/api/markers.csv?id=${S.id}" style="align-self:center">Video markers (.csv)</a></div>`;
   $('#drafts').innerHTML = ps.length ? ps.map(p => { const d = S.drafts[p] || {}, it = ITEM(p), tk = S.takes.filter(t => t.photo === p);
     return `<div class="rv" data-p="${esc(p)}"><div><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt=""><div class="sub">${esc(fmtDate(it.t))}</div></div><div>
       <input type="text" class="ti" placeholder="Title" value="${esc(d.title || '')}" style="width:100%;margin-bottom:6px">
-      <textarea class="ca" placeholder="Caption, in your words">${esc(d.caption || '')}</textarea>
+      <textarea class="ca" placeholder="Caption, in ${esc(S.teller || 'Erica')}'s words">${esc(d.caption || '')}</textarea>
       <div class="recs1" style="margin-top:8px">${tk.map((t, i) => `<div class="row" style="margin:4px 0;align-items:center"><span class="sub" style="min-width:110px">Recording ${i + 1}${t.seconds ? ' · ' + Math.floor(t.seconds / 60) + ':' + String(Math.round(t.seconds % 60)).padStart(2, '0') : ''}</span>
         <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:32px;flex:1;min-width:200px;max-width:420px"></audio>
         <span class="sub" style="flex-basis:100%;margin-left:0">${esc((t.text || '(no words)').slice(0, 140))}${(t.text || '').length > 140 ? '…' : ''}</span></div>`).join('')}</div>
       <div class="row" style="margin-top:6px">
         <button class="au ${d.audience !== 'family' ? 'on' : ''}" data-a="everyone">Everyone</button><button class="au ${d.audience === 'family' ? 'on' : ''}" data-a="family">Family only</button>
         ${d.status === 'approved' ? '<span style="color:var(--ok)">✓ Approved</span> <button class="eded">Edit, add links or photos</button>' : '<button class="ap pri">✓ Approve</button> <button class="eded">More: links, photos, fix words</button>'}</div>
-      <details class="sub" style="margin-top:6px"><summary>The whole conversation</summary>${tk.map(t => { const q = S.questions.find(q => q.n === t.question); return (q ? `<div><i>Claude: ${esc(q.text)}</i></div>` : '') + `<div>Erica: ${esc(t.text || '(no words)')}</div>`; }).join('')}</details>
+      <details class="sub" style="margin-top:6px"><summary>The whole conversation</summary>${tk.map(t => { const q = S.questions.find(q => q.n === t.question); return (q ? `<div><i>Claude: ${esc(q.text)}</i></div>` : '') + `<div>${esc(S.teller || 'Erica')}: ${esc(t.text || '(no words)')}</div>`; }).join('')}</details>
     </div></div>`; }).join('') : '<p class="sub">No stories recorded in this session yet.</p>';
   app.querySelectorAll('.rv').forEach(row => {
     const p = row.dataset.p, d = S.drafts[p] = S.drafts[p] || {};

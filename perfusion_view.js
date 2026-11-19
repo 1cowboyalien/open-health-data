@@ -135,6 +135,7 @@
                 : r[k + '_position'] ? ['⚠ the offset between this perfusion scan and the T1 could not be measured: the value may sit a few mm off'] : [],
               r[k + '_vessel'] ? ['⚠ ' + (WHY[r[k + '_vessel_why']] || WHY.ring) + ' (ring ' + x2(r[k + '_ring_ratio']) + '), so this value is mostly not the lesion\'s own'] : [],
               r.small ? ['small: only a few perfusion pixels, noisy'] : [],
+              k === 'rcbv' && r.rcbv_source && !/MD Anderson/.test(r.rcbv_source) ? ['⚠ ' + r.rcbv_source + ' (our method reads ~10% lower than MD Anderson\'s map, more for high values)'] : [],
               k === 'rcbv' && r.ktrans_mean != null ? ['DCE leakiness (Ktrans) ' + (r.ktrans_mean / r.ktrans_normal).toFixed(0) + '× normal brain'] : []); }}}},
         scales: {x: xAxis(), y: {min: 0, max: Math.ceil(ymax), afterFit: s => { s.width = typeof YW === 'number' ? YW : s.width; },
           title: {display: true, text: V.ref === 'near' ? '× nearby brain' : '× normal brain', color: css('--muted')}, ticks: {color: css('--muted'), callback: v => v + '×'}, grid: {color: css('--line')}}}}}));

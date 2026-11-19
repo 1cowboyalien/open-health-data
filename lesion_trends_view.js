@@ -13,8 +13,9 @@
                       months: amber date lines in every panel) are shared with the other imaging panels (projection_dates.js);
                       switching it on lengthens the axis when it stops short (navigation bar: Future)
    Everything about the patient comes from IMG_DATA.lesion_series and IMG_DATA.growth, never from this code.
-   Data used: lesion_series.lesions [{id,name,rgb}], measured [{lesion,date,enh_mm3,axial_mm,field,seq,seq_name,lo,hi,conf,flags,alt?,none?,note?}]
-              (lo/hi = likely range, conf = ok|low, flags = cut/shared/faint/tiny, alt = a second series of the same visit; volumetry/quality.py),
+   Data used: lesion_series.lesions [{id,name,rgb}], measured [{lesion,date,enh_mm3,axial_mm,field,seq,seq_name,lo,hi,conf,flags,alt?,none?,note?,range_why?}]
+              (lo/hi = likely range, conf = ok|low, flags = cut/shared/faint/tiny, alt = a second series of the same visit; volumetry/quality.py;
+              note = a line for that point's tooltip, range_why = what its range covers when that is more than the seed's place),
               treatments [{start,end,treatment,lesions,confidence}]; brain_mri [{date,partial}] for partial scans;
               unmeasured [{date,hospital,field,why,needs,report}] = brain MRIs with no measured point (drawn as a grey diamond on a dotted
               line at the scan's date, so no scan is silently absent); not_outlined {date: [ids]} = lesions the report describes on a
@@ -56,7 +57,7 @@
       '.ltr-b.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}' +
       '.ltr-chip{font-size:11px;padding:0 7px;border-radius:9px;border:2px solid;background:transparent;cursor:pointer;font-weight:600}.ltr-chip.off{opacity:.35;border-style:dashed}' +
       '.ltr-tbl{border-collapse:collapse;font-size:11.5px;margin-top:6px}.ltr-tbl td,.ltr-tbl th{padding:2px 8px;border-bottom:1px solid var(--line);text-align:right}.ltr-tbl th{color:var(--ink2);font-weight:600}.ltr-tbl td:first-child,.ltr-tbl th:first-child{text-align:left}' +
-      '.ltr-up{color:#e34948}.ltr-dn{color:#1baf7a}.ltr-chip small{font-weight:500;margin-left:4px;font-size:10px}' +
+      '.ltr-nw td,.ltr-nw th{white-space:nowrap}.ltr-tbl.ltr-nar td,.ltr-tbl.ltr-nar th{padding:2px 4px}.ltr-tbl.ltr-nar td{vertical-align:middle}.ltr-up{color:#e34948}.ltr-dn{color:#1baf7a}.ltr-chip small{font-weight:500;margin-left:4px;font-size:10px}' +
       '.ltr-per td{vertical-align:top}.ltr-per td small{display:block;color:var(--muted);font-size:10px}.ltr-per .tg{color:#6250d6;font-weight:700}.ltr-per td.na{color:var(--muted)}';
     document.head.append(st); }
 
@@ -146,8 +147,13 @@
         (unclear ? '\nNo clear change: the likely ranges of the volumes behind this rate overlap' : '') + (lf.weak ? '\n' + WARN + ' read loosely: ' + whyTxt(lf) : '')};
   }
   /* hover-box text: long sentences from the data are wrapped by hand (the chart library does not wrap) */
-  const wrapLines = (t, n = 76) => { const out = []; let line = ''; String(t).split(/\s+/).forEach(w => { if (line && (line + ' ' + w).length > n) { out.push(line); line = w; } else line = line ? line + ' ' + w : w; });
+  let TIPN = 76;   // characters across a hover box: 76, fewer on a narrow chart (set each time a hover box is built)
+  const wrapLines = (t, n = TIPN) => { const out = []; let line = ''; String(t).split(/\s+/).forEach(w => { if (line && (line + ' ' + w).length > n) { out.push(line); line = w; } else line = line ? line + ' ' + w : w; });
     if (line) out.push(line); return out; };
+  /* a hover box is drawn inside the chart, so on a narrow chart (a phone) every line is wrapped to what fits across it:
+     tipFit = characters that fit; fitTip wraps whatever is still longer (on a wide chart nothing changes) */
+  const tipFit = ch => Math.max(24, Math.floor(((ch && ch.width) || 900) / 6.6) - 5);
+  const fitTip = (lines, ch) => { const n = tipFit(ch); return [].concat(lines || []).reduce((o, l) => o.concat(String(l).length > n ? wrapLines(l, n) : [l]), []); };
   /* a brain MRI with no measured point: why, what the report found (with the sizes it gave), what is needed. All from the data. */
   function unmTip(u) {
     const sizes = (LS.reports || []).filter(r => r.date === u.date && r.kind === 'size' && r.mm > 0 && !r.ambiguous).map(r => r.lesion + ' ' + r.mm + ' mm');
@@ -319,7 +325,9 @@
         ctx.fillText('Trend: needs 2 or more scans inside the time window' + (S.length || V.total ? '' : ' (and a lesion or Total shown)') + '; move or widen the window', a.left + 6, a.top + 4); ctx.restore(); }
       if (!fits.length || projShown) return; const {ctx, chartArea: a, scales: {x, y}} = c;
       ctx.save(); ctx.font = 'bold 10.5px system-ui'; ctx.textBaseline = 'middle';
-      const L = fits.map(f => ({f, px: Math.min(a.right, x.getPixelForValue(pos(f.t1))), ey: y.getPixelForValue(f.f(f.t1)), txt: f.label + ' ' + rateTxt(f.k) + (f.weak ? ' ' + WARN : '')}))
+      const narrow = a.right - a.left < 420;   // a phone: the short form, L01 ↓3.0mo; with more than three trends none at all (they would
+      if (narrow && fits.length > 3) return;   // hide the latest points, and the table under the chart lists the same rates)
+      const L = fits.map(f => ({f, px: Math.min(a.right, x.getPixelForValue(pos(f.t1))), ey: y.getPixelForValue(f.f(f.t1)), txt: f.label + ' ' + rateTxt(f.k, narrow) + (f.weak ? (narrow ? '' : ' ') + WARN : '')}))
         .filter(o => o.px >= a.left).map(o => Object.assign(o, {py: Math.max(a.top + 7, Math.min(a.bottom - 7, o.ey)), w: ctx.measureText(o.txt).width})).sort((p, q) => p.py - q.py);
       const G = 14; for (let i = 1; i < L.length; i++) L[i].py = Math.max(L[i].py, L[i - 1].py + G);
       const over = L.length ? L[L.length - 1].py - (a.bottom - 7) : 0; if (over > 0) L.forEach(o => { o.py -= over; });   // push the stack up if it runs off the bottom
@@ -422,32 +430,33 @@
         onHover: (e, els, ch) => { const xv = ch.scales.x.getValueForPixel(e.x); setHover(xv >= 0 && xv <= 100 ? xv : null); },
         plugins: {legend: {display: false}, tooltip: {displayColors: false, filter: it => !it.raw.fit, callbacks: {
           title: it => it[0] ? fd(it[0].raw.date) + (it[0].raw.unm ? ' · brain MRI, not measured' : it[0].raw.proj ? ' · projected (+' + it[0].raw.proj.m.m + ' mo), not measured' : '') : '',
-          afterBody: its => censTip(its.map(it => it.raw).filter(r => r && r.cens), S),
-          label: it => { const r = it.raw; if (r.unm) return unmTip(r.unm); if (r.seen) return seenTip(r); if (r.cens) return []; if (r.proj) return projTip(r); const st = step(r);
+          afterBody: its => (TIPN = Math.min(76, tipFit(its[0] && its[0].chart)), fitTip(censTip(its.map(it => it.raw).filter(r => r && r.cens), S), its[0] && its[0].chart)),
+          label: it => (TIPN = Math.min(76, tipFit(it.chart)), fitTip((it => { const r = it.raw; if (r.unm) return unmTip(r.unm); if (r.seen) return seenTip(r); if (r.cens) return []; if (r.proj) return projTip(r); const st = step(r);
             if (r.prov) return provTip(r, st);
             if (r.total) return ['Total ' + fv(r.v) + ' · ' + r.n + ' lesion' + (r.n > 1 ? 's' : '') + (r.partial ? ' · partial scan' : '') + ' · ' + r.field + (r.seq_name ? ' ' + r.seq_name : '')]
               .concat(r.hi > r.lo ? ['likely range ' + fv(r.lo) + ' – ' + fv(r.hi) + ' (each lesion\'s range added up)'] : [], notOut(r.date, S), st);
             const m = r.m, q = [];
-            if (m.lo != null && m.hi > m.lo) q.push('likely range ' + fv(m.lo) + ' – ' + fv(m.hi) + ' (if the seed sat a few mm elsewhere)');
+            if (m.lo != null && m.hi > m.lo) q.push(...wrapLines('likely range ' + fv(m.lo) + ' – ' + fv(m.hi) + ' (' + (m.range_why || 'if the seed sat a few mm elsewhere') + ')'));
             (m.flags || []).forEach(f => q.push((m.conf === 'low' || f === 'cut' ? WARN + ' ' : '') + FLAGW[f]));
             (m.alt || []).forEach(a => q.push('same visit, ' + a.seq_name + ' series: ' + fv(a.enh_mm3) + ' (a second measurement, not charted)'));
             return [r.lesion + ' ' + (r.v === 0 ? 'nothing found' : fv(r.v)) + ' · ' + r.field + (m.seq_name ? ' ' + m.seq_name : '') + (m.axial_mm ? ' · ' + m.axial_mm + ' mm wide' : ''), LNAME[r.lesion]]
-              .concat(m.note ? [m.note] : [], q, st); }}}},
+              .concat(m.note ? wrapLines(m.note) : [], q, st); })(it), it.chart))}}},
         scales: {x: xAxis(), y: {type: log ? 'logarithmic' : 'linear', min: log ? 5 : 0, max: !log && projPlug ? Math.ceil(Math.max(measTop, PJ.max_seen_mm3) * 1.5 / 1000) * 1000 : undefined,
           /* log scale with the projection showing: about 26 px of room above the highest point, so the date labels at the top of the plot (+1 mo over its date) stay clear of it */
           afterDataLimits: s => { if (log && projPlug && projShown && s.max > s.min && s.min > 0) s.max *= Math.pow(s.max / s.min, 26 / Math.max(60, (s.height || 300) - 26)); },
           afterFit: s => { s.width = typeof YW === 'number' ? YW : s.width; },
           title: {display: true, text: 'mm³ (enhancing)', color: css('--muted')},
-          ticks: {color: css('--muted'), callback: v => log ? ([5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000].includes(v) ? (v >= 1000 ? v / 1000 + 'k' : v) : '') : v},
+          ticks: {color: css('--muted'), callback: v => log ? ([5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000].includes(v) ? (v >= 1000 ? v / 1000 + 'k' : v) : '') : (v >= 1000 ? +(v / 1000).toFixed(1) + 'k' : v)},
           grid: {color: css('--line')}},
           yU: {type: 'linear', display: false, min: 0, max: 1}}}};   // hidden axis of the not-measured marks; listed AFTER y, because a dataset with no yAxisID takes the first y axis
     charts.set(id, new Chart(cv, cfg));
     if (fits.length) {
-      let h = '<table class="ltr-tbl"><tr><th>Trend in window</th><th>points</th><th>from</th><th>to</th><th>change / month</th><th>doubling or halving time</th></tr>';
+      const nar = innerWidth <= 760, sd = t => { const d = new Date(t).toISOString().slice(0, 10); return nar ? +d.slice(5, 7) + '/' + +d.slice(8) + '/' + d.slice(2, 4) : fd(d); };
+      let h = '<div style="overflow:auto"><table class="ltr-tbl ltr-nw' + (nar ? ' ltr-per ltr-nar' : '') + '"><tr><th>' + (nar ? 'Trend' : 'Trend in window') + '</th>' + (nar ? '' : '<th>points</th>') + '<th>from</th><th>to</th><th>' + (nar ? 'per month' : 'change / month') + '</th><th>' + (nar ? '×2 or ½ time' : 'doubling or halving time') + '</th></tr>';
       fits.forEach(f => { const pm = (Math.exp(f.k * 30.44) - 1) * 100, up = f.k > 0;
-        h += `<tr><td><b style="color:${f.col}">${f.label}</b></td><td>${f.n}</td><td>${fd(new Date(f.t0).toISOString().slice(0, 10))}</td><td>${fd(new Date(f.t1).toISOString().slice(0, 10))}</td>` +
-             `<td class="${up ? 'ltr-up' : 'ltr-dn'}">${up ? '+' : ''}${pm.toFixed(0)}%</td><td class="${up ? 'ltr-up' : 'ltr-dn'}"${f.weak ? ' style="opacity:.75" title="' + WARN + ' read loosely: ' + whyTxt(f) + '"' : ''}>${isFinite(f.dbl) ? (up ? 'doubles every ' : 'halves every ') + fdays(f.dbl) : 'flat'}${f.weak ? ' ' + WARN : ''}</td></tr>`; });
-      body.insertAdjacentHTML('beforeend', h + '</table>');
+        h += `<tr><td><b style="color:${f.col}">${f.label}</b>${nar ? '<small>' + f.n + ' scans</small>' : ''}</td>${nar ? '' : '<td>' + f.n + '</td>'}<td>${sd(f.t0)}</td><td>${sd(f.t1)}</td>` +
+             `<td class="${up ? 'ltr-up' : 'ltr-dn'}">${up ? '+' : ''}${pm.toFixed(0)}%</td><td class="${up ? 'ltr-up' : 'ltr-dn'}"${f.weak ? ' style="opacity:.75" title="' + WARN + ' read loosely: ' + whyTxt(f) + '"' : ''}>${isFinite(f.dbl) ? (nar ? (up ? '×2 in ' : '½ in ') : (up ? 'doubles every ' : 'halves every ')) + fdays(f.dbl) : 'flat'}${f.weak ? ' ' + WARN : ''}</td></tr>`; });
+      body.insertAdjacentHTML('beforeend', h + '</table></div>');
     }
     if (V.back && BC) drawBack(body, S);
     if (PON()) drawProjection(body, S);

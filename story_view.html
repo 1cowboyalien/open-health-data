@@ -400,7 +400,12 @@ function drawCheck() {
 }
 
 /* ---------------- drawing ---------------- */
+function stopSound(except) {   // pause every recording on the page and Claude's voice (when changing screens, or starting another)
+  document.querySelectorAll('audio').forEach(a => { if (a !== except) a.pause(); });
+  if (voice && voice !== except) { voice.pause(); const f = voice.onended; voice = null; f && f(); }
+}
 function draw() {
+  stopSound();
   clearInterval(clockT); if (screen !== 'main') recMount();
   if (screen === 'home') return drawHome();
   if (screen === 'sync') { app.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px"><div class="big3" id="count">3</div>
@@ -424,6 +429,7 @@ async function loadHome() { app.innerHTML = '<div class="card">Loading…</div>'
   if (!HEALTH) { await loadHealth(); if (screen === 'home') drawHome(); } }
 let HOME = {sessions: []};
 function drawHome() {
+  stopSound();
   const open = HOME.sessions.filter(s => s.status !== 'ended' || s.toReview);
   const chs = D.chapters.filter(c => D.items.some(i => i.chapter === c.title));
   app.innerHTML = `<h1 style="font-weight:500;margin:6px 0 2px">Tell your story</h1><div class="sub">Look at a photo, talk about it, and Claude asks you about it, out loud. Everything stays on the home computer.</div>
@@ -552,7 +558,10 @@ function drawReview() {
     return `<div class="rv" data-p="${esc(p)}"><div><img src="/photos/thumb/${encodeURIComponent(p)}.jpg" alt=""><div class="sub">${esc(fmtDate(it.t))}</div></div><div>
       <input type="text" class="ti" placeholder="Title" value="${esc(d.title || '')}" style="width:100%;margin-bottom:6px">
       <textarea class="ca" placeholder="Caption, in your words">${esc(d.caption || '')}</textarea>
-      <div class="row" style="margin-top:6px"><button class="ls">▶ Listen (${tk.length})</button>
+      <div class="recs1" style="margin-top:8px">${tk.map((t, i) => `<div class="row" style="margin:4px 0;align-items:center"><span class="sub" style="min-width:110px">Recording ${i + 1}${t.seconds ? ' · ' + Math.floor(t.seconds / 60) + ':' + String(Math.round(t.seconds % 60)).padStart(2, '0') : ''}</span>
+        <audio controls preload="none" src="/story/audio/${S.id}/takes/${esc(t.file)}" style="height:32px;flex:1;min-width:200px;max-width:420px"></audio>
+        <span class="sub" style="flex-basis:100%;margin-left:0">${esc((t.text || '(no words)').slice(0, 140))}${(t.text || '').length > 140 ? '…' : ''}</span></div>`).join('')}</div>
+      <div class="row" style="margin-top:6px">
         <button class="au ${d.audience !== 'family' ? 'on' : ''}" data-a="everyone">Everyone</button><button class="au ${d.audience === 'family' ? 'on' : ''}" data-a="family">Family only</button>
         ${d.status === 'approved' ? '<span style="color:var(--ok)">✓ Approved</span>' : '<button class="ap pri">✓ Approve</button>'}</div>
       <details class="sub" style="margin-top:6px"><summary>The whole conversation</summary>${tk.map(t => { const q = S.questions.find(q => q.n === t.question); return (q ? `<div><i>Claude: ${esc(q.text)}</i></div>` : '') + `<div>Erica: ${esc(t.text || '(no words)')}</div>`; }).join('')}</details>
@@ -560,7 +569,7 @@ function drawReview() {
   app.querySelectorAll('.rv').forEach(row => {
     const p = row.dataset.p, d = S.drafts[p] = S.drafts[p] || {};
     row.querySelectorAll('.au').forEach(b => b.onclick = () => { d.audience = b.dataset.a; row.querySelectorAll('.au').forEach(x => x.classList.toggle('on', x === b)); });
-    row.querySelector('.ls').onclick = async () => { for (const t of S.takes.filter(t => t.photo === p)) await play(S.id + '/takes/' + t.file); };
+    row.querySelectorAll('audio').forEach(a => a.onplay = () => stopSound(a));   // one recording at a time
     const ap = row.querySelector('.ap'); if (ap) ap.onclick = () => approve(p, row);
   });
   $('#all').onclick = async () => { for (const row of app.querySelectorAll('.rv')) if (row.querySelector('.ap')) await approve(row.dataset.p, row, true); drawReview(); };

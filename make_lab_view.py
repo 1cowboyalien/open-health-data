@@ -182,12 +182,12 @@ data = json.dumps({"tests": tests, "sources": sources, "span": span, "tx": tx, "
 
 html = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script>/* Sideways phone = the computer layout, scaled to fit: a phone in landscape (short side of its screen 500 px or less) lays the page
-out 1024 px wide and the browser shrinks it to the screen, like a desktop site (pinch zoom still works). Upright it is the phone layout.
+out 1200 px wide and the browser shrinks it to the screen, like a desktop site (pinch zoom still works). Upright it is the phone layout.
 ?fit=wide forces the scaled computer layout, ?fit=phone the phone layout. Switches when the phone turns. */
 (function(){var v=document.querySelector('meta[name=viewport]'),q=new URLSearchParams(location.search).get('fit'),land=matchMedia('(orientation: landscape)');
 function set(){var phone=Math.min(screen.width,screen.height)<=500,wide=q==='wide'||(q!=='phone'&&phone&&land.matches);
- var across=land.matches?Math.max(screen.width,screen.height):Math.min(screen.width,screen.height),k=Math.min(1,across/1024).toFixed(3);
- var c=wide?'width=1024,initial-scale='+k+',minimum-scale='+k:'width=device-width,initial-scale=1';if(v.content!==c)v.content=c;document.documentElement.classList.toggle('fitwide',wide);}
+ var across=land.matches?Math.max(screen.width,screen.height):Math.min(screen.width,screen.height),k=Math.min(1,across/1200).toFixed(3);
+ var c=wide?'width=1200,initial-scale='+k+',minimum-scale='+k:'width=device-width,initial-scale=1';if(v.content!==c)v.content=c;document.documentElement.classList.toggle('fitwide',wide);}
 set();land.addEventListener('change',set);})();</script>
 <title>Library</title>
 <style>

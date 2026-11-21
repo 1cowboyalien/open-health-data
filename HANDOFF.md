@@ -176,7 +176,7 @@ Two sandbox runs (12:03 and 12:05 on 2026-11-13), both logged in as `fhircamila`
          - `img:brain:dates`: every brain MRI as a point on the time axis.
          - `img:brain:viewer`: a NiiVue 0.69 slice viewer (axial/coronal/sagittal + 3D), loaded from jsDelivr. It shows the lesion outlines and 3D lesion models, an estimated radiation-dose overlay (wash + isodose lines) and a Gy/EQD2 choice. Saved views also appear as moments.
          - `img:brain:lesions`: lesions over time, as Timeline / Lines / Grid.
-         - `img:brain:dose`: radiation dose by lesion.
+         - `img:brain:dose`: radiation dose by lesion. Each row of `dose.rows` says in `basis` how its number was made (taken from a treatment plan, or estimated at the lesion's place); the panel's note (`dose.estimate_note`) explains it, so the code does not say "at the lesion's centre" any more (2026-11-21).
          - Everything about the patient comes from the private `local/imaging/imaging.json` and the files beside it (scans, outlines, 3D models, dose maps): hospitals, scans, lesions, doses and the default view. These are made outside this repo by the imaging pipeline. `make_lab_view.py` inlines the JSON and the module only when that file exists.
          - `serve_viewer.py` serves those files at `/imaging/<path>`: only inside `local/imaging/`, only `.nii.gz` and `.obj`, no listing (`imaging.json` itself is not served).
          - **Added 2026-11-17/18** (all data-driven; each module returns early when its part of `IMG_DATA` is missing):

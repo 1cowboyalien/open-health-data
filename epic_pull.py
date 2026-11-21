@@ -19,7 +19,8 @@ What it does:
   3. It downloads Patient, labs, vitals, reports, conditions, meds (orders,
      dispenses and the Medication record each one points to), the text of
      imaging reports (the Binary each report points to; --report-text), and
-     doctors' notes with their text (DocumentReference + Binary; --notes), etc.
+     doctors' notes with their text (DocumentReference + Binary; --notes),
+     insurance on file (Coverage) and claims where offered (ExplanationOfBenefit), etc.
   4. Saves every response, unmodified, under ./epic_raw/<timestamp>/
 
 Nothing is changed or cleaned. The point is to look at the raw fields.
@@ -59,6 +60,11 @@ QUERIES = [
     # Doctors' notes (progress notes, consults, H&P, discharge summaries). The text itself is a
     # separate Binary each note points to; fetch_note_texts downloads it (--notes).
     ("clinical_notes",         "DocumentReference?patient={pid}&category=clinical-note"),
+    # Insurance and billing. Coverage = the insurance plan(s) the hospital has on file.
+    # ExplanationOfBenefit = claims (billed/allowed/paid amounts, procedure codes) where the
+    # hospital offers them; many return none or an error, which is saved like any other.
+    ("coverage",               "Coverage?patient={pid}"),
+    ("explanation_of_benefit", "ExplanationOfBenefit?patient={pid}"),
 ]
 
 
@@ -357,7 +363,8 @@ def main():
         [f"patient/{r}.read" for r in ("Patient", "Observation", "DiagnosticReport",
          "Condition", "MedicationRequest", "MedicationDispense", "Medication",
          "AllergyIntolerance", "Immunization",
-         "Procedure", "Encounter", "DocumentReference", "Binary")]),
+         "Procedure", "Encounter", "DocumentReference", "Binary",
+         "Coverage", "ExplanationOfBenefit")]),
         help="OAuth scopes to request")
     ap.add_argument("--redirect-uri", default=LOCAL_REDIRECT_URI,
                     help="Must exactly match a URI registered on the app")

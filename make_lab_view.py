@@ -511,8 +511,9 @@ function ticks(){const T=[],a=W.a,b=W.b,months=(b-a)/(30.44*DAY),c=compressing()
  for(let d=new Date(Date.UTC(new Date(a).getUTCFullYear(),new Date(a).getUTCMonth(),1));d.getTime()<=b;d=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1))){
   const t=d.getTime(),m=d.getUTCMonth();if(t<a)continue;const early=c&&t<BRK;
   /* in the compressed part only every k-th year gets a label (k so that at most ~3 fit), others just a faint line */
-  if(early&&m===0){const y0=new Date(a).getUTCFullYear(),ny=new Date(BRK).getUTCFullYear()-y0,k=Math.max(1,Math.ceil(ny/3));
-   T.push({value:pos(t),label:(d.getUTCFullYear()-y0)%k===0?String(d.getUTCFullYear()):'',year:true});continue}
+  /* on a narrow screen (a phone) the compressed strip is only a few dozen px wide: as many year labels as it has room for (30 px each), possibly none */
+  if(early&&m===0){const y0=new Date(a).getUTCFullYear(),ny=new Date(BRK).getUTCFullYear()-y0,fitE=innerWidth>760?3:Math.min(3,Math.floor(pos(BRK)/100*plotPx()/30)),k=fitE?Math.max(1,Math.ceil(ny/fitE)):0;
+   T.push({value:pos(t),label:k&&(d.getUTCFullYear()-y0)%k===0?String(d.getUTCFullYear()):'',year:true});continue}
   if(early?m===0:m%step===0)T.push({value:pos(t),label:m===0?String(d.getUTCFullYear()):MON[m]+(step===1&&months<6?' '+String(d.getUTCFullYear()).slice(2):''),year:m===0});
   if(months<4){const mid=Date.UTC(d.getUTCFullYear(),m,15);if(mid>=a&&mid<=b)T.push({value:pos(mid),label:'15'})}}
  if(c)T.push({value:pos(BRK),label:'',brk:true});return T}

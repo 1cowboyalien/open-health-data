@@ -9,16 +9,17 @@
                    or column for that day's / month's lines with codes, price basis, flags and sources.
      cost:detail = "Costs · breakdown": totals by kind and hospital (bar = Blue estimate, solid part = posted rates), the price
                    flags (file errors, big gaps between hospitals), caveats, and every line with a search box.
-   Amount switch: Blue Cross estimate (allowed amount) or sticker (gross charge).
+   Amount switch: Blue Cross estimate (allowed amount), sticker (gross charge), or a what-if amount when COST_DATA.whatif exists
+   (e.g. Medicare Advantage rates from a date; per-line column 'mc').
    It plugs into the same hooks as the MRD, imaging, procedure and DNA panels (MRD.isId/title/unit/h0/panel/refresh/section).
    Data: COST_DATA = {built, cols:[...], lines:[[date,cat,fac,event,code,code_basis,qty,sticker,allowed,basis,flags,source,item,act_billed,act_allowed]],
-     cats:[{key,label,color}], facs:{key:label}, total:{sticker,allowed}, unpriced:{cat:n}, medicare:{date,label,short,text},
+     cats:[{key,label,color}], facs:{key:label}, total:{sticker,allowed}, unpriced:{cat:n}, medicare:{date,label,short,text}, whatif:{key,from_,label,text}|null,
      basis:{key:text}, code_basis:{key:text}, caveats:[text], source} */
 (() => {
   const D = COST_DATA, IDT = 'cost:total', IDD = 'cost:detail';
   const C = Object.fromEntries(D.cols.map((c, i) => [c, i]));
   const L = D.lines.map(r => ({date: r[C.date], t: ms(r[C.date]), cat: r[C.cat], fac: r[C.fac], event: r[C.event], code: r[C.code],
-    cb: r[C.code_basis], qty: r[C.qty], st: r[C.sticker], al: r[C.allowed], basis: r[C.basis], flags: r[C.flags], src: r[C.source], item: r[C.item]}));
+    cb: r[C.code_basis], qty: r[C.qty], st: r[C.sticker], al: r[C.allowed], mc: C.mc != null ? r[C.mc] : r[C.allowed], basis: r[C.basis], flags: r[C.flags], src: r[C.source], item: r[C.item]}));
   const DONE = L.filter(x => x.cat !== 'planned'), PLAN = L.filter(x => x.cat === 'planned');
   const CAT = Object.fromEntries(D.cats.map(c => [c.key, c]));
   const FACN = D.facs;
@@ -40,14 +41,17 @@
   const k$ = v => v >= 1e6 ? '$' + (v / 1e6).toFixed(2) + 'M' : v >= 1e4 ? '$' + Math.round(v / 1e3) + 'k' : v >= 1e3 ? '$' + (v / 1e3).toFixed(1) + 'k' : '$' + Math.round(v);
   const fd = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'});
   const fm = t => { const d = new Date(t); return MON[d.getUTCMonth()] + ' ' + d.getUTCFullYear(); };
-  function sumBy(xs, k) { k = k || V.amt; return xs.reduce((s, x) => s + (k === 'al' ? x.al : x.st), 0); }
-  const val = x => V.amt === 'al' ? x.al : x.st;
+  function sumBy(xs, k) { k = k || V.amt; return xs.reduce((s, x) => s + (k === 'al' ? x.al : k === 'mc' ? x.mc : x.st), 0); }
+  const val = x => V.amt === 'al' ? x.al : V.amt === 'mc' ? x.mc : x.st;
   const groups = () => V.by === 'cat' ? D.cats.filter(c => DONE.some(x => x.cat === c.key && val(x) > 0)).map(c => ({key: c.key, label: c.label, color: c.color}))
     : V.by === 'fac' ? FACS.filter(f => DONE.some(x => x.fac === f && val(x) > 0)).map(f => ({key: f, label: FACN[f] || f, color: FCOL[f]}))
     : SURE.filter(s => DONE.some(x => sureOf(x) === s.key && val(x) > 0));
   const gkey = x => V.by === 'cat' ? x.cat : V.by === 'fac' ? x.fac : sureOf(x);
   const on = g => !V.off.includes(V.by + ':' + g);
-  const amtName = () => V.amt === 'al' ? 'Blue Cross estimate' : 'sticker price';
+  const WI = D.whatif || null;   // optional what-if amount per line (e.g. Medicare Advantage rates from a date)
+  if (V.amt === 'mc' && !WI) V.amt = 'al';
+  const amtName = () => V.amt === 'al' ? 'Blue Cross estimate' : V.amt === 'mc' ? 'estimate with ' + WI.label : 'sticker price';
+  const wiBtn = () => WI ? [btn(WI.label, V.amt === 'mc', WI.text, () => { V.amt = 'mc'; save(); redrawAll(); })] : [];
 
   if (!document.getElementById('costCss')) { const st = document.createElement('style'); st.id = 'costCss';
     st.textContent =
@@ -94,11 +98,12 @@
       stat(k$(sumBy(DONE, 'al')), 'Blue Cross estimate', 'What the plan and family together would owe at the posted Blue Cross rates'),
       stat(Math.round(100 * posted / Math.max(total, 1)) + '%', 'from posted rates', "Share of this total that uses the hospital's own posted Blue Cross rate; the rest is estimated"),
       stat(k$(sumBy(inWin)), 'in this time window', fm(W.a) + ' – ' + fm(W.b)),
+      ...(WI ? [stat((V.amt === 'mc' ? '−' : '') + k$(Math.abs(sumBy(DONE, 'al') - sumBy(DONE, 'mc'))), V.amt === 'mc' ? 'vs Blue Cross' : 'less if ' + WI.label.split(' (')[0], WI.text)] : []),
       stat('?', "family's share", 'Not in any file: needs the plan\'s statements (deductible, coinsurance, out-of-pocket maximum)'));
     top.append(hero, stats); body.append(top);
     const bar = document.createElement('div'); bar.className = 'cst-bar';
     bar.append(lab('Amount:'), btn('Blue Cross estimate', V.amt === 'al', 'Allowed amount at the posted Blue Cross rates', () => { V.amt = 'al'; save(); redrawAll(); }),
-      btn('Sticker', V.amt === 'st', "Hospitals' gross charges before discounts", () => { V.amt = 'st'; save(); redrawAll(); }),
+      btn('Sticker', V.amt === 'st', "Hospitals' gross charges before discounts", () => { V.amt = 'st'; save(); redrawAll(); }), ...wiBtn(),
       lab(' Show:'), btn('Running total', V.view === 'run', 'Running total since diagnosis', () => { V.view = 'run'; save(); redrawAll(); }),
       btn('By month', V.view === 'mon', 'What each month added', () => { V.view = 'mon'; save(); redrawAll(); }),
       lab(' Colour:'), btn('kind of care', V.by === 'cat', '', () => { V.by = 'cat'; save(); redrawAll(); }),
@@ -158,7 +163,7 @@
       const mt = ms(D.medicare.date);
       if (mt >= W.a && mt <= W.b) { const px = x.getPixelForValue(pos(mt)); ctx.strokeStyle = '#6250d6'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = '#6250d6'; ctx.font = '10px system-ui'; ctx.textBaseline = 'top'; const t = D.medicare.short || D.medicare.label, tw = ctx.measureText(t).width;
+        ctx.fillStyle = '#6250d6'; ctx.font = '10px system-ui'; ctx.textBaseline = 'top'; const t = V.amt === 'mc' ? 'Medicare rates from here (what-if)' : (D.medicare.short || D.medicare.label), tw = ctx.measureText(t).width;
         ctx.fillText(t, px - tw - 4 > a.left ? px - tw - 4 : px + 4, a.top + 2);
         hits.push({x0: px - 4, x1: px + 4, y0: a.top, y1: a.top + 40, pri: 1, lines: [D.medicare.label, D.medicare.text]}); }
       PLAN.forEach(p => { if (p.t < W.a || p.t > W.b) return; const px = x.getPixelForValue(pos(p.t)), py = y.getPixelForValue(V.view === 'run' ? cumAt(W.b, all) : 0);
@@ -218,11 +223,11 @@
   const tag = b => '<span class="cst-tag ' + esc(b === 'posted-percent' ? 'posted' : b === 'list price' ? 'list' : b === 'Medicare doctor fee' ? 'mdf' : b) + '" title="' + esc(D.basis[b] || '') + '">' + esc(b) + '</span>';
   function linesTable(xs, withDate, limit) {
     const rows = xs.slice(0, limit || 400);
-    return '<div class="cst-wrap" style="max-height:340px"><table class="cst-t"><tr>' + (withDate ? '<th>Date</th>' : '') + '<th>What (fact from the records)</th><th>Hospital</th><th>Code</th><th class="n">Sticker</th><th class="n">Blue est.</th><th>Price from</th></tr>' +
+    return '<div class="cst-wrap" style="max-height:340px"><table class="cst-t"><tr>' + (withDate ? '<th>Date</th>' : '') + '<th>What (fact from the records)</th><th>Hospital</th><th>Code</th><th class="n">Sticker</th><th class="n">Blue est.</th>' + (V.amt === 'mc' ? '<th class="n">Medicare what-if</th>' : '') + '<th>Price from</th></tr>' +
       rows.map(x => '<tr>' + (withDate ? '<td class="n">' + esc(x.date) + '</td>' : '') + '<td>' + esc(x.event) + (x.flags ? '<div class="cst-flag" style="font-size:10.5px">⚑ ' + esc(x.flags) + '</div>' : '') +
         '<div class="cst-sub" title="' + esc(x.src) + '">' + esc(x.item || '') + '</div></td><td>' + esc(FACN[x.fac] || x.fac) + '</td>' +
         '<td title="' + esc(D.code_basis[x.cb] || '') + '">' + esc(x.code || '—') + (x.qty && x.qty !== 1 ? ' ×' + x.qty : '') + '<div class="cst-sub">' + esc(x.cb) + '</div></td>' +
-        '<td class="n">' + (x.st ? usd(x.st) : '—') + '</td><td class="n">' + (x.al ? usd(x.al) : x.basis === 'in per diem' ? 'in day rate' : '—') + '</td><td>' + tag(x.basis) + '</td></tr>').join('') +
+        '<td class="n">' + (x.st ? usd(x.st) : '—') + '</td><td class="n">' + (x.al ? usd(x.al) : x.basis === 'in per diem' ? 'in day rate' : '—') + '</td>' + (V.amt === 'mc' ? '<td class="n">' + (x.mc !== x.al ? usd(x.mc) : '') + '</td>' : '') + '<td>' + tag(x.basis) + '</td></tr>').join('') +
       '</table></div>' + (xs.length > rows.length ? '<div class="cst-sub">' + (xs.length - rows.length) + ' more lines: narrow the search</div>' : '');
   }
 
@@ -231,7 +236,7 @@
     body.innerHTML = '';
     const bar = document.createElement('div'); bar.className = 'cst-bar';
     bar.append(lab('Amount:'), btn('Blue Cross estimate', V.amt === 'al', '', () => { V.amt = 'al'; save(); redrawAll(); }),
-      btn('Sticker', V.amt === 'st', '', () => { V.amt = 'st'; save(); redrawAll(); }));
+      btn('Sticker', V.amt === 'st', '', () => { V.amt = 'st'; save(); redrawAll(); }), ...wiBtn());
     body.append(bar);
     const table = (title, keyOf, labelOf) => {
       const m = new Map(); DONE.forEach(x => { const k = keyOf(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); });

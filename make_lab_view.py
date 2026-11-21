@@ -1298,6 +1298,7 @@ __PROCJS__
 __PATHJS__
 __PHOTOJS__
 __DNAJS__
+__COSTJS__
 __ASKJS__
 </script><script>
 __NAVFOLDJS__
@@ -1357,6 +1358,13 @@ dnajs = ""
 if os.path.exists(dna_json):
     dnajs = ("const DNA_DATA=" + open(dna_json).read().strip().replace("</", "<\\/") + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dna_view.js")).read())
+# Costs (Library → Costs): only if local/costs/costs.json exists. It is made outside this repo by ../costs/viewer_export.py
+# (every billable line since diagnosis priced from the hospitals' public price files, with how sure each price is); drawn by cost_view.js.
+cost_json = os.path.join(os.path.dirname(out), "costs", "costs.json")
+costjs = ""
+if os.path.exists(cost_json):
+    costjs = ("const COST_DATA=" + open(cost_json).read().strip().replace("</", "<\\/") + ";\n"
+              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cost_view.js")).read())
 # Ask (chat about the records, drawn by ask_view.js): only if local/ask.json exists, e.g.
 # {"chatServer": "http://127.0.0.1:8820"}. The chat server is separate and not part of this repo;
 # the page shows the Ask features only when that server answers.
@@ -1367,7 +1375,7 @@ if os.path.exists(ask_json):
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ask_view.js")).read())
 # Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
 msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__PHOTOJS__", photojs).replace("__DNAJS__", dnajs).replace("__ASKJS__", askjs).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__PHOTOJS__", photojs).replace("__DNAJS__", dnajs).replace("__COSTJS__", costjs).replace("__ASKJS__", askjs).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")

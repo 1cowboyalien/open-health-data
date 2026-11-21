@@ -8,6 +8,7 @@ Usage:
 
 - Serves only local/labs.html (no folder listing, no other files), plus the imaging viewer's files:
   GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
+- Phone start screen: GET /phone/model.json = local/phone/model.json (make_phone_model.py), nothing else from local/phone/.
 - Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic
   nucleus spots, and <case>/masks/*.json, the automatic tissue maps).
 - Photos (photo story panels, photos_view.js): GET /photos/thumb/<id>.jpg and /photos/web/<id>.(jpg|mov|mp4) from local/photos/ only
@@ -334,6 +335,11 @@ class Handler(BaseHTTPRequestHandler):
             f = os.path.realpath(os.path.join(base, rel))
             if (f.startswith(base + os.sep) and f.endswith(IMG_TYPES) and os.path.isfile(f)):
                 return self.send(200, open(f, "rb").read(), "application/octet-stream")
+            return self.send(404, {"error": "not found"})
+        if path == "/phone/model.json":   # phone start screen 3D model (make_phone_model.py), the one file in local/phone/
+            f = os.path.join(LOCAL, "phone", "model.json")
+            if os.path.isfile(f):
+                return self.send(200, open(f, "rb").read(), "application/json")
             return self.send(404, {"error": "not found"})
         if path.startswith("/pathology/"):   # pathology slide photos: inside local/pathology/, .jpg only
             rel = urllib.parse.unquote(path[len("/pathology/"):])

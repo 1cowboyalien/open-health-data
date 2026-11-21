@@ -181,7 +181,14 @@ data = json.dumps({"tests": tests, "sources": sources, "span": span, "tx": tx, "
                    "brk": brk, "brkw": COMPRESS_WIDTH, "mrd": mrd, "siteZones": site_zones}, separators=(",", ":"))
 
 html = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script>/* Sideways phone = the computer layout, scaled to fit: a phone in landscape (short side of its screen 500 px or less) lays the page
+out 1024 px wide and the browser shrinks it to the screen, like a desktop site (pinch zoom still works). Upright it is the phone layout.
+?fit=wide forces the scaled computer layout, ?fit=phone the phone layout. Switches when the phone turns. */
+(function(){var v=document.querySelector('meta[name=viewport]'),q=new URLSearchParams(location.search).get('fit'),land=matchMedia('(orientation: landscape)');
+function set(){var phone=Math.min(screen.width,screen.height)<=500,wide=q==='wide'||(q!=='phone'&&phone&&land.matches);
+ var across=land.matches?Math.max(screen.width,screen.height):Math.min(screen.width,screen.height),k=Math.min(1,across/1024).toFixed(3);
+ var c=wide?'width=1024,initial-scale='+k+',minimum-scale='+k:'width=device-width,initial-scale=1';if(v.content!==c)v.content=c;document.documentElement.classList.toggle('fitwide',wide);}
+set();land.addEventListener('change',set);})();</script>
 <title>Library</title>
 <style>
 :root{--bg:#fbfbfa;--card:#fff;--ink:#141413;--ink2:#5e5d59;--muted:#8a8984;--line:#e6e5e0;--accent:#2a78d6;--band:rgba(27,175,122,.12);--hi:#d03b3b;--lo:#2a78d6}
@@ -1354,6 +1361,10 @@ __DECJS__
 __ASKJS__
 </script><script>
 __NAVFOLDJS__
+</script><script>
+__PHONEFITJS__
+</script><script>
+__PHONEJS__
 </script></body></html>"""
 txjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "med_timeline.js")).read()
 mrdjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mrd_view.js")).read()
@@ -1432,9 +1443,14 @@ askjs = ""
 if os.path.exists(ask_json):
     askjs = ("const ASK_CONFIG=" + json.dumps(json.load(open(ask_json))).replace("</", "<\\/") + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ask_view.js")).read())
+# Phone start screen (phone_view.js): only if local/phone/model.json exists (made by make_phone_model.py; the server serves it
+# at /phone/model.json). A turning glass head with the lesions playing through every scan, bars and cards into the viewer.
+phonejs = ""
+if os.path.exists(os.path.join(os.path.dirname(out), "phone", "model.json")):
+    phonejs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "phone_view.js")).read()
 # Concern graph in the Moments panel (milestones_view.js): draws moments that have a concern rating (1-10).
 msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones_view.js")).read()
-open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__PHOTOJS__", photojs).replace("__DNAJS__", dnajs).replace("__COSTJS__", costjs).replace("__DECJS__", decjs).replace("__ASKJS__", askjs).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
+open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__PHOTOJS__", photojs).replace("__DNAJS__", dnajs).replace("__COSTJS__", costjs).replace("__DECJS__", decjs).replace("__ASKJS__", askjs).replace("__PHONEJS__", phonejs).replace("__PHONEFITJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "phone_fit.js")).read()).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
       + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
@@ -1444,4 +1460,5 @@ print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {so
       + ("; photos: local/photos/photos_view.json" if photojs else "")
       + ("; dna: local/dna/dna.json" if dnajs else "")
       + ("; decisions: local/decisions/decisions.json" if decjs else "")
-      + ("; ask: local/ask.json" if askjs else ""))
+      + ("; ask: local/ask.json" if askjs else "")
+      + ("; phone start screen: local/phone/model.json" if phonejs else ""))

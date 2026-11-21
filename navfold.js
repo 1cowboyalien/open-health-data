@@ -108,6 +108,26 @@
     else if (y < 10 || keepOpen) apply(false);
   }
   window.addEventListener('scroll', onScroll, { passive: true });
+  // Sideways phone: the pinned Keyframes panel shows only its title line (and the time scroll bar), so opening
+  // Controls doesn't cover the screen; tap the title to show the tracks, tap again to hide them.
+  css2.textContent +=
+    'html.fitwide .navpin .mcard.kfside .mtrack,html.fitwide .navpin .mcard.kfside .mstrack,html.fitwide .navpin .mcard.kfside #msRow{display:none}' +
+    'html.fitwide .navpin .mcard.kfside .mhead,html.fitwide .navpin .mcard.kfopen .mhead{cursor:pointer}' +
+    'html.fitwide .navpin .mcard.kfside:not(.kfauto) .mhead b::after{content:" ▸ tap to show the tracks";font-weight:400;font-size:11px;color:var(--muted)}' +
+    'html.fitwide .navpin:not(.folded){max-height:58vh;overflow-y:auto;overscroll-behavior:contain}';
+  let kfOpen = false;
+  function sideKf() {
+    const on = side() && pinned() && !kfOpen;
+    if (on === kf.classList.contains('kfside')) return;
+    kf.classList.toggle('kfside', on); kf.classList.toggle('kfopen', side() && kfOpen);
+    if (!on) { if (typeof kfDraw === 'function') kfDraw(); else window.dispatchEvent(new Event('resize')); }
+  }
+  new MutationObserver(sideKf).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  kf.querySelector('.mhead').addEventListener('click', e => {
+    if (!side() || e.target.closest('button,input,select,a')) return;
+    kfOpen = auto ? true : !kfOpen; sideKf();
+  });
+  sideKf();
   kf.querySelector('.mhead').addEventListener('click', e => {
     if (!auto || e.target.closest('button,input,select,a')) return;
     keepOpen = true; openedAt = null; apply(false);

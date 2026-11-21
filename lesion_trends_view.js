@@ -29,12 +29,13 @@
   const LS = IMG_DATA.lesion_series;
   if (!LS || !LS.measured || !LS.measured.length) return;
   const H0 = 380;
-  const V0 = {total: true, scale: 'linear', fit: 'window', hidden: [], tx: true, back: false, psc: 'full'};   // opens with the total and the fitted trends (doubling times) showing
+  const V0 = {total: true, scale: 'linear', fit: 'off', hidden: [], tx: true, back: false, psc: 'full'};   // opens with the total; the fitted trends start off (2026-11-21) and show when asked for (Trend: Fit in window)
   const GR = IMG_DATA.growth || {};
   const PJ = GR.projection && GR.projection.lesions && GR.projection.lesions.length ? GR.projection : null;   // forward scenarios
   const BC = GR.backcast || null;                                                                              // start-of-growth estimate
   const V = Object.assign({}, V0, store.get('mrit.view', {}), store.get('img.trends', {}));   // mrit.view = saved while this was the MRI (test) section
   if (V.show) { V.total = V.show !== 'each'; if (V.show === 'total') V.hidden = LS.lesions.map(l => l.id); delete V.show; }   // older saved setting
+  if (!V.fitAsked) V.fit = 'off';   // a trend saved before 2026-11-21 was only the old default (on): start off. A choice made with the Trend buttons is kept (fitAsked)
   delete V.view; delete V.proj;   // Projection on/off is one switch for all imaging panels since 2026-11-18 (projection_dates.js), not kept here
   const PON = () => !!(PJ && window.Projection && Projection.on);
   const save = () => store.set('img.trends', V);
@@ -203,7 +204,7 @@
     const bar = document.createElement('div'); bar.className = 'ltr-bar';
     const grp = (label, key, opts) => { const s = document.createElement('span'); s.className = 'lab'; s.textContent = label; bar.append(s);
       opts.forEach(([val, txt, tip]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ltr-b' + (V[key] === val ? ' on' : ''); b.textContent = txt; b.title = tip;
-        b.onclick = () => { V[key] = val; save(); redraw(); }; bar.append(b); }); };
+        b.onclick = () => { V[key] = val; if (key === 'fit') V.fitAsked = true; save(); redraw(); }; bar.append(b); }); };
     if (view !== 'periods') grp('Scale', 'scale', [['log', 'Log', 'Log scale: equal steps = equal % change; small lesions stay readable'], ['linear', 'Linear', 'Plain mm³']]);
     if (view !== 'periods') grp('Trend', 'fit', [['off', 'Off', 'No fitted trend'], ['window', 'Fit in window', 'Fit a steady-% trend (straight on the log scale) to the points inside the time window; zoom or move the window to fit a stretch, e.g. after the last treatment']]);
     const tot = document.createElement('button'); tot.type = 'button'; tot.className = 'ltr-b' + (V.total ? ' on' : ''); tot.textContent = 'Total: ' + (V.total ? 'on' : 'off');

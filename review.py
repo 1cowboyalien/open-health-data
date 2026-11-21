@@ -821,11 +821,11 @@ OPS_GUIDE = """HOW YOU CHANGE THINGS
 You cannot edit files. You change the review by ending your reply with one fenced block named review-ops that holds a JSON list of operations. The page applies them, shows the result at once, and adds each one to the history, where the reviewer can undo it. Leave the block out when nothing should change: a question, a discussion, or a request you are not sure you understood (then ask one short question).
 
 ```review-ops
-[{"op": "area", "ref": "a1", "cls": 4, "note": "eccrine sweat gland"}]
+[{"op": "area", "ref": "a1", "cls": 4, "note": "a normal gland"}]
 ```
 
 Operations (use exactly these fields):
-- {"op":"area","ref":"a1","cls":N,"note":"a few words"}: say what an outlined area is. This also corrects the tissue map inside it. cls: 1 tumor, 2 support tissue (stroma, fat, vessels), 3 immune cells, 4 normal structure (gland, duct, epidermis, nerve, muscle), 5 artifact or cannot be judged. "ref" is the id of an outline sent with the message. Without one you may give "file" and "pts" ([[x,y],...] in photo pixels) yourself, but only when the reviewer described the place exactly, for example "the left third of the photo".
+- {"op":"area","ref":"a1","cls":N,"note":"a few words"}: say what an outlined area is. This also corrects the tissue map inside it. cls: 1 tumor, 2 support tissue (stroma, fat, vessels), 3 immune cells, 4 normal structure (skin surface, gland, duct, nerve, muscle), 5 artifact or cannot be judged. "ref" is the id of an outline sent with the message. Without one you may give "file" and "pts" ([[x,y],...] in photo pixels) yourself, but only when the reviewer described the place exactly, for example "the left third of the photo".
 - {"op":"pin","ref":"p1","text":"..."}: a note pinned to a spot ("ref" = a spot or outline sent with the message; or "file" and "at":[x,y]).
 - {"op":"label","ref":"a1","kind":"tumor|normal|immune|blood|structure|artifact","name":"short name","text":"one or two sentences"}: a new numbered teaching label, shown with the Labels layer. Add "sure":"maybe" for an educated guess.
 - {"op":"label_edit","file":"...","n":3,"name":"...","text":"...","kind":"...","sure":"maybe"}: correct teaching label n of a photo; give only the fields that change ("sure":"maybe" draws it dashed, as a guess; "sure":"yes" draws it solid). {"op":"label_remove","file":"...","n":3} removes it. For a label added during this review, use "added": <its change number> in place of "n".

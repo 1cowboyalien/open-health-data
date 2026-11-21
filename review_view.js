@@ -184,7 +184,7 @@ body.revFocus .revTarget>.cmph .ctl{display:none!important}
     c.innerHTML = `<b>${isArea ? 'What is this area?' : 'What is at this spot?'}</b> <span style="color:var(--muted);font-size:12px">${esc(place(draft.file))}. ${isArea ? 'Pick one and save' : 'Write a note and save it'}, or ask Claude about it.</span>`;
     const r = el('div', 'rv-row'); r.style.marginTop = '6px';
     if (isArea) Object.keys(CLS).map(Number).sort((a, b) => [1, 4, 3, 2, 5].indexOf(a) - [1, 4, 3, 2, 5].indexOf(b)).forEach(k => { const b = btn(`<span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${colOf(k)};margin-right:4px"></span>${CLS[k][0]}`, '', () => { draft.cls = k; drawNew(); }, draft.cls === k ? 'on' : ''); r.append(b); });
-    c.append(r); const inp = el('input'); inp.placeholder = isArea ? 'A few words, for example: eccrine gland' : 'What should be noted here?'; inp.value = draft.note || '';
+    c.append(r); const inp = el('input'); inp.placeholder = isArea ? 'A few words, for example: a normal gland' : 'What should be noted here?'; inp.value = draft.note || '';
     const sv = btn(isArea ? 'Save this mark' : 'Save this note', '', async () => { const dr = draft; draft = null; drawNew(); tool = 'look'; again();
       await change(isArea ? {op: 'area', file: dr.file, pts: dr.pts, cls: dr.cls, note: (dr.note || '').trim()} : {op: 'pin', file: dr.file, at: dr.pts[0], text: dr.note.trim()}); }, 'on');
     const ok = () => { sv.disabled = !(isArea ? draft.cls : (draft.note || '').trim()); }; inp.oninput = () => { draft.note = inp.value; ok(); }; ok();

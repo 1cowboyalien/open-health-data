@@ -202,9 +202,9 @@ function startFind(drug,label){const evs=findEvents(drug);if(!evs.length)return;
 function findGo(i){const F=FIND;if(!F)return;F.i=i=Math.max(0,Math.min(F.evs.length-1,i));const ev=F.evs[i];let redo=false;
  if(!txSel.includes(F.drug)){txSel.push(F.drug);store.set('txsel',txSel);redo=true}
  if(txHidden){txHidden=false;store.set('txhidden',false);redo=true}
- let len=W.b-W.a;if(len>180*DAYMS)len=90*DAYMS;const a=Math.max(X0,Math.min(ev.t-len/2,X1-len));
+ let len=W.b-W.a;if(len>180*DAYMS)len=90*DAYMS;const a=Math.max(X0,Math.min(centreStart(ev.t,len),X1-len));
  if(redo){W={a,b:a+len};store.set('window',W);syncWin();list();render()}else setWin(a,a+len);
- hlDrug=null;setHlDrug(F.drug);findBar();setTimeout(()=>{setHover(pos(ev.t));findScroll()},40)}
+ hlDrug=null;setHlDrug(F.drug);findBar();setLock(ev.t);setTimeout(()=>{setHover(pos(ev.t));findScroll()},40)}   // cursor locked on it
 function findScroll(){const c=charts.get('tx'),r=FIND&&txShown.find(r=>r.drug===FIND.drug);if(!c||!r)return;
  const y=c.canvas.getBoundingClientRect().top+c.scales.y.getPixelForValue(r._u0),top=document.querySelector('.navpin').getBoundingClientRect().bottom+10;
  if(y<top||y>innerHeight-80)scrollBy({top:y-top-40,behavior:'smooth'})}
@@ -272,7 +272,7 @@ function isRated(m){return typeof m.concern==='number'&&isFinite(m.concern)}
 /* ◀ ▶ stop only at the rows that are switched on (Keyframes / Concern buttons); rated ones also only inside the Concern range */
 function momList(){const all=(E.moments||[]).filter(m=>m.date&&rowOn(m)&&(!isRated(m)||typeof msIn!=='function'||msIn(m))),on=all.filter(momentOn);return(on.length?on:all).sort((a,b)=>momentT(a)-momentT(b))}
 function goMoment(m){if(!m)return;momCur=m.id;const t=momentT(m);let len=W.b-W.a;if(len>60*DAYMS)len=14*DAYMS;
- const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len);setTimeout(()=>setHover(pos(t)),40)}
+ goToDate(t,{len})}   // centred, cursor locked on it
 function momNav(){const el=$('mNav');if(!el)return;el.innerHTML='';const L=momList(),n=L.length;if(!n)return;const mid=(W.a+W.b)/2;
  let i=L.findIndex(m=>m.id===momCur);if(i>=0&&(momentT(L[i])<W.a||momentT(L[i])>W.b))i=-1;
  let prev=i>=0?i-1:-1,next=i>=0?i+1:n;if(i<0){for(let k=0;k<n;k++){if(momentT(L[k])<mid)prev=k;else{next=k;break}}}

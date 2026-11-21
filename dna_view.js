@@ -170,7 +170,7 @@
     const hay = ('dna gene genes copy number amplification exome tumor drugs therapy mitochondria flagged microbes bacteria virus ' + (D.views || []).map(v => v.title).join(' ') + ' ' + (D.microbes ? D.microbes.organisms.map(o => o.name).join(' ') + ' ' : '') + (D.flags || []).map(f => f.title).join(' ') + ' ' + D.genes.map(g => g.gene + ' ' + g.drugs.map(d => d.drug).join(' ')).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     const SEC = section(el, 'dna', 'DNA', D.sample.label, true, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn('DNA panel', 'grp:dna', [ID], soloLab && soloLab.key === 'grp:dna', false, () => onlyLab('grp:dna', [ID], 'DNA')), s0.lastChild);
+    panelBtns(SEC, 'DNA panel', 'grp:dna', [ID], 'DNA');
     const row = (label, count, tip, checked, onTick, onName) => {
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = checked; cb.setAttribute('aria-label', 'Show ' + label);

@@ -419,12 +419,14 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
     if (q && !'mrd ctdna signatera natera minimal residual disease tumor variants over time'.includes(q)) return;
     const S = window.section(el, 'mrd', 'MRD tests', '1 test', true, 'sec', q);
     const k = IDS.filter(id => sel.includes(id)).length;
+    panelBtns(S, 'Signatera panel', 'grp:mrd', IDS, 'MRD tests');
     const G = window.section(S, 'mrd:sig', 'Signatera', k ? k + '/' + IDS.length : done.length + ' draws', true, 'grp', q), gs = G.firstChild;
     const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === IDS.length; cb0.indeterminate = k > 0 && k < IDS.length;
     cb0.title = 'Tick or untick both Signatera panels for Compare'; cb0.setAttribute('aria-label', 'Select both Signatera panels');
     cb0.onclick = e => { e.stopPropagation(); setLabSel(IDS, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
     gs.insertBefore(miniBtn('All', 'Select both Signatera panels', () => setLabSel(IDS, true)), gs.lastChild);
     gs.insertBefore(miniBtn('None', 'Deselect both Signatera panels', () => setLabSel(IDS, false)), gs.lastChild);
+    panelBtns(G, 'Signatera panel', 'grp:mrd:sig', IDS, 'Signatera', {noAllNone: true});
     // the whole-test row: opens the full page
     const pg = document.createElement('div'); pg.className = 't' + (active() ? ' on' : '');
     const pn = document.createElement('span'); pn.className = 'nm'; pn.innerHTML = 'Signatera <span class="tag">' + esc(LAST.vendor || 'Natera') + ' · full page</span>';

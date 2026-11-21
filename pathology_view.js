@@ -901,7 +901,7 @@
     const hay = ('pathology slides slide photos gallery compare biopsy stain ihc learn lesson tissue map tumor healthy mask spots ' + P.stains.map(s => s.label).join(' ') + ' ' + P.cases.map(c => c.title + ' ' + c.diagnosis).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     const SEC = section(el, 'path', 'Pathology', nSlides + ' slides', true, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn('pathology panel', 'grp:path', [ID], soloLab && soloLab.key === 'grp:path', false, () => onlyLab('grp:path', [ID], 'Pathology')), s0.lastChild);
+    panelBtns(SEC, 'Pathology panel', 'grp:path', [ID], 'Pathology');
     const row = (label, count, tip, checked, onTick, onName) => {
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = checked; cb.setAttribute('aria-label', 'Show ' + label);

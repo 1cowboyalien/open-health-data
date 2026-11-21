@@ -382,7 +382,7 @@
     const hay = (NAME + ' ' + TELLER + " story photos pictures videos gallery life family graphic stories " + CH.map(c => c.title).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     const SEC = section(el, 'photo', NAME, ALL.length + ' photos', true, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn('photo panel', 'grp:photo', [IDS, IDG], soloLab && soloLab.key === 'grp:photo', false, () => onlyLab('grp:photo', [IDS, IDG], NAME)), s0.lastChild);
+    panelBtns(SEC, 'photo panel', 'grp:photo', [IDS, IDG], NAME);
     const row = (label, count, tip, checked, onTick, onName) => {
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = checked; cb.setAttribute('aria-label', 'Show ' + label);

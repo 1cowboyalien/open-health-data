@@ -416,6 +416,14 @@
       try { return _save.apply(this, arguments); } finally { E.moments.push(...mine); } }; }
   const _openMoment = openMoment;
   openMoment = function (m) { if (m && m.procGen) { show(m.procGen); return; } return _openMoment.apply(this, arguments); };
+  /* Only on a lane: keep just this lane's keyframe lines; pressed again, the earlier ticks come back */
+  let procOnly = store.get('proc.only', null);
+  function onlyTicked(key, ids) {
+    if (procOnly && procOnly.key === key) { ticked = new Set(procOnly.prev); procOnly = null; }
+    else { procOnly = {key, prev: procOnly ? procOnly.prev : [...ticked]}; ticked = new Set(ids); }
+    store.set('proc.only', procOnly); store.set('proc.moments', [...ticked]); syncMoments(); list(); render();
+  }
+  const laneOnly = (s, key, ids, what) => s.insertBefore(groupOnlyBtn(what, key, ids, !!(procOnly && procOnly.key === key), false, () => onlyTicked(key, ids)), s.lastChild);
   function setTicked(ids, on) { ids.forEach(i => on ? ticked.add(i) : ticked.delete(i)); store.set('proc.moments', [...ticked]); syncMoments(); list(); render(); }
   window.PROC_SHOW = id => show(id);   // used by pathology_view.js ("Show in Procedures")
   function show(id) {   // select a procedure and make sure the timeline panel is open
@@ -508,6 +516,7 @@
     s0.insertBefore(miniBtn('None', 'Hide both procedure panels', () => setLabSel(ids, false)), s0.lastChild);
     s0.insertBefore(groupOnlyBtn('procedure panel', 'grp:proc', ids, soloLab && soloLab.key === 'grp:proc', !!(soloLab && soloLab.key.startsWith('id:proc:')), () => onlyLab('grp:proc', ids, 'Procedures')), s0.lastChild);
     const G = section(SEC, 'proc:panels', 'Panels', k ? k + '/2' : '2', true, 'grp', q);
+    panelBtns(G, 'procedure panel', 'grp:proc:panels', ids, 'Procedure panels');
     const prow = (id, label, count, tip) => {
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes(id); cb.setAttribute('aria-label', 'Show ' + PANELS[id].title);
@@ -527,6 +536,7 @@
         const L = section(SEC, 'proc:lane:' + l.key, l.label + (hidden.has(l.key) ? ' (lane hidden)' : ''), (n ? n + '/' : '') + cs.length + ' · ' + cs.reduce((a, c) => a + c.n, 0) + ' fx', false, 'grp', q), s0 = L.firstChild;
         s0.insertBefore(miniBtn('All', 'Put every course on all charts', () => setTicked(cs.map(c => c.id), true)), s0.lastChild);
         s0.insertBefore(miniBtn('None', 'Remove these keyframe lines', () => setTicked(cs.map(c => c.id), false)), s0.lastChild);
+        laneOnly(s0, l.key, cs.map(c => c.id), 'course');
         cs.forEach(c => { const d = document.createElement('div'); d.className = 't';
           const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(c.id); cb.title = 'Keyframe line on every chart';
           cb.onclick = ev => { ev.stopPropagation(); setTicked([c.id], cb.checked); };
@@ -539,6 +549,7 @@
         const L = section(SEC, 'proc:lane:stay', l.label + (hidden.has('stay') ? ' (lane hidden)' : ''), (n ? n + '/' : '') + STAYS.length, false, 'grp', q), s0 = L.firstChild;
         s0.insertBefore(miniBtn('All', 'Put every hospital stay on all charts', () => setTicked(STAYS.map(s => s.id), true)), s0.lastChild);
         s0.insertBefore(miniBtn('None', 'Remove these keyframe lines', () => setTicked(STAYS.map(s => s.id), false)), s0.lastChild);
+        laneOnly(s0, 'stay', STAYS.map(s => s.id), 'stay');
         STAYS.forEach(s => { const d = document.createElement('div'); d.className = 't';
           const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ticked.has(s.id); cb.title = 'Keyframe line on every chart';
           cb.onclick = ev => { ev.stopPropagation(); setTicked([s.id], cb.checked); };
@@ -567,6 +578,7 @@
       const s = L.firstChild;
       s.insertBefore(miniBtn('All', 'Put every ' + l.label.toLowerCase() + ' on all charts as a keyframe line', () => setTicked(evs.map(e => e.id), true)), s.lastChild);
       s.insertBefore(miniBtn('None', 'Remove these keyframe lines', () => setTicked(evs.map(e => e.id), false)), s.lastChild);
+      if (evs.length) laneOnly(s, l.key, evs.map(e => e.id), 'procedure');
       const item = (e, dated) => {
         const d = document.createElement('div'); d.className = 't';
         const sw = document.createElement('span'); sw.innerHTML = `<svg width="10" height="10" style="vertical-align:-1px"><rect width="10" height="10" rx="2" fill="${LCOL[l.key]}"/></svg>`;

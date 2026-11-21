@@ -419,12 +419,14 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
     if (q && !'mrd ctdna signatera natera minimal residual disease tumor variants over time'.includes(q)) return;
     const S = window.section(el, 'mrd', 'MRD tests', '1 test', true, 'sec', q);
     const k = IDS.filter(id => sel.includes(id)).length;
+    panelBtns(S, 'Signatera panel', 'grp:mrd', IDS, 'MRD tests');
     const G = window.section(S, 'mrd:sig', 'Signatera', k ? k + '/' + IDS.length : done.length + ' draws', true, 'grp', q), gs = G.firstChild;
     const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === IDS.length; cb0.indeterminate = k > 0 && k < IDS.length;
     cb0.title = 'Tick or untick both Signatera panels for Compare'; cb0.setAttribute('aria-label', 'Select both Signatera panels');
     cb0.onclick = e => { e.stopPropagation(); setLabSel(IDS, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
     gs.insertBefore(miniBtn('All', 'Select both Signatera panels', () => setLabSel(IDS, true)), gs.lastChild);
     gs.insertBefore(miniBtn('None', 'Deselect both Signatera panels', () => setLabSel(IDS, false)), gs.lastChild);
+    panelBtns(G, 'Signatera panel', 'grp:mrd:sig', IDS, 'Signatera', {noAllNone: true});
     // the whole-test row: opens the full page
     const pg = document.createElement('div'); pg.className = 't' + (active() ? ' on' : '');
     const pn = document.createElement('span'); pn.className = 'nm'; pn.innerHTML = 'Signatera <span class="tag">' + esc(LAST.vendor || 'Natera') + ' · full page</span>';
@@ -465,12 +467,12 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   function findGo(i) {
     const L = findList(); if (!L.length) return;
     MF.i = i = Math.max(0, Math.min(L.length - 1, i)); const r = L[i], t = ms(r.draw_date);
-    let len = W.b - W.a; if (len > 180 * DAY) len = 90 * DAY; const a = Math.max(X0, Math.min(t - len / 2, X1 - len));
+    let len = W.b - W.a; if (len > 180 * DAY) len = 90 * DAY; const a = Math.max(X0, Math.min(centreStart(t, len), X1 - len));
     const shown = mode === 'single' ? active() : sel.includes('mrd:ot');
     if (!shown) { if (mode === 'single') { on = true; store.set('mrd.on', true); } else { sel.push('mrd:ot'); store.set('selected', sel); }
       W = {a, b: a + len}; store.set('window', W); syncWin(); updateBar(); list(); window.render(); }
     else setWin(a, a + len);
-    findBar(); setTimeout(() => { setHover(pos(t)); findScroll(); }, 40);
+    findBar(); setLock(t); setTimeout(() => { setHover(pos(t)); findScroll(); }, 40);   // cursor locked on the draw
   }
   function findScroll() {
     const c = charts.get('mrd:ot@page#c') || charts.get('mrd:ot#c'); if (!c) return;

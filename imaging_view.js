@@ -492,7 +492,7 @@
     // lesions filled or outlined, pixels, crosshair, labels
     // outline only = NiiVue's label outline with the fill made fully transparent (outline needs the label intent, set at load)
     nv.setAtlasOutline(d.outline === 'outline' ? 1 : 0);
-    nv.setOpacity(LI(), d.outline === 'outline' ? 0 : V.R('op').value / 100);
+    if (LI() >= 0) nv.setOpacity(LI(), d.outline === 'outline' ? 0 : V.R('op').value / 100);   // outlines may not be loaded yet (e.g. the phone turns first)
     nv.setMeshThicknessOn2D(d.les2d === 'shiny' ? Infinity : 0);   // shiny = the lesions' 3D models drawn over the slices
     V.R('op').disabled = d.outline === 'outline'; V.R('op').title = d.outline === 'outline' ? 'Fill opacity (off while showing outlines only)' : 'Fill opacity';
     nv.setInterpolation(d.pixels === 'sharp');

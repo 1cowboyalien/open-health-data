@@ -20,7 +20,7 @@
 
   const strip = document.createElement('div');
   strip.className = 'nfold';
-  strip.innerHTML = '<span class="nfw" id="nfWin"></span><button id="nfOpen" title="Show the buttons and the time window">Controls ▾</button>';
+  strip.innerHTML = '<span class="nfw" id="nfWin"></span><button id="nfLib" title="Show or hide the Library (left bar)">☰ Library</button><button id="nfOpen" title="Show the buttons and the time window">Controls ▾</button>';
   pin.insertBefore(strip, pin.firstChild);
 
   const row = pin.querySelector('.nrow');
@@ -30,9 +30,14 @@
   foldBtn.title = 'Fold this bar to one line, to give the charts more room';
   if (row) row.appendChild(foldBtn);
 
+  // Phones (upright = narrow, sideways = html.fitwide from the viewport script) start folded, and the bar folds
+  // itself again once you scroll on into the charts (auto-hide), so a panel gets the whole screen.
   const narrow = window.matchMedia('(max-width:760px)');
-  const key = () => 'navfold.' + (narrow.matches ? 'phone' : 'wide');
-  const want = () => { const v = localStorage.getItem(key()); return v === null ? narrow.matches : v === '1'; };
+  const side = () => document.documentElement.classList.contains('fitwide');
+  const phone = () => narrow.matches || side();
+  const key = () => 'navfold.' + (side() ? 'side' : narrow.matches ? 'phone' : 'wide');
+  const want = () => { const v = localStorage.getItem(key()); return v === null ? phone() : v === '1'; };
+  document.getElementById('nfLib').style.display = 'none';
 
   const fmt = s => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((s || '').trim());
@@ -51,9 +56,24 @@
     summary();
     window.dispatchEvent(new Event('resize'));  // charts below re-measure the space they have
   }
-  document.getElementById('nfOpen').onclick = () => set(false, true);
+  let openY = null;
+  document.getElementById('nfOpen').onclick = () => { set(false, !phone()); openY = window.scrollY; };
+  document.getElementById('nfLib').onclick = () => { const b = document.getElementById('libBtn'); if (b) b.click(); libLabel(); };
+  function libLabel() {
+    const l = document.getElementById('nfLib');
+    l.style.display = side() ? '' : 'none';
+    l.textContent = document.body.classList.contains('nolib') ? '☰ Library' : '◧ Hide Library';
+  }
   foldBtn.onclick = () => set(true, true);
   narrow.addEventListener('change', () => set(want(), false));
+  new MutationObserver(() => { set(want(), false); libLabel(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  libLabel();
+  // auto-hide: opened on a phone, it folds again (without changing the saved choice) after you scroll 150 px
+  window.addEventListener('scroll', () => {
+    if (!phone() || pin.classList.contains('folded') || openY === null) return;
+    if (Math.abs(window.scrollY - openY) > 150) { openY = null; set(true, false); }
+  }, { passive: true });
 
   const mo = new MutationObserver(() => { if (pin.classList.contains('folded')) summary(); });
   ['wal', 'wbl', 'soloBar'].forEach(id => { const el = document.getElementById(id); if (el) mo.observe(el, { childList: true, characterData: true, subtree: true }); });

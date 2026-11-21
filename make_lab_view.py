@@ -293,6 +293,7 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 #txBox .txmv{position:absolute;z-index:5;width:14px;height:16px;padding:0;line-height:15px;font-size:11px;border-radius:4px;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer}#txBox .txmv:hover:not(:disabled){border-color:var(--line);background:var(--card);color:var(--ink)}#txBox .txmv:disabled{opacity:.25;cursor:default}
 #txBox .txx{position:absolute;z-index:5;width:14px;height:16px;padding:0;line-height:15px;font-size:13px;border-radius:50%;border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer}#txBox .txx:hover{border-color:var(--line);background:var(--card);color:var(--hi)}
 #txEdit{position:absolute;z-index:30;max-height:70vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+html.fitwide{scroll-snap-type:y proximity;scroll-padding-top:42px}html.fitwide #cmpList>*{scroll-snap-align:start}
 body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:none}#libBtn{font-size:13px}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px;margin-top:8px}
 .fld{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink2)}
@@ -432,9 +433,13 @@ let W=store.get('window',{a:X0,b:X1});if(W&&W.b>X1&&W.a>=X0&&X1-W.a>=MINW)W.b=X1
 if(!(W.a>=X0&&W.b<=X1&&W.b-W.a>=MINW))W={a:X0,b:X1};
 let mode=store.get('mode','single');
 /* Library (left bar): hide/show, remembered; Chart.js resizes the charts on its own */
-let libHidden=store.get('libhidden',false);
+/* A sideways phone (html.fitwide, set by the viewport script) keeps its own choice and starts hidden, to give the charts the room */
+const sideLib=()=>document.documentElement.classList.contains('fitwide');
+const libPref=()=>sideLib()?localStorage.getItem('libhidden.side')!=='0':store.get('libhidden',false);
+let libHidden=libPref();
 function applyLib(){document.body.classList.toggle('nolib',libHidden);const b=$('libBtn');b.textContent=libHidden?'☰ Show Library':'◧ Hide Library';b.setAttribute('aria-pressed',String(libHidden))}
-$('libBtn').onclick=()=>{libHidden=!libHidden;store.set('libhidden',libHidden);applyLib()};applyLib();
+$('libBtn').onclick=()=>{libHidden=!libHidden;if(sideLib())localStorage.setItem('libhidden.side',libHidden?'1':'0');else store.set('libhidden',libHidden);applyLib()};applyLib();
+new MutationObserver(()=>{const h=libPref();if(h!==libHidden){libHidden=h;applyLib()}}).observe(document.documentElement,{attributes:true,attributeFilter:['class']});
 let cur=store.get('current',D.tests[0].id);if(!BYID[cur])cur=D.tests[0].id;
 let sel=store.get('selected',[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var)$/.test(id)));   // lab ids, or the MRD panels (mrd_view.js)
 let heights=store.get('heights',{});
@@ -660,7 +665,8 @@ function setMode(m){mode=m;store.set('mode',m);updateBar();list();render()}
 function updateBar(){$('mCompare').textContent='Compare selected ('+sel.length+')';$('mSingle').className=mode==='single'?'on':'';$('mCompare').className=mode==='compare'?'on':'';
  $('single').classList.toggle('hide',mode!=='single'||MRD.active());$('mrd').classList.toggle('hide',!MRD.active());$('compare').classList.toggle('hide',mode!=='compare');
  $('hint').textContent=mode==='compare'?'Hover any chart to line up a date across all of them.':''}
-function hOf(id,def){return heights[id]||def}
+/* sideways phone: a chart you haven't resized gets at most the screen height less its panel's title and buttons, so one panel fills the view */
+function hOf(id,def){return heights[id]||(document.documentElement.classList.contains('fitwide')?Math.max(200,Math.min(def,innerHeight-170)):def)}
 function setH(id,h){heights[id]=Math.max(70,Math.min(600,h));store.set('heights',heights)}
 
 /* Stage order: every panel in the Stage has ↑↓. One list holds the order: in Compare it is the

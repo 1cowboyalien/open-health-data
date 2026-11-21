@@ -3,6 +3,7 @@
    Panel dec:tree = a top-down decision tree: one row per step on the path taken; options that were raised but not taken sit
    beside the step and end there; open options are dashed. Click a box for its summary, quote, who and sources.
    Switches: show who (a line on every box), show supportive-care boxes (kind 'supp'), open all.
+   Library: the panel row, then one group per year listing each step and its options (↳); a click opens that box in the panel.
    Data: DEC_DATA = {title, unit, intro, kinds:{taken,chose,closed,open,supp: legend text}, gap_text, footnote, keywords,
      steps:[{date,t,s,who,sum,q?,gap?,k?:'open',src:[{label,path,line}],
              br:[{k:'chose'|'closed'|'open'|'supp',date,t,s,who,sum,q?,gap?,src:[...]}]}]}, made outside this repo (it holds health data). */
@@ -106,6 +107,30 @@
     const n = document.createElement('span'); n.className = 'n'; n.textContent = nb + ' options';
     d.append(cb, nm, n); d.onclick = () => { cb.checked = !cb.checked; setLabSel([ID], cb.checked); };
     SEC.append(d);
+    /* one sub-section per year: each step on the path, then its options (indented); click = open that box in the panel */
+    const yr = x => (String(x.date).match(/(\d{4})\s*$/) || [, '?'])[1];
+    const focus = (k, supp) => {
+      if (supp && !V.supp) V.supp = true;
+      if (!V.open.includes(k)) V.open = V.open.concat(k); save();
+      if (!sel.includes(ID)) setLabSel([ID], true); else redraw();
+      setTimeout(() => { const c = document.querySelector('.dec-c[data-k="' + k + '"]'); if (c) c.scrollIntoView({block: 'center', behavior: 'smooth'}); }, 120); };
+    const KS = {taken: '', chose: ' ✕', closed: ' –', open: ' …', supp: ' ✕'};
+    const years = [...new Set(D.steps.map(yr))];
+    years.forEach(Y => {
+      const steps = D.steps.map((r, i) => ({r, i})).filter(x => yr(x.r) === Y);
+      const n = steps.reduce((m, x) => m + 1 + x.r.br.length, 0);
+      const S = section(SEC, 'dec:' + Y, Y, n + ' items', false, 'grp', q);
+      steps.forEach(({r, i}) => {
+        const add = (o, k, kind, sub) => { const e = document.createElement('div'); e.className = 't';
+          e.title = (o.date ? o.date + ': ' : '') + o.t + (o.s ? '\n' + o.s : '') + '\nClick: open this box in the panel';
+          const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = (sub ? '↳ ' : '') + o.t + (KS[kind] || '');
+          if (sub) nm.style.paddingLeft = '12px';
+          const c = document.createElement('span'); c.className = 'n'; c.textContent = String(o.date).replace(/\/\d{4}$/, '');
+          e.append(nm, c); e.onclick = () => focus(k, kind === 'supp'); S.append(e); };
+        add(r, key(i), r.k === 'open' ? 'open' : 'taken', false);
+        r.br.forEach((b, j) => add(b, key(i, j), b.k, true));
+      });
+    });
   };
 
   const saved = store.get('selected', []);

@@ -10,9 +10,12 @@ What the review page shows = the family viewer's built data (local/pathology/pat
 local/pathology/<case>/masks/) + every operation that is on, applied in order. The family viewer's own files are never
 written here; its page stays as it is until the owner decides otherwise.
 
-Used by serve_viewer.py (the /review routes). Standard library only. No patient data in this file.
+Links (below) are the private links that let a reviewer in from outside the home network; "python3 review.py link new"
+makes one.
+
+Used by serve_viewer.py (the /pathology-review routes). Standard library only. No patient data in this file.
 """
-import copy, json, os, re, threading, time
+import copy, hashlib, hmac, json, os, re, secrets, sys, threading, time
 
 CLASSES = {1: "likely tumor", 2: "support tissue", 3: "immune cells", 4: "normal structure", 5: "can't judge"}
 GROUP = {1: "likely tumor", 2: "healthy tissue", 3: "healthy tissue", 4: "healthy tissue", 5: "can't tell", 6: "can't tell"}
@@ -24,6 +27,8 @@ TAGS = {"area": "Map", "pin": "Note", "label": "Label", "label_edit": "Label", "
         "lesson_edit": "Lesson text", "lesson_add": "Lesson text", "example": "Picture", "source": "Link"}
 MAX_TEXT, MAX_POINTS = 4000, 600
 URL = re.compile(r"^https?://[^\s<>\"'`]{4,600}$")
+AT = "/pathology-review"   # the review page's address on the viewer's server; everything of the page lives under it
+LINK_KEY = re.compile(r"^[A-Za-z0-9_-]{30,80}$")
 FID = re.compile(r"^u\d{1,6}$")
 
 
@@ -817,6 +822,108 @@ class Workspace:
                     "files": [{k: v for k, v in u.items() if k != "read"} for u in self.upload_list()], "changedMaps": sorted(b["masks"])}
 
 
+# ---------- private links: how a reviewer outside the home network gets in ----------
+class Links:
+    """Private links to the review page, kept in the private local/review/links.json.
+
+    A link is the page's address followed by #k=<a long random key>. The part after # is never sent to a server, so the key does
+    not show up in logs; the page hands it over once and gets a cookie back. Only the key's SHA-256 is stored, so the file cannot
+    be turned back into working links: a link is shown once, when it is made. Every link has an end date and can be switched off
+    (and on again). One link is one reviewer: the name comes with the link, or the reviewer types it on the first visit.
+    """
+
+    def __init__(self, local):
+        self.file = os.path.join(local, "review", "links.json")
+        self.lock = threading.RLock()
+        self._cache = (None, [])
+
+    def rows(self):
+        try:
+            t = os.path.getmtime(self.file)
+        except OSError:
+            return []
+        if self._cache[0] != t:
+            try:
+                rows = json.load(open(self.file, encoding="utf-8"))
+            except (OSError, ValueError):
+                rows = []
+            ok = [r for r in rows if isinstance(r, dict) and isinstance(r.get("id"), int) and isinstance(r.get("hash"), str)
+                  and isinstance(r.get("until"), (int, float))] if isinstance(rows, list) else []
+            self._cache = (t, ok)
+        return self._cache[1]
+
+    def save(self, rows):
+        os.makedirs(os.path.dirname(self.file), exist_ok=True)
+        tmp = self.file + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False, indent=1)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, self.file)
+        self._cache = (None, [])
+
+    @staticmethod
+    def digest(key):
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def live(row, at=None):
+        return not row.get("off") and (time.time() if at is None else at) < row["until"]
+
+    def any_live(self):
+        return any(self.live(r) for r in self.rows())
+
+    def new(self, name="", role="pathologist", days=30, note="", by=""):
+        """-> (the stored row, the key). The key is kept nowhere: show the link now."""
+        if isinstance(days, bool) or not isinstance(days, (int, float)) or not 1 / 24 <= days <= 366:
+            raise Bad("A link lasts between one hour and 366 days.")
+        key = secrets.token_urlsafe(32)
+        with self.lock:
+            rows = [dict(r) for r in self.rows()]
+            row = {"id": max([r["id"] for r in rows] or [0]) + 1, "hash": self.digest(key), "name": text(name, "name", False, 80),
+                   "role": text(role, "role", False, 40), "made": now(), "until": int(time.time() + days * 86400), "off": False,
+                   "note": text(note, "note", False, 300), "by": text(by, "maker", False, 40)}
+            self.save(rows + [row])
+        return row, key
+
+    def find(self, key):
+        """The live link this key opens, or None."""
+        if not isinstance(key, str) or not LINK_KEY.match(key):
+            return None
+        d, hit = self.digest(key), None
+        for r in self.rows():
+            if hmac.compare_digest(d, r["hash"]):
+                hit = r
+        return hit if hit and self.live(hit) else None
+
+    def change(self, lid, **fields):
+        """Switch a link off or on, or set its reviewer's name. -> the changed row."""
+        with self.lock:
+            rows = [dict(r) for r in self.rows()]
+            row = next((r for r in rows if r["id"] == lid), None)
+            if not row:
+                raise Bad("There is no link number %s." % lid)
+            if "name" in fields:
+                fields["name"] = text(fields["name"], "name", cap=80)
+            row.update(fields)
+            self.save(rows)
+            return row
+
+    @staticmethod
+    def person(row):
+        """The reviewer a link stands for, as the page and the history know them."""
+        return {"id": "link-%d" % row["id"], "name": row.get("name") or "", "role": row.get("role") or "", "link": row["id"], "until": row["until"]}
+
+    @staticmethod
+    def day(t):
+        return time.strftime("%b %d, %Y", time.localtime(t)).replace(" 0", " ")
+
+    def describe(self, row):
+        state = "switched off" if row.get("off") else "ended " + self.day(row["until"]) if not self.live(row) else "works until " + self.day(row["until"])
+        return "Link %d: %s%s; %s; made %s%s" % (row["id"], row.get("name") or "the reviewer types their name on the first visit",
+                                               ", " + row["role"] if row.get("role") else "", state, row.get("made", "")[:10],
+                                               " (" + row["note"] + ")" if row.get("note") else "")
+
+
 OPS_GUIDE = """HOW YOU CHANGE THINGS
 You cannot edit files. You change the review by ending your reply with one fenced block named review-ops that holds a JSON list of operations. The page applies them, shows the result at once, and adds each one to the history, where the reviewer can undo it. Leave the block out when nothing should change: a question, a discussion, or a request you are not sure you understood (then ask one short question).
 
@@ -844,3 +951,56 @@ Rules for changes:
 - In your reply, say in plain words what you changed and what you left alone. The page adds the Undo buttons.
 - If a correction disagrees with one of the hospitals' reports, make the change they asked for, and say what the report says, with its file and page.
 - Nothing here is a diagnosis or a pathology report, and you never present it as one."""
+
+
+def main(argv):
+    """python3 review.py link new [--name NAME] [--role ROLE] [--days N] [--note TEXT] [--base URL] | link list | link off N | link on N
+
+    Run it in the viewer's folder (it reads and writes local/review/links.json; --local DIR names another data folder).
+    --base is the site's address as the reviewer reaches it, for example https://example.org; without it the private
+    local/review/settings.json may name one as "publicBase".
+    """
+    import argparse
+    ap = argparse.ArgumentParser(prog="review.py", description="Private links to the review page")
+    ap.add_argument("what", choices=["link"])
+    ap.add_argument("action", choices=["new", "list", "off", "on"])
+    ap.add_argument("id", nargs="?", type=int)
+    ap.add_argument("--name", default="")
+    ap.add_argument("--role", default="pathologist")
+    ap.add_argument("--days", type=float, default=30)
+    ap.add_argument("--note", default="")
+    ap.add_argument("--base", default="")
+    ap.add_argument("--local", default="local")
+    a = ap.parse_args(argv)
+    links = Links(a.local)
+    try:
+        if a.action == "list":
+            rows = links.rows()
+            print("\n".join(links.describe(r) for r in rows) if rows else "No links have been made.")
+        elif a.action in ("off", "on"):
+            if a.id is None:
+                raise Bad("Say which link: its number from 'link list'.")
+            print(links.describe(links.change(a.id, off=a.action == "off")))
+        else:
+            base = a.base
+            if not base:
+                try:
+                    base = json.load(open(os.path.join(a.local, "review", "settings.json"), encoding="utf-8")).get("publicBase") or ""
+                except (OSError, ValueError, AttributeError):
+                    base = ""
+            if base and not re.match(r"^https?://[A-Za-z0-9.\-\[\]:]+$", base.rstrip("/")):
+                raise Bad("The address has to look like https://example.org or http://203.0.113.5:8080.")
+            row, key = links.new(a.name, a.role, a.days, a.note, "owner")
+            print(links.describe(row))
+            print((base.rstrip("/") if base else "<the site's address>") + AT + "#k=" + key)
+            print("This is the only time the link is shown: just its fingerprint is stored. To switch it off: python3 review.py link off %d" % row["id"])
+            if base.startswith("http://"):
+                print("Note: this address is not encrypted (http). The key and everything the reviewer sees and types can be read on the way.")
+    except Bad as e:
+        print(e)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

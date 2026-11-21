@@ -24,6 +24,7 @@
   const keep = {get: (k, d) => { try { const v = JSON.parse(localStorage.getItem('review.' + k)); return v == null ? d : v; } catch (e) { return d; } },
                 set: (k, v) => { try { localStorage.setItem('review.' + k, JSON.stringify(v)); } catch (e) { /* full or blocked: the page still works */ } }};
   const me = R.reviewer, as = 'as=' + encodeURIComponent(me.id);
+  const needName = !!me.link && !me.name;   // came in with a private link that carries no name: ask once, before anything is changed
 
   // ---- state ----
   let S = null;                 // the server's answer: {version, data, history, canUndo, canRedo, files, chat}
@@ -165,10 +166,12 @@ body.revFocus .pth-lb .top .t{flex-basis:100%}
 
   // ---- the side column ----
   const side = el('div'); side.id = 'rvSide';
-  side.innerHTML = `<div class="rv-head"><div class="rv-row"><div style="margin-right:auto"><span class="t">Pathology review</span> <span class="s">for ${esc(me.name)}${me.role ? ', ' + esc(me.role) : ''}</span></div>
+  side.innerHTML = `<div class="rv-head"><div class="rv-row"><div style="margin-right:auto"><span class="t">Pathology review</span> <span class="s">${needName ? '' : 'for ' + esc(me.name) + (me.role ? ', ' + esc(me.role) : '')}</span></div>
       <button class="rv-b" id="rvUndo" title="Undo the latest change">↩ Undo</button><button class="rv-b" id="rvRedo" title="Put back the change that was undone last">↪ Redo</button></div>
-    <div class="rv-row" style="margin-top:4px"><div class="rv-live" id="rvLive"><i></i><span id="rvLiveT">Live: every change shows here at once</span></div></div>
+    <div class="rv-row" style="margin-top:4px"><div class="rv-live" id="rvLive"><i></i><span id="rvLiveT">Live: every change shows here at once</span></div>
+      ${me.until ? '<span class="s">Your link works until ' + esc(new Date(me.until * 1000).toLocaleDateString([], {month: 'short', day: 'numeric', year: 'numeric'})) + '</span>' : ''}</div>
     <div class="rv-what">A teaching review, not a pathology report</div></div>
+    <div id="rvName"></div>
     <div class="rv-tabs"><button class="rv-b" data-t="chat">Chat with Claude</button><button class="rv-b" data-t="history">History <span class="rv-n" id="rvHN">0</span></button><button class="rv-b" data-t="files">Files <span class="rv-n" id="rvFN">0</span></button></div>
     <div id="rvPeek"></div><div id="rvNew"></div>
     <div class="rv-pane" id="rvP-chat"><div class="rv-scroll" id="rvMsgs"></div>
@@ -181,6 +184,15 @@ body.revFocus .pth-lb .top .t{flex-basis:100%}
     <div class="rv-pane" id="rvP-files" hidden><div class="rv-scroll" id="rvFiles"></div></div>`;
   document.body.append(side); document.body.classList.add('revFocus'); document.title = 'Pathology review';
   function showTab(t) { tab = t; keep.set('tab', t); draw(); }
+
+  // the card that asks a private link's reviewer for their name, once
+  function drawName() { const d = $('#rvName'); d.innerHTML = ''; if (!needName) return; const c = el('div', 'rv-new');
+    c.innerHTML = '<b>Welcome. What is your name?</b> <span style="color:var(--muted);font-size:12px">It is shown next to every change you make and every note you leave.</span>';
+    const inp = el('input'); inp.placeholder = 'Your name, for example Dr. Jane Smith'; inp.maxLength = 80; inp.autocomplete = 'name';
+    const sv = btn('Save my name', '', async () => { const r = await post('name', {name: inp.value.trim()}); if (r.ok) location.reload(); else live(r.j.error || 'That could not be saved.', 'err'); }, 'on');
+    const ok = () => { sv.disabled = !inp.value.trim(); }; inp.oninput = ok; ok();
+    inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && !sv.disabled) sv.click(); });
+    c.append(inp, sv); d.append(c); }
 
   // the card that asks what a freshly drawn outline or spot is
   function drawNew() { const d = $('#rvNew'); d.innerHTML = ''; if (!draft || drawing) return; const isArea = draft.pts.length > 1, c = el('div', 'rv-new');
@@ -290,6 +302,7 @@ body.revFocus .pth-lb .top .t{flex-basis:100%}
     side.querySelectorAll('[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === tab)); ['chat', 'history', 'files'].forEach(t => { $('#rvP-' + t).hidden = t !== tab; });
     const pk = $('#rvPeek'); pk.innerHTML = ''; if (peek) { const b = el('div', 'rv-peek', `Showing the page <b>without</b> change #${peek}. `); b.append(btn('Back to now', '', () => setPeek(null))); pk.append(b); }
     drawNew(); drawChat(); drawHistory(); drawFiles(); }
+  drawName();
 
   // ---- wiring ----
   side.querySelectorAll('[data-t]').forEach(b => { b.onclick = () => showTab(b.dataset.t); });

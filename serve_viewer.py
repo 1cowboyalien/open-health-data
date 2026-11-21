@@ -50,8 +50,12 @@ Usage:
   the page data with those changes applied. The family viewer's own files and page are not touched. GET
   /pathology-review/pathology/... serves the photos as /pathology/ does, plus the tissue maps the review has changed and the
   pictures a reviewer added. POST /pathology-review/api/chat and .../upload pass on to the reviewer's chat server named in
-  local/review/settings.json. On only when local/review/reviewers.json exists, and it answers only this Mac and the
-  home network.
+  local/review/settings.json. On this Mac and the home network it is on when local/review/reviewers.json exists
+  (?as=<id> names a reviewer). From anywhere else it opens only with a private link: /pathology-review#k=<key>, made by
+  "python3 review.py link new" (review.Links: only the key's fingerprint is kept, in local/review/links.json; every
+  link has an end date and an off switch). The part after # never reaches a server: a small gate page hands the key to
+  POST /pathology-review/api/enter and gets a cookie that stands for it. Without one, outside visitors get that gate
+  page (while a link is live) or 404, and never the page or its data.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -65,6 +69,7 @@ import re
 import shutil
 import threading
 import hmac
+import ssl
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -101,14 +106,24 @@ ASK_CONF = os.path.join(LOCAL, "ask.json")
 START = os.path.join(LOCAL, "start_view.json")
 REVIEW = review.Workspace(LOCAL)   # review.py: a reviewer's changes to the Pathology panel, with their history
 REVIEW_JS = os.path.join(HERE, "review_view.js")
-REVIEW_AT = "/pathology-review"   # the review page's address; everything of the page lives under it. /review, its first address, forwards here
+REVIEW_AT = review.AT   # the review page's address (/pathology-review); everything of the page lives under it. /review, its first address, forwards here
+REVIEW_LINKS = review.Links(LOCAL)   # private links for reviewers outside the home network (local/review/links.json)
+REVIEW_COOKIE = "pathrev"            # holds a private link's key once the page has handed it over
+REVIEW_TRIES = {}                    # visitor address -> times of wrong keys in the last ten minutes
+REVIEW_NAME_FIRST = "Please type your name first, at the top of the side column, so your changes can be credited to you."
 REVIEWERS = os.path.join(LOCAL, "review", "reviewers.json")   # who may review: [{"id", "name", "role"}]; no file = no review page
 REVIEW_CONF = os.path.join(LOCAL, "review", "settings.json")  # {"chatServer": "http://127.0.0.1:8821"} for the chat and uploads
 REVIEW_UPLOAD_MAX = 60_000_000
 # The review page keeps its own view settings ("labsrev.*"), apart from the viewer's on the same address, and starts
 # with only the Pathology panel ticked. It also adds phone=0 to its address before the viewer's scripts run, so a phone
-# opens on the slide photos and not on the viewer's phone start screen (phone_view.js).
-REVIEW_SHIM = ("(function(){try{var u=new URL(location.href);if(u.searchParams.get('phone')==null){u.searchParams.set('phone','0');"
+# opens on the slide photos and not on the viewer's phone start screen (phone_view.js). And when the address carries a
+# private link's key (#k=...), it hands the key over and loads the page again as that link's reviewer: this is how a
+# link is tried from the home network, where the page opens without one.
+REVIEW_SHIM = ("(function(){function key(){try{var k=(/[#&]k=([A-Za-z0-9_-]{30,80})/.exec(location.hash)||[])[1];if(k){"
+               "fetch('" + REVIEW_AT + "/api/enter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})})"
+               ".then(function(r){history.replaceState(history.state,'',location.pathname+location.search);if(r.ok)location.reload()})}}catch(e){}}"
+               "window.addEventListener('hashchange',key);key();"
+               "try{var u=new URL(location.href);if(u.searchParams.get('phone')==null){u.searchParams.set('phone','0');"
                "history.replaceState(history.state,'',u.pathname+u.search+u.hash)}}catch(e){}"
                "try{var S=Storage.prototype,g=S.getItem,s=S.setItem,r=S.removeItem,"
                "m=function(k){k=String(k);return k.indexOf('labs.')===0?'labsrev.'+k.slice(5):k};"
@@ -116,6 +131,20 @@ REVIEW_SHIM = ("(function(){try{var u=new URL(location.href);if(u.searchParams.g
                "S.removeItem=function(k){return r.call(this,m(k))};"
                "if(localStorage.getItem('labs.selected')==null){localStorage.setItem('labs.selected','[\"path:slides\"]');"
                "localStorage.setItem('labs.mode','\"compare\"')}}catch(e){}})();")
+# What an outside visitor without a link's cookie gets at the page's address: no data, only the hand-over of the key.
+REVIEW_GATE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer"><title>Pathology review</title>
+<style>body{font:16px/1.5 -apple-system,system-ui,sans-serif;max-width:34em;margin:14vh auto;padding:0 22px;color:#1f2430;background:#f6f7f9}
+h1{font-size:21px;margin:0 0 8px}p{margin:8px 0}.s{color:#667085;font-size:14px}</style></head>
+<body><h1>Pathology review</h1><p id="m">Opening your link…</p><p class="s">A teaching review, not a pathology report.</p>
+<script>(function(){var m=document.getElementById('m');function go(){var k=(/[#&]k=([A-Za-z0-9_-]{30,80})/.exec(location.hash)||[])[1];
+if(!k){m.textContent='This page opens with the private link you were sent. If you came here with that link, it has ended or been switched off: please ask for a new one.';return}
+m.textContent='Opening your link…';
+fetch('__AT__/api/enter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})}).then(function(r){
+if(r.ok){history.replaceState(null,'',location.pathname+location.search);location.reload()}
+else m.textContent=r.status===429?'Too many tries from this address. Please wait ten minutes and open the link again.':'This link has ended or been switched off. Please ask for a new one.'})
+.catch(function(){m.textContent='The page could not be reached. Please try again in a moment.'})}
+window.addEventListener('hashchange',go);go()})();</script></body></html>""".replace("__AT__", REVIEW_AT)
 START_JS = os.path.join(HERE, "start_view.js")
 START_SKIP = {"txedits", "txdirty", "open"}   # medication edits are shared separately; "open" is not used any more
 START_MAX = 2_000_000
@@ -434,17 +463,60 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, open(f, "rb").read(), "application/json")
         return self.send(404, {"error": "not found"})
 
-    # ---- review page (review.py): this Mac and the home network only ----
+    # ---- review page (review.py): this Mac and the home network, or a private link from anywhere ----
+    def review_link(self):
+        """The live private link this browser came in with (its cookie), or None."""
+        m = re.search(r"(?:^|;\s*)" + REVIEW_COOKIE + r"=([A-Za-z0-9_-]{30,80})(?:;|$)", self.headers.get("Cookie") or "")
+        return REVIEW_LINKS.find(m.group(1)) if m else None
+
+    def review_https(self):
+        if isinstance(self.connection, ssl.SSLSocket):
+            return True
+        # otherwise a tunnel or proxy on this Mac says how the visitor reached it
+        return usage.client_ip(self)[1] and ((self.headers.get("X-Forwarded-Proto") or "").lower() == "https" or '"https"' in (self.headers.get("Cf-Visitor") or ""))
+
     def review_who(self, body=None):
-        """The reviewer named by ?as=<id> (or "as" in the request), from local/review/reviewers.json; the first one when none is named."""
+        """Who is reviewing, or None when the page is not for this visitor.
+
+        Someone who came in with a private link is that link's reviewer, wherever they are. On this Mac and the home network
+        the reviewers in local/review/reviewers.json can also be named with ?as=<id> (or "as" in the request); without a link
+        and without a name it is the first of them. From outside, "as" is never trusted."""
+        if not REVIEW.ready():
+            return None
+        want = (body or {}).get("as") or urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("as", [""])[0]
+        link, home = self.review_link(), usage.is_local_request(self)
+        me = review.Links.person(link) if link else None
+        if me and (not home or not want or want == me["id"]):
+            return me
+        if not home:
+            return None
         try:
             people = json.load(open(REVIEWERS))
         except (OSError, ValueError):
             return None
         ok = [p for p in people if isinstance(p, dict) and re.fullmatch(r"[a-z0-9-]{1,40}", str(p.get("id", ""))) and p.get("name")] if isinstance(people, list) else []
-        want = (body or {}).get("as") or urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("as", [""])[0]
         hit = next((p for p in ok if p["id"] == want), ok[0] if ok and not want else None)
         return {"id": hit["id"], "name": str(hit["name"])[:80], "role": str(hit.get("role") or "")[:40]} if hit else None
+
+    def review_enter(self, n):
+        """The page hands over a private link's key: answer with the cookie that stands for it from then on."""
+        ip, at = usage.client_ip(self)[0], time.time()
+        if len(REVIEW_TRIES) > 5000:
+            REVIEW_TRIES.clear()
+        tries = REVIEW_TRIES[ip] = [x for x in REVIEW_TRIES.get(ip, []) if at - x < 600]
+        if len(tries) >= 10:
+            return self.send(429, {"error": "too many tries"})
+        try:
+            body = json.loads(self.rfile.read(n)) if 0 < n <= 2000 else {}
+        except ValueError:
+            body = {}
+        row = REVIEW_LINKS.find(body.get("key")) if isinstance(body, dict) and REVIEW.ready() else None
+        if not row:
+            tries.append(at)
+            return self.send(403, {"error": "This link has ended or been switched off."})
+        cookie = "%s=%s; Path=%s; Max-Age=%d; HttpOnly; SameSite=Strict%s" % (
+            REVIEW_COOKIE, body["key"], REVIEW_AT, max(60, int(row["until"] - at)), "; Secure" if self.review_https() else "")
+        return self.send(200, {"ok": True}, headers=(("Set-Cookie", cookie),))
 
     def review_conf(self):
         try:
@@ -458,15 +530,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def review_moved(self):
         """/review was the page's first address: forward to the new one, for the same people only."""
-        if not (usage.is_local_request(self) and REVIEW.ready() and self.review_who()):
+        if not (usage.is_local_request(self) and self.review_who()):
             return self.send(404, {"error": "not found"})
         q = urllib.parse.urlparse(self.path).query
         return self.send(302, b"", "text/plain", headers=(("Location", REVIEW_AT + ("?" + q if q else "")),))
 
     def review_get(self, path):
         """path = what follows the page's address: "" for the page itself, /api/state, /pathology/<file>, ..."""
-        who = self.review_who() if usage.is_local_request(self) and REVIEW.ready() else None
+        who = self.review_who()
         if not who:
+            if path in ("", "/") and not usage.is_local_request(self) and REVIEW.ready() and REVIEW_LINKS.any_live():
+                return self.send(200, REVIEW_GATE.encode(), "text/html; charset=utf-8")   # no data: it only hands a link's key over
             return self.send(404, {"error": "not found"})
         if path in ("", "/"):
             if not os.path.exists(PAGE):
@@ -505,9 +579,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(404, {"error": "not found"})
 
     def review_post(self, sub):
-        if not usage.is_local_request(self) or not REVIEW.ready():
-            return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
+        if sub == "enter":
+            return self.review_enter(n)
         if sub == "upload":
             return self.review_upload(n)
         if n <= 0 or n > MAXBODY:
@@ -520,6 +594,16 @@ class Handler(BaseHTTPRequestHandler):
         who = self.review_who(body)
         if not who:
             return self.send(404, {"error": "not found"})
+        if sub == "name":   # a reviewer with a private link says how their changes are to be signed
+            if not who.get("link"):
+                return self.send(404, {"error": "not found"})
+            try:
+                who = review.Links.person(REVIEW_LINKS.change(who["link"], name=body.get("name")))
+            except review.Bad as e:
+                return self.send(422, {"error": str(e)})
+            return self.send(200, self.review_state(who))
+        if not who["name"]:
+            return self.send(422, dict(self.review_state(who), error=REVIEW_NAME_FIRST))
         made = None
         try:
             with lock:
@@ -544,6 +628,8 @@ class Handler(BaseHTTPRequestHandler):
         who, chat = self.review_who(), self.review_conf().get("chatServer")
         if not who:
             return self.send(404, {"error": "not found"})
+        if not who["name"]:
+            return self.send(422, {"error": REVIEW_NAME_FIRST})
         if not chat:
             return self.send(503, {"error": "The reviewer's chat is not running, so files cannot be added yet."})
         if n <= 0 or n > REVIEW_UPLOAD_MAX:

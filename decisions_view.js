@@ -28,9 +28,9 @@
       '.dec-brs .dec-c.end::after{content:"";position:absolute;right:-9px;top:14px;height:20px;border-left:3px solid var(--line)}' +
       '.dec-c{border:1px solid;border-radius:9px;padding:8px 12px;cursor:pointer;background:var(--card);color:var(--ink);font-size:12.5px;line-height:1.4}' +
       '.dec-c:focus-visible{outline:2px solid #1D9E75;outline-offset:2px}' +
-      '.dec-c .d{font-size:11px;color:var(--muted)}.dec-c .t{font-weight:600;font-size:13.5px}.dec-c .s{font-size:12px;color:var(--ink2)}.dec-c .w{font-size:11px;color:var(--muted);margin-top:2px}' +
-      '.dec-taken{border-color:#1D9E75;background:rgba(29,158,117,.11)}.dec-chose{border-color:#D85A30;background:rgba(216,90,48,.11)}' +
-      '.dec-closed{border-color:#888780;background:rgba(136,135,128,.12)}.dec-open{border:1.5px dashed var(--ink2)}.dec-supp{border-color:#7F77DD;background:rgba(127,119,221,.13)}' +
+      '.dec-c .dd{font-size:11px;color:var(--muted)}.dec-c .dt{font-weight:600;font-size:13.5px}.dec-c .ds{font-size:12px;color:var(--ink2)}.dec-c .dw{font-size:11px;color:var(--muted);margin-top:2px}' +
+      '.dec-taken{border-color:#1D9E75;background:linear-gradient(rgba(29,158,117,.16),rgba(29,158,117,.16)),var(--card)}.dec-chose{border-color:#D85A30;background:linear-gradient(rgba(216,90,48,.16),rgba(216,90,48,.16)),var(--card)}' +
+      '.dec-closed{border-color:#888780;background:linear-gradient(rgba(136,135,128,.16),rgba(136,135,128,.16)),var(--card)}.dec-open{border:1.5px dashed var(--ink2)}.dec-supp{border-color:#7F77DD;background:linear-gradient(rgba(127,119,221,.18),rgba(127,119,221,.18)),var(--card)}' +
       '.dec-x{display:none;margin-top:7px;padding-top:7px;border-top:1px solid var(--line);font-size:12.5px;cursor:auto}.dec-c.on .dec-x{display:block}' +
       '.dec-x blockquote{margin:6px 0;padding:4px 9px;border-left:3px solid var(--line);font-style:italic;color:var(--ink2)}' +
       '.dec-x .src{font-size:11px;color:var(--muted);margin-top:5px}.dec-x code{font-size:10.5px}.dec-x .gap{font-size:12px;margin-top:5px;padding:4px 7px;border-radius:5px;background:rgba(136,135,128,.15)}' +
@@ -44,8 +44,8 @@
     const on = V.open.includes(k);
     const src = (o.src || []).map(s => '<div>' + esc(s.label) + ': <code>' + esc(s.path) + '</code>' + (s.line ? ' · line ' + s.line : '') + '</div>').join('');
     return '<div class="dec-c dec-' + kind + (isBranch && kind !== 'open' && kind !== 'supp' ? ' end' : '') + (on ? ' on' : '') + '" tabindex="0" role="button" aria-expanded="' + on + '" data-k="' + k + '">' +
-      '<div class="d">' + esc(o.date) + '</div><div class="t">' + esc(o.t) + '</div><div class="s">' + esc(o.s) + '</div>' +
-      (V.who && o.who ? '<div class="w">' + esc(o.who) + '</div>' : '') +
+      '<div class="dd">' + esc(o.date) + '</div><div class="dt">' + esc(o.t) + '</div><div class="ds">' + esc(o.s) + '</div>' +
+      (V.who && o.who ? '<div class="dw">' + esc(o.who) + '</div>' : '') +
       '<div class="dec-x"><div>' + esc(o.sum) + '</div>' + (o.q ? '<blockquote>"' + esc(o.q) + '"</blockquote>' : '') +
       (o.gap ? '<div class="gap">' + esc(D.gap_text || '') + '</div>' : '') +
       '<div class="src">' + (o.who ? 'Who: ' + esc(o.who) + '<br>' : '') + src + '</div></div></div>';

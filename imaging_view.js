@@ -5,7 +5,7 @@
    so the panels get the same ⤒ ↑ ↓ ⤓ − + × controls and Compare stacking.
    Panels:  img:brain:dates  = every brain MRI as a point on the shared time axis
             img:brain:viewer = NiiVue slice viewer (axial/coronal/sagittal + 3D) with our lesion outlines L01…
-   Data: IMG_DATA = {brain_mri: [...], viewer_scans: [{date, t1c, labels, lesions:[{id,n,name,rgb,enh,axial,ras}],
+   Data: IMG_DATA = {brain_mri: [...], viewer_scans: [{date, t1c, labels, lesions:[{id,n,name,rgb,enh,axial,ras}], marks?:[{id,label,rgb,note,ras}] (plan points: a row under the lesions that moves the crosshair there),
           series?: [{key, label, short, file, badge, note, probe, labels?, lesions?, lesions_note?}], series_main?, perf?: [{key, label, file, note?}]}]}
           (series = other kinds of picture of that date; perf note = said beside the perfusion scale, e.g. a map we computed ourselves). */
 (() => {
@@ -862,8 +862,20 @@
     const shown = scan.ser ? `<div style="padding:0 5px 3px;font-size:11px;color:#e0a020" title="${esc(scan.ser.note || '')}">on screen: ${esc(scan.ser.short || scan.ser.label)}; outlines and volumes ${scan.ser.labels ? esc(scan.ser.lesions_note || 'taken on this series') : 'from ' + esc(scan.series_main || 'the measured series')}</div>` : '';
     box.innerHTML = `<div class="sub" style="padding:3px 5px">${fd(scan.date)} · ${scan.lesions.length} lesions · ${(tot / 1000).toFixed(1)} cm³ enhancing (our outlines${typeof L !== 'undefined' && L.rule === 'old' ? ', old 1.45× rule' : ''})${fld}</div>` + shown +
       scan.lesions.map(l => `<div class="nvles" data-id="${l.id}" title="${esc(l.name)} · ${volOf(l).toLocaleString()} mm³ · longest axial ${l.axial} mm. Click to go there.">
-        <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(volOf(l) / 1000).toFixed(2)} cm³</span></div>`).join('');
-    box.querySelectorAll('.nvles').forEach(e => e.onclick = () => { const l = V.scan && V.scan.lesions.find(x => x.id === e.dataset.id); if (l) jump(l); });   // the scan shown/loading now, not the one this list was made for
+        <span class="nvsw" style="background:rgb(${l.rgb})"></span><b>${l.id}</b><span>${esc(l.name)}</span><span class="v">${(volOf(l) / 1000).toFixed(2)} cm³</span></div>`).join('') +
+      ((scan.marks || []).length ? '<div class="sub" style="padding:5px 5px 1px">Plan points <span title="Points from a radiation plan file, placed on this scan through our alignment (about 1-2 mm). Click one: the crosshair moves onto it.">ⓘ</span></div>' +
+        scan.marks.map(m => `<div class="nvles nvmark" data-mark="${esc(m.id)}" title="${esc(m.note)} Click to put the crosshair on it.">
+        <span class="nvsw" style="background:rgb(${m.rgb});border-radius:50%;box-shadow:0 0 0 1px #888"></span><span>${esc(m.label)}</span></div>`).join('') : '');
+    box.querySelectorAll('.nvles').forEach(e => e.onclick = () => { if (e.dataset.mark) { markJump(e.dataset.mark); return; }
+      const l = V.scan && V.scan.lesions.find(x => x.id === e.dataset.id); if (l) jump(l); });   // the scan shown/loading now, not the one this list was made for
+  }
+  function markJump(id) {   // a plan point: the crosshair goes onto it, the line under the images says what it is
+    const m = V.scan && (V.scan.marks || []).find(x => x.id === id); if (!V.nv || !m) return;
+    V.nv.scene.crosshairPos = V.nv.mm2frac(m.ras);
+    if (zoomOf2() > 1) centre2(zoomOf2());
+    V.nv.drawScene();
+    V.R('list').querySelectorAll('.nvles').forEach(e => e.classList.toggle('on', e.dataset.mark === id));
+    V.R('read').innerHTML = `<b style="color:rgb(${m.rgb})">◉ ${esc(m.label)}</b> · crosshair is on it · ${esc(m.note)}` + perfAt(m.ras) + swellAt(m.ras) + gridHere(m.ras);
   }
   function jump(l, auto) {
     if (!auto) V.picked = l;

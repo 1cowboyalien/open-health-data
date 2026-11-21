@@ -21,7 +21,10 @@
                   [IDW]: {title: 'Brain MRI · Swelling by lesion', unit: '% room vs the normal control MRI', h0: 360}};
   const SWELL = !!(window.LesionSwelling && IMG_DATA.swelling && IMG_DATA.swelling.rows.length);   // swelling_view.js (swelling / shrinkage per lesion)
   const PERF = !!(window.LesionPerfusion && IMG_DATA.perfusion && IMG_DATA.perfusion.rows.length);   // perfusion_view.js (blood flow / volume per lesion)
-  const DOSE = IMG_DATA.dose;   // ESTIMATED radiation dose (imaging/radiation_dose), or null
+  const DOSE = IMG_DATA.dose;   // radiation dose (imaging/radiation_dose), or null. ESTIMATED, except the maps and courses the data file marks `real`: a hospital's own dose file
+  const DOSE_REAL = !!(DOSE && (DOSE.maps || []).some(m => m.real));   // at least one course is a hospital's dose file
+  const DOSE_TAG = DOSE_REAL ? 'part estimated' : 'estimated';
+  if (DOSE_REAL) PANELS[IDD].unit = DOSE_TAG;
   const NIIVUE = 'https://cdn.jsdelivr.net/npm/@niivue/niivue@0.69.0/+esm';   // jsDelivr bundles it as a browser module (unpkg's build file did not import)
   // health systems come from the (private) data file, never from this public code: [{key, short, long}]
   const SITE_LIST = IMG_DATA.sites || [];
@@ -162,8 +165,8 @@
         <button type="button" data-r="clesion" title="Darker brain, enhancing lesions stand out">Lesions</button>
         <label data-r="tonewrap" style="display:none" title="Shows the same tissue at the same grey on every scan date: air black, then fluid, grey matter, white matter and scalp/marrow fat at fixed levels, so scans from different scanners and sequence types look alike and the Low / Mid / High settings carry over from date to date. Display only: our measurements use the scan's own values. It also evens out how bright enhancement looks, so with this on, brightness alone does not mean 'more enhancing'; untick to see the scan's own contrast."><input type="checkbox" data-r="tone"> match brightness across scans</label>
         <span class="sub" data-r="tonel"></span></div>
-      <div class="nvbar" data-sec="dose" data-r="dosebar" title="ESTIMATED radiation dose from our model of the treatment records, not the hospitals' dose files">
-        <span class="sub" style="color:#e0a020">Radiation dose (estimated)</span>
+      <div class="nvbar" data-sec="dose" data-r="dosebar" title="${DOSE_REAL ? "Radiation dose. A course marked 'dose file' is the hospital's own dose map, placed on these scans; the others are ESTIMATED from our model of the treatment records" : "ESTIMATED radiation dose from our model of the treatment records, not the hospitals' dose files"}">
+        <span class="sub" style="color:#e0a020">Radiation dose (${DOSE_TAG})</span>
         <select data-r="dose"><option value="">off</option></select>
         <span title="How see-through the colour wash is">wash <input data-r="dop" type="range" min="0" max="100" value="35" style="width:70px"></span>
         <span title="3D view only: how solid the dose looks (low = see-through cloud; the 3D cut also slices through the dose while it's shown)">3D strength <input data-r="dblend" type="range" min="5" max="100" value="25" style="width:60px"></span>
@@ -251,7 +254,7 @@
       if (c.type === 'checkbox') c.checked = !!V.disp[k]; else c.value = String(V.disp[k]);
       c.oninput = c.onchange = () => { V.disp[k] = c.type === 'checkbox' ? c.checked : (c.type === 'range' ? +c.value : c.value);
         store.set('img.disp', V.disp); applyDisplay(); }; });
-    (DOSE ? DOSE.maps : []).forEach(m => { const o = document.createElement('option'); o.value = m.key; o.textContent = m.label; R('dose').appendChild(o); });
+    (DOSE ? DOSE.maps : []).forEach(m => { const o = document.createElement('option'); o.value = m.key; o.textContent = m.label + (m.real ? ' (dose file)' : ''); R('dose').appendChild(o); });
     if (!DOSE) R('dosebar').style.display = 'none';
     R('dose').value = V.dose.key; R('dop').value = V.dose.op; R('dlines').checked = V.dose.lines;
     R('dose').onchange = () => { V.dose.key = R('dose').value; saveDose(); applyDose(); };
@@ -504,7 +507,7 @@
     applyCut(); nv.updateGLVolume(); nv.drawScene();
     V.el.querySelectorAll('[data-o^="lb"]').forEach(c => c.closest('label').style.opacity = d.layout === 'lightbox' ? 1 : 0.45);
   }
-  /* ---- radiation dose overlay (ESTIMATED, imaging/radiation_dose): colour wash + isodose lines; volumes after t1c and lesions ---- */
+  /* ---- radiation dose overlay (imaging/radiation_dose; estimated, except a map marked `real`): colour wash + isodose lines; volumes after t1c and lesions ---- */
   const LV = () => V.nv && V.nv.volumes.find(v => v.name && v.name.startsWith('lesions_'));   // the lesion label layer (its position changes when dose layers are added)
   const LI = () => V.nv.volumes.indexOf(LV());
   function saveDose() { store.set('img.dose', V.dose); }
@@ -535,7 +538,7 @@
     nv.moveVolumeToTop(LV());   // lesions drawn above the dose so the dose wash doesn't dull their colours
     applyDose3D();
     V.R('dlegend').innerHTML = `colour ${lo}→${hi} ${m.unit} (blue→red${tot ? ', dark→bright' : ''})` + (V.dose.lines ? ` · lines: <b style="color:#fff">${m.levels[1]}</b> and <b style="color:#ffe63c">${m.levels[0]}</b> ${m.unit}` : '') +
-      ` · <span title="${esc(DOSE.notes[m.key] || (m.key === 'total_gy' ? 'Each course added in plain Gy, not adjusted for dose per session.': 'Each course added as EQD2 (alpha/beta 2, normal brain)'))}">how estimated ⓘ</span>`;
+      ` · <span title="${esc(DOSE.notes[m.key] || (m.key === 'total_gy' ? 'Each course added in plain Gy, not adjusted for dose per session.': 'Each course added as EQD2 (alpha/beta 2, normal brain)'))}">${m.real ? "hospital's dose file ⓘ" : 'how estimated ⓘ'}</span>`;
   }
   /* ---- perfusion layer (imaging/perfusion): blood flow (ASL) or blood volume (rCBV) as × normal brain, ×100, on the baseline grid ---- */
   function savePerf() { store.set('img.perf', V.perf); }
@@ -719,7 +722,7 @@
     (m.probe || []).forEach(p => { if (!gridAt(G, p.slice(0, 3), o)) return; n++; for (let q = 0; q < 3; q++) mmErr = Math.max(mmErr, Math.abs(o[q] - p[3 + q])); pctErr = Math.max(pctErr, Math.abs(o[3] - p[6])); });
     return {date: V.scan.date, points: n, worst_mm: +mmErr.toFixed(3), worst_pct: +pctErr.toFixed(2), ok: n === (m.probe || []).length && mmErr <= 0.02 && pctErr <= 0.2}; };
   function doseAt(mm) { const w = doseVol('wash'); if (!w || !mm) return '';
-    const m = DOSE.maps.find(x => x.key === V.dose.key); const v = w.getValue(...w.mm2vox(mm)); return ` · dose here ≈ ${(v / 10).toFixed(1)} ${m.unit} (estimated)`; }
+    const m = DOSE.maps.find(x => x.key === V.dose.key); const v = w.getValue(...w.mm2vox(mm)); return ` · dose here ≈ ${(v / 10).toFixed(1)} ${m.unit} (${m.real ? 'dose file' : 'estimated'})`; }
   function sizeBox(id) { if (!V.el) return; const box = V.R('box');
     const rowH = V.rowLay && box.clientWidth ? Math.max(200, Math.round(box.clientWidth / 4) + 6) : 0;   // four views in a row: one square view tall
     /* a narrow screen (a phone) with the panel still at its standard height: about as tall as it is wide, which is what the four
@@ -930,12 +933,13 @@
   const L = {view: store.get('img.lesView2', 'volume'), hidden: new Set(store.get('img.lesHidden', (store.get('img.trends', {}).hidden || []))),   // (before 2026-11-18 the volume views kept their own selection)
              showTx: store.get('img.lesTx', true), showMeas: store.get('img.lesMeas', true), field: store.get('img.lesField', 'all'), rule: store.get('img.lesRule', 'new'),
              doseNum: store.get('img.lesDoseNum', true), doseStrip: store.get('img.lesDoseStrip', true)};
-  /* ---- radiation dose per lesion (ESTIMATED): unit switch shared by Lesions over time and Radiation dose by lesion ---- */
+  /* ---- radiation dose per lesion (estimated, except courses marked `real`): unit switch shared by Lesions over time and Radiation dose by lesion ---- */
   const DU = {get: () => store.get('img.doseUnit', 'gy'), set: u => store.set('img.doseUnit', u)};
   const DROWS = DOSE ? DOSE.rows : [];
   // radiation courses come from the data file: {key: {label, kind: 'whole' | 'focal'}}, in time order
   const COURSES = (DOSE && DOSE.course_info) || {};
   const CLAB = Object.fromEntries(Object.entries(COURSES).map(([k, c]) => [k, c.label]));
+  const CREAL = k => !!(COURSES[k] && COURSES[k].real);   // this course's dose is a hospital's dose file, not our estimate
   const FOCAL_COLORS = ['#7b68ee', '#e05cc0', '#3fb6c6', '#e07b39', '#8fbf3f'];
   const CCOL = (() => { let n = 0; return Object.fromEntries(Object.entries(COURSES).map(([k, c]) => [k, c.kind === 'whole' ? '#d9a21b' : FOCAL_COLORS[n++ % FOCAL_COLORS.length]])); })();
   const isWhole = k => (COURSES[k] || {}).kind === 'whole';
@@ -1061,7 +1065,7 @@
       [['new', 'new ⅓ rule'], ['old', 'old 1.45×']].forEach(([v, lab]) => rs.append(lbtn(lab, '', L.rule === v, () => { L.rule = v; store.set('img.lesRule', v); drawLesions(id, body); if (V.scan) lesionList(V.scan); })));
       bar.append(rs);
     }
-    if (DOSE) { const sp = document.createElement('span'); sp.className = 'sub'; sp.style.color = '#e0a020'; sp.textContent = '· dose (estimated):'; bar.append(sp);
+    if (DOSE) { const sp = document.createElement('span'); sp.className = 'sub'; sp.style.color = '#e0a020'; sp.textContent = '· dose (' + DOSE_TAG + '):'; bar.append(sp);
       chk('numbers', 'img.lesDoseNum', 'doseNum'); chk('strip', 'img.lesDoseStrip', 'doseStrip'); bar.append(unitButtons(() => drawLesions(id, body))); }
     // lesion buttons: the component every imaging panel shares (lesion_chips.js); the badge is what the latest report said
     const LY = LS.reports.reduce((m, r) => r.date > m ? r.date : m, '').slice(0, 4);   // latest report year
@@ -1156,7 +1160,7 @@
     const note = document.createElement('div'); note.className = 'sub'; note.style.marginTop = '4px';
     note.innerHTML = L.view === 'timeline'
       ? 'Dot = a report mentioned the lesion; size = reported size (✕ resolved, ring only = no size or the wording fits two lesions). Ring colour: <b style="color:#e34948">grew</b> · <b style="color:#1baf7a">shrank</b> · <b style="color:#8a8984">stable</b>. ◆ = our own measurement on a 1.5T scanner, ▲ = on a 3T scanner (mostly corrected; small lesions can still differ). Purple box = SRS on that lesion (dashed = unverified); orange band = whole-brain radiation.' +
-        (DOSE ? ` <span style="color:#e0a020">Dose (estimated, ${dunit()}): number after a treatment box = dose that course gave the lesion; strip under each row = dose so far (pale = little, dark red = most); right column = total.</span>` : '')
+        (DOSE ? ` <span style="color:#e0a020">Dose (${DOSE_TAG}, ${dunit()}): number after a treatment box = dose that course gave the lesion; strip under each row = dose so far (pale = little, dark red = most); right column = total.</span>` : '')
       : 'Size, not volume: longest width in mm as each report gave it (different hospitals and readers: trends, not exact), joined with our own measurements (◆ = our longest axial width on a 1.5T scanner, ▲ = on 3T; a dotted stretch between the two strengths may be partly the scanner; hover it for our volume in cm³; hollow ◆ at 0 = our check found nothing there, 7/31/2023; the faint dotted stretch after it only means "appeared some time in between"). Dashed = report wording fits two lesions. Bands: orange = whole-brain radiation, purple = SRS.';
     body.appendChild(note);
   }
@@ -1170,7 +1174,7 @@
     let h = '<div style="overflow:auto;max-height:' + (hOf(IDL, PANELS[IDL].h0) + 40) + 'px"><table class="lesgrid" style="border-collapse:collapse;font-size:11px">';
     const md = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});   // "Jun 27"
     h += '<tr><th class="sub" style="position:sticky;left:0;background:var(--bg);text-align:left;font-weight:500;padding:2px 4px">date</th>' + dates.map(d => `<th title="${fd(d)}" style="padding:2px 4px;font-weight:500;white-space:nowrap;${inWin(d) ? '' : 'opacity:.45'}">${md(d)}<br><span class="sub">${d.slice(0, 4)}</span></th>`).join('') +
-      (DOSE ? `<th style="padding:2px 6px;color:#e0a020" title="Estimated total radiation dose to the lesion (how each number was made: see the note in Radiation dose by lesion)">dose<br><span class="sub">${dunit()}</span></th>` : '') + '</tr>';
+      (DOSE ? `<th style="padding:2px 6px;color:#e0a020" title="${DOSE_REAL ? 'Total radiation dose to the lesion, part estimated' : 'Estimated total radiation dose to the lesion'} (how each number was made: see the note in Radiation dose by lesion)">dose<br><span class="sub">${dunit()}</span></th>` : '') + '</tr>';
     // treatment row
     h += '<tr><td style="position:sticky;left:0;background:var(--bg)" class="sub">treated</td>' + dates.map((d, i) => {
       const tx = LS.treatments.filter(t => t.start > (dates[i - 1] || '0') && t.start <= d);
@@ -1202,10 +1206,10 @@
     warn.textContent = DOSE.estimate_note || 'ESTIMATED dose, not the hospitals\' dose files.';
     bar.append(warn); body.append(bar);
     const box = document.createElement('div'); box.style.cssText = 'position:relative;height:' + hOf(id, PANELS[id].h0) + 'px';
-    const cv = document.createElement('canvas'); cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Estimated radiation dose to each brain lesion, by course');
+    const cv = document.createElement('canvas'); cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', (DOSE_REAL ? 'Radiation dose' : 'Estimated radiation dose') + ' to each brain lesion, by course');
     box.append(cv); body.append(box);
     const les = [...new Set(DROWS.map(r => r.lesion))].sort();
-    const ds = Object.keys(CLAB).map(k => ({label: CLAB[k], backgroundColor: CCOL[k], borderColor: CCOL[k], borderWidth: 0,
+    const ds = Object.keys(CLAB).map(k => ({label: CLAB[k] + (CREAL(k) ? ' (dose file)' : ''), backgroundColor: CCOL[k], borderColor: CCOL[k], borderWidth: 0,
       data: les.map(l => { const r = DROWS.find(x => x.lesion === l && x.course === k); return r ? Math.round(dval(r) * 10) / 10 : 0; })}));
     const conf = Object.fromEntries((DOSE.courses || []).map(c => [c.course, c]));
     charts.set(id, new Chart(cv, {type: 'bar', data: {labels: les, datasets: ds},
@@ -1261,7 +1265,7 @@
     row(ID, 'Scan dates', ROWS.length + ' · ' + ROWS.filter(r => !r.images).length + ' no images', 'Every brain MRI as a point on the timeline');
     row(IDL, 'Lesions over time', LS.lesions.length + ' lesions · ' + LS.scans.length + ' reports', 'Each lesion (L01…): our measured volumes with trends and doubling times, plus what every report said (timeline, sizes, grid); treatments marked');
     row(IDV, 'Slice viewer', SCANS.length + ' measured', 'Scroll through a scan in 3 planes + 3D with our lesion outlines (L01…); layers: radiation dose, perfusion, swelling (colour or bent grid); brightness matched across dates; simulate a future scan');
-    if (DOSE) row(IDD, 'Radiation dose by lesion', 'estimated', 'Estimated radiation dose each lesion received, split by course (stacked bars)');
+    if (DOSE) row(IDD, 'Radiation dose by lesion', DOSE_TAG, DOSE_REAL ? 'Radiation dose each lesion received, split by course (stacked bars); estimated, except a course marked dose file' : 'Estimated radiation dose each lesion received, split by course (stacked bars)');
     if (SWELL) row(IDW, 'Swelling by lesion', IMG_DATA.swelling.totals.length + ' scans', 'How much more (swollen) or less (shrunk) room the brain around each lesion takes than on the normal control MRI, over time (flexible-fit estimate); the map itself is a layer in the Slice viewer');
     if (PERF) row(IDP, 'Perfusion by lesion', new Set(IMG_DATA.perfusion.rows.map(r => r.date)).size + ' scans', 'Blood volume (rCBV) and blood flow (ASL) inside each lesion, compared with normal or nearby brain; the maps themselves are a layer in the Slice viewer');
   };

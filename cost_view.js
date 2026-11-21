@@ -27,7 +27,8 @@
   const FCOL = Object.fromEntries(FACS.map((f, i) => [f, FPAL[i % FPAL.length]]));
   const SURE = [{key: 'posted', label: 'Posted Blue rate', color: '#2a78d6'}, {key: 'ratio', label: "Hospital's usual discount", color: '#85b7eb'},
                 {key: 'borrowed', label: 'Borrowed from other hospitals', color: '#b4b2a9'},
-                {key: 'list price', label: 'Published list price (outside the hospitals)', color: '#c98500'}];
+                {key: 'list price', label: 'Published list price (outside the hospitals)', color: '#c98500'},
+                {key: 'Medicare doctor fee', label: 'Medicare doctor fee schedule', color: '#6250d6'}];
   const sureOf = x => x.basis === 'posted-percent' ? 'posted' : x.basis;
   const PANELS = {[IDT]: {title: 'Costs · running total', unit: 'estimate from posted hospital prices', h0: 300},
                   [IDD]: {title: 'Costs · breakdown', unit: 'by kind, hospital, flags and every line', h0: 420}};
@@ -214,7 +215,7 @@
     box.innerHTML = '<h4>' + esc(isM ? fm(t) : fd(new Date(t).toISOString().slice(0, 10))) + ': ' + usd(sumBy(xs)) + ' <span class="cst-sub">' + amtName() + ' · ' + xs.length + ' lines · click again to close</span></h4>' + linesTable(xs, isM);
     return box;
   }
-  const tag = b => '<span class="cst-tag ' + esc(b === 'posted-percent' ? 'posted' : b === 'list price' ? 'list' : b) + '" title="' + esc(D.basis[b] || '') + '">' + esc(b) + '</span>';
+  const tag = b => '<span class="cst-tag ' + esc(b === 'posted-percent' ? 'posted' : b === 'list price' ? 'list' : b === 'Medicare doctor fee' ? 'mdf' : b) + '" title="' + esc(D.basis[b] || '') + '">' + esc(b) + '</span>';
   function linesTable(xs, withDate, limit) {
     const rows = xs.slice(0, limit || 400);
     return '<div class="cst-wrap" style="max-height:340px"><table class="cst-t"><tr>' + (withDate ? '<th>Date</th>' : '') + '<th>What (fact from the records)</th><th>Hospital</th><th>Code</th><th class="n">Sticker</th><th class="n">Blue est.</th><th>Price from</th></tr>' +

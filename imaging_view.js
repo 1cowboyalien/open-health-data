@@ -111,6 +111,7 @@
       .nvwrap .nvmain{flex:1;min-width:0}
       .nvwrap .nvbox{position:relative;background:#000;border-radius:6px;overflow:hidden}
       .nvwrap .nvbox canvas{width:100%;height:100%;display:block;outline:none}
+      .nvwrap.nvblank [data-r="list"],.nvwrap.nvblank [data-r="read"]{visibility:hidden}.nvwrap.nvblank [data-r="scan"]{opacity:.4}.nvwrap .nvnone{position:absolute;inset:0;z-index:6;background:#000;color:#ddd;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:12px;font-size:13px}.nvwrap .nvnone b{font-size:15px;color:#fff}.nvwrap .nvnone span{color:#aaa;max-width:420px}
       .nvwrap .nvside{width:250px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:4px}
       .nvwrap .nvles{display:flex;align-items:center;gap:6px;padding:3px 5px;border-radius:4px;cursor:pointer;font-size:12px}
       .nvwrap .nvles:hover,.nvwrap .nvles.on{background:color-mix(in srgb,var(--ink) 10%,transparent)}
@@ -770,6 +771,7 @@
     return {series: s.key, points: s.probe.length, want: s.probe.map(p => p.v), got, worst}; };
   async function load(date) {
     const real = SCANS.find(s => s.date === date) || SCANS[0]; if (!real) return;
+    blank(null);   // a scan was picked: drop the "no MRI yet" message
     if (V.proj.on && !(real.proj && real.proj.length)) { V.proj.on = false; V.R('projon').checked = false; }   // the simulation exists for the latest measured scan only
     if (V.ser && !(real.series || []).some(x => x.key === V.ser)) V.ser = '';   // this date has no such series: its measured one
     serBar(real);
@@ -902,10 +904,25 @@
     if (!sel.includes(IDV)) setLabSel([IDV], true);
     setTimeout(() => { load(date).catch(() => {}); const w = document.querySelector(`.cmp[data-id="${IDV}"]`); if (w) w.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 50);
   }
+  /* follow the locked cursor ("go to a date", make_lab_view.py goToDate): the latest scan on or before that day; before the
+     first scan a plain message instead of pictures. Only while the viewer is open; a scan picked by hand stays until the next jump. */
+  const SC_ORD = SCANS.slice().sort((a, b) => a.date < b.date ? -1 : 1);
+  function scanOn(t) { const d = new Date(t).toISOString().slice(0, 10); let s = null; SC_ORD.forEach(x => { if (x.date <= d) s = x; }); return s; }
+  function blank(t) { if (!V.el) return; const box = V.R('box'); let m = box.querySelector('.nvnone');
+    V.el.classList.toggle('nvblank', t != null); const hu = V.el.closest('.cmp') && V.el.closest('.cmp').querySelector('.cmph .u'); if (hu) hu.style.visibility = t != null ? 'hidden' : '';
+    if (t == null) { if (m) m.remove(); return; }
+    if (!m) { m = document.createElement('div'); m.className = 'nvnone'; box.appendChild(m); }
+    m.innerHTML = `<b>No brain MRI yet on ${fd(new Date(t).toISOString().slice(0, 10))}</b><span>The first scan in the viewer is ${fd(SC_ORD[0].date)}. Move the cursor later to see it.</span>`; }
+  function follow(t) { if (t == null || !SC_ORD.length || !V.el || !document.body.contains(V.el)) return;
+    const s = scanOn(t); if (!s) { blank(t); return; }
+    blank(null); if (!V.scan || V.scan.date !== s.date || V.scan.sim) load(s.date).catch(() => {}); }
+  document.addEventListener('ohd:date', e => follow(e.detail.t));
   function drawViewer(id, body) {
     const w = viewerEl(); body.innerHTML = ''; body.appendChild(w); sizeBox(id);
     if (!SCANS.length) { V.R('status').textContent = 'No measured scans yet.'; return; }
-    if (!V.loading) V.loading = (V.scan ? load(V.scan.date) : (defaultView() ? load(defaultView().date).then(() => recall(defaultView(), true)) : load(SCANS[0].date))).catch(err => { if (!V.R('status').dataset.err) V.R('status').textContent = 'Could not load: ' + err; V.loading = null; });
+    const lt = window.lockT ? window.lockT() : null, ls = lt == null ? undefined : scanOn(lt);
+    if (!V.scan && ls === null) { blank(lt); return; }   // locked before the first scan: nothing to show yet
+    if (!V.loading) V.loading = (V.scan ? load(V.scan.date) : ls ? load(ls.date) : (defaultView() ? load(defaultView().date).then(() => recall(defaultView(), true)) : load(SCANS[0].date))).catch(err => { if (!V.R('status').dataset.err) V.R('status').textContent = 'Could not load: ' + err; V.loading = null; });
   }
 
   /* ================= Lesions over time (Timeline · Lines · Grid) ================= */

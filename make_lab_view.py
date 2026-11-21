@@ -234,7 +234,7 @@ button:hover{border-color:var(--muted)}button.on{background:var(--accent);border
 .hide{display:none!important}
 .dethead{display:flex;align-items:flex-start;gap:8px}.dethead>div{flex:1}.dethead .pmove{margin-top:4px}
 .pmove{display:inline-flex;gap:2px}section.pmin>:not(.dethead){display:none!important}.dethead #detMin,.dethead [data-mmin]{margin:4px 0 0 4px;font-size:12px;padding:0 7px}#kfCard>.mhead{flex-wrap:nowrap;align-items:flex-start}#kfCard .mleft{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;flex:1;min-width:0}#kfCard .kfright{display:flex;align-items:center;flex:none}#kfCard .kfright .mtbtn{margin-left:0;gap:3px}@media (max-width:760px){#kfCard>.mhead{flex-wrap:wrap}#kfCard .kfright{flex-wrap:wrap;margin-left:auto}}
-.nrow .datebtn{font-weight:600;padding:1px 7px;font-size:12px;min-width:78px}.nrow #wml{font-weight:400;color:var(--ink2);min-width:0}.nrow #saveRange{margin-left:2px}
+.nrow .datebtn{font-weight:600;padding:1px 7px;font-size:12px;min-width:78px}.nrow #wml{font-weight:400;color:var(--ink2);min-width:0}.nrow #saveRange{margin-left:2px}.lockbar{display:inline-flex;gap:2px;align-items:center}.lockbar button{font-size:12px;padding:1px 7px;line-height:18px}.lockbar button.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}.lockbar .lockx{padding:1px 5px}
 .pdlg{left:50%;top:28%;transform:translateX(-50%);z-index:70;font-size:13px;min-width:300px;max-width:440px}.pdlg .pdmsg{white-space:pre-line}.pdlg input{font-size:13px;padding:4px 6px}
 .calpop{position:fixed;z-index:45;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:12px;display:flex;flex-direction:column;gap:6px;min-width:230px}
 .calpop .tzsel{font:inherit;font-size:12px;padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);max-width:260px}
@@ -312,7 +312,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <div class="nrow win"><span class="wl">From</span><button class="wstep1" data-ws="a" data-d="-1" aria-label="Start earlier">−</button><input type="range" id="wa" aria-label="Window start"><button class="wstep1" data-ws="a" data-d="1" aria-label="Start later">+</button><button id="wal" class="datebtn" title="Pick the start on a calendar"></button>
 <span class="wl">To</span><button class="wstep1" data-ws="b" data-d="-1" aria-label="End earlier">−</button><input type="range" id="wb" aria-label="Window end"><button class="wstep1" data-ws="b" data-d="1" aria-label="End later">+</button><button id="wbl" class="datebtn" title="Pick the end on a calendar"></button>
 <span class="wl wfl" title="How far the timeline runs past the last data. Use it to see projections and planned dates (keyframes can be dated in the future); every panel gets the same longer axis, so they stay lined up. The part after today is tinted.">Future</span><select id="wfut" aria-label="How far the timeline runs past the last data"></select>
-<button id="wml" class="datebtn" title="Pick the middle on a calendar: the window keeps its length"></button><button id="saveRange" title="Save this time range with a name (listed under Presets → Timeline)">☆ Save timeline</button>
+<button id="wml" class="datebtn" title="Go to a date: it moves to the middle of the charts and the cursor locks there (the window keeps its length)"></button><span id="lockBar" class="lockbar"></span><button id="saveRange" title="Save this time range with a name (listed under Presets → Timeline)">☆ Save timeline</button>
 <span class="pall"><span id="closedBar" class="closedbar"></span><button id="maxAll" title="Open every panel">▴ Maximize all</button><button id="minAll" title="Minimize every panel to its title bar (with its data skin), to find a panel or compare patterns">▾ Minimize all</button><button id="closeAll" title="Close every panel: the Compare panels and dose charts are unticked, Keyframes, Treatments and the detail panel get a + button here to bring them back">× All</button></span><span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
 <div class="nrow lay hide" id="findBar"></div>
@@ -1078,9 +1078,11 @@ function skinDraw(cv){const id=cv.dataset.id,d=skinData(id),h=cv.parentElement;i
    l.p.forEach(p=>{if(inW(p.t)){g.fillStyle=l.c;g.fillRect(PX(p.t)-1.5,Y(p.v)-1.5,3,3)}})});
   g.globalAlpha=1;g.restore();return}
  if(d.kind==='film'){   // minimized MRI viewer: one axial picture per scan at its date, the last 4-view picture at the left under the title
-  const T=IMG_DATA.thumbs,sz=H0-6;let last=-1e9;Object.keys(T).sort().forEach(dt=>{const t=skT(dt);if(!inW(t))return;const x=X(t)-sz*.45;if(x-last<sz*.9+2)return;last=x;
-   const im=skImg(T[dt],()=>skinDraw(cv));if(im.complete&&im.naturalWidth){const c=skCrop(im),w=Math.round(sz*c.w/c.h);g.drawImage(im,c.x,c.y,c.w,c.h,X(t)-w/2,3,w,sz)}});
-  const f4=localStorage.getItem('imgfour');if(f4){const im=skImg(f4,()=>skinDraw(cv));if(im.complete&&im.naturalWidth){const hh=Math.round(H0/2)-4,ww=Math.round(im.naturalWidth/im.naturalHeight*hh);
+  /* with the cursor locked: the scan on or before that day gets an outline, and before the first scan the 4-view picture is left out */
+  const T=IMG_DATA.thumbs,sz=H0-6,TD=Object.keys(T).sort(),lk=LOCK?iso(LOCK.t):null,lkd=lk?TD.filter(dt=>dt<=lk).pop():null;let last=-1e9;TD.forEach(dt=>{const t=skT(dt);if(!inW(t))return;const x=X(t)-sz*.45;if(dt!==lkd&&x-last<sz*.9+2)return;last=x;
+   const im=skImg(T[dt],()=>skinDraw(cv));if(im.complete&&im.naturalWidth){const c=skCrop(im),w=Math.round(sz*c.w/c.h);g.drawImage(im,c.x,c.y,c.w,c.h,X(t)-w/2,3,w,sz);
+    if(dt===lkd){g.strokeStyle=css('--accent');g.lineWidth=2;g.strokeRect(X(t)-w/2-1,2,w+2,sz+2)}}});
+  const f4=lk&&!lkd?null:localStorage.getItem('imgfour');if(f4){const im=skImg(f4,()=>skinDraw(cv));if(im.complete&&im.naturalWidth){const hh=Math.round(H0/2)-4,ww=Math.round(im.naturalWidth/im.naturalHeight*hh);
    g.fillStyle=css('--card');g.fillRect(PADX+6,H0/2,ww+4,hh+4);g.drawImage(im,PADX+8,H0/2+1,ww,hh)}}
   return}
  if(d.kind==='ticks'){g.fillStyle='rgba(155,147,238,.18)';(d.spans||[]).forEach(([a,b])=>{if(b<W.a||a>W.b)return;g.fillRect(X(a),0,Math.max(2,X(b)-X(a)),H0)});
@@ -1172,7 +1174,7 @@ const wp=$('wp');wp.min=0;wp.step=1;
 function syncWin(){wa.value=Math.round((W.a-X0)/DAY);wb.value=Math.round((W.b-X0)/DAY);const short=(W.b-W.a)<=3*DAY,dl=t=>(short?zStamp(t):zStamp(t).slice(0,10))+(NAVTZ||short?' '+zAbbr(t):'');$('wal').textContent=dl(W.a);$('wbl').textContent=dl(W.b);$('wml').textContent='Middle: '+dl((W.a+W.b)/2);
  const len=Math.round((W.b-W.a)/DAY);wp.max=Math.max(0,NDAYS-len);wp.value=Math.round((W.a-X0)/DAY);wp.disabled=+wp.max===0;
  const hrs=(W.b-W.a)/36e5;$('wlen').textContent=len>=730?(Math.round(len/36.5)/10)+' yrs':len>=60?Math.round(len/30.44)+' months':hrs<48?Math.round(hrs)+' hours':len+' days';
- $('wIn').disabled=W.b-W.a<=MINW+1;$('wOut').disabled=W.a<=X0&&W.b>=X1;if(typeof kfScrollSync==='function')kfScrollSync();if(typeof skinsRedraw==='function')requestAnimationFrame(skinsRedraw)}
+ $('wIn').disabled=W.b-W.a<=MINW+1;$('wOut').disabled=W.a<=X0&&W.b>=X1;if(typeof kfScrollSync==='function')kfScrollSync();if(typeof skinsRedraw==='function')requestAnimationFrame(skinsRedraw);if(typeof lockBar==='function')lockBar()}
 function setWin(a,b){
  /* a window that ends past the axis (a saved Timeline preset that looks ahead, opened where Future is off or shorter): lengthen the axis to hold it */
  if(b>X1+DAY&&b<=futEnd(FUTMAX)+DAY){FUT=futFor(b-DAY);store.set('future',FUT);X1=futEnd(FUT);NDAYS=Math.round((X1-X0)/DAY);[wa,wb].forEach(e=>e.max=NDAYS);futSync()}
@@ -1200,7 +1202,7 @@ wfut.onchange=()=>{if(wfut.value==='date'){wfut.value=String(FUT);openFutCal()}e
    Picking a date applies it at once; Middle moves the window and keeps its length. */
 const toInput=t=>zStamp(t).replace(' ','T');
 function openCal(which,anchor){const P=$('calPop');P.innerHTML='';P.classList.remove('hide');
- const lbl={a:'Start (From)',m:'Middle: keeps the window length',b:'End (To)'}[which];
+ const lbl={a:'Start (From)',m:'Go to a date',b:'End (To)'}[which];
  const h=document.createElement('b');h.textContent=lbl;const i=document.createElement('input');i.type='datetime-local';
  const cur=()=>which==='a'?W.a:which==='b'?W.b:(W.a+W.b)/2;
  /* time zone the typed time is read in (remembered); hospitals' zones from the private site_zones.json */
@@ -1218,10 +1220,10 @@ function openCal(which,anchor){const P=$('calPop');P.innerHTML='';P.classList.re
  /* Middle can only move the window if it is shorter than the whole record; otherwise say so. */
  const note=document.createElement('div');note.className='sub';note.style.cssText='margin-top:6px;max-width:230px';
  const full=()=>W.b-W.a>=X1-X0-DAY;
- const hint=()=>{note.textContent=which==='m'&&full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':''};
+ const hint=()=>{note.textContent=which==='m'?(full()?'Go to a date: the charts zoom to 6 months around it and the cursor locks on it.':'Go to a date: it moves to the middle and the cursor locks on it.'):''};
  const apply=()=>{const t=zParse(i.value);if(!isFinite(t))return;const len=W.b-W.a;
-  if(which==='a')setWin(t,Math.max(W.b,t+MINW));else if(which==='b')setWin(Math.min(W.a,t-MINW),t);else{const a=Math.max(X0,Math.min(t-len/2,X1-len));setWin(a,a+len)}
-  if(which==='m'&&Math.abs(cur()-t)>DAY)note.textContent=full()?'The window already shows the whole record, so its middle cannot move. Zoom in (+) or pick From / To first.':'The window reaches the edge of the record, so the middle stopped at '+zStamp(cur()).slice(0,10)+'.';
+  if(which==='a')setWin(t,Math.max(W.b,t+MINW));else if(which==='b')setWin(Math.min(W.a,t-MINW),t);else goToDate(t);
+  if(which==='m'&&Math.abs(cur()-t)>DAY)note.textContent='The window reaches the edge of the record, so '+zStamp(t).slice(0,10)+' is off centre (the cursor is locked on it).';
   else hint()};
  /* the calendar fires a change for every digit or arrow step: wait until the picking pauses */
  let tmr=0;i.onchange=()=>{i.oninput();clearTimeout(tmr);tmr=setTimeout(apply,350)};
@@ -1257,11 +1259,59 @@ wp.oninput=()=>shiftWin(X0+wp.value*DAY,W.b-W.a);
 $('wPrev').onclick=()=>shiftWin(W.a-(W.b-W.a)/4,W.b-W.a);$('wNext').onclick=()=>shiftWin(W.a+(W.b-W.a)/4,W.b-W.a);
 /* zoom around the date in the middle of the charts. In wide windows the years before the break are squeezed, so
    that date is not the window's time midpoint (zooming around the midpoint jumped to a nearly empty stretch) */
-function zoomWin(f){const c=compressing()?unpos(50):(W.a+W.b)/2,len=Math.min(X1-X0,Math.max(MINW,(W.b-W.a)*f));let a=c-len/2;
+/* the window start that puts date c in the middle of the charts (in wide windows the years before the break are squeezed) */
+function centreStart(c,len){let a=c-len/2;
  if(BRK!=null){const keep=W;let lo=X0,hi=Math.max(X0,X1-len);   // find the start that puts c in the middle of the (maybe squeezed) new window
   for(let i=0;i<50;i++){const m=(lo+hi)/2;W={a:m,b:m+len};if(unpos(50)<c)lo=m;else hi=m}a=(lo+hi)/2;W=keep}
- shiftWin(a,len)}
+ return a}
+/* zoom around the locked cursor when it is on screen (so the moment stays put), else around the middle */
+function zoomWin(f){const len=Math.min(X1-X0,Math.max(MINW,(W.b-W.a)*f));
+ const c=LOCK&&LOCK.t>=W.a&&LOCK.t<=W.b?LOCK.t:compressing()?unpos(50):(W.a+W.b)/2;shiftWin(centreStart(c,len),len)}
 $('wIn').onclick=()=>zoomWin(.5);$('wOut').onclick=()=>zoomWin(2);
+/* ---- Go to a date, and the locked cursor ----
+   Going to a date (Middle calendar, a story link, Keyframes ◀ ▶, ⌖ Find) puts that date in the middle of the charts and pins a
+   solid cursor line there on every timeline panel and minimized bar. The pin stays on its date while you zoom (zoom keeps it in
+   the middle), drag a chart or slide the window into the past or future, so the moment isn't lost. 📍 Lock pins it at the middle;
+   Shift-click a chart, or press L while pointing, moves it there; clicking the date centres it again; × lets go.
+   Panels that show one thing at a time follow it through the 'ohd:date' event (Brain MRI slice viewer: the latest scan on or
+   before that date, none before the first scan). Kept in the 'lock' setting (part of the Start view). */
+var LOCK=store.get('lock',null);if(LOCK&&!isFinite(LOCK.t))LOCK=null;
+const lockDay=t=>zStamp(t).slice(0,10);
+function lockBar(){const el=$('lockBar');if(!el)return;el.innerHTML='';
+ if(!LOCK){const b=document.createElement('button');b.type='button';b.textContent='📍 Lock cursor';
+  b.title='Pin a cursor line at the middle date on every panel. It stays on that date while you zoom, drag or slide the timeline. Shift-click a chart (or press L while pointing at one) to pin it there instead. The Brain MRI viewer shows the scan from that date.';
+  b.onclick=()=>setLock(compressing()?unpos(50):(W.a+W.b)/2);el.append(b);return}
+ const off=LOCK.t<W.a?'◂ ':LOCK.t>W.b?' ▸':'';const b=document.createElement('button');b.type='button';b.className='on';
+ b.textContent='📍 '+(LOCK.t<W.a?off:'')+lockDay(LOCK.t)+(LOCK.t>W.b?off:'');
+ b.title='Cursor locked to '+lockDay(LOCK.t)+(off?' (off screen: click to bring it back to the middle)':': click to put it back in the middle')+'. Shift-click a chart or press L while pointing to move it.';
+ b.onclick=()=>goToDate(LOCK.t);
+ const x=document.createElement('button');x.type='button';x.className='lockx';x.textContent='×';x.title='Unlock the cursor';x.setAttribute('aria-label',x.title);x.onclick=()=>setLock(null);
+ el.append(b,x)}
+function setLock(t,quiet){LOCK=t==null||!isFinite(t)?null:{t:Math.max(X0,Math.min(X1,t))};store.set('lock',LOCK);lockBar();
+ charts.forEach(c=>c.draw());if(typeof skinsRedraw==='function')requestAnimationFrame(skinsRedraw);
+ if(!quiet)document.dispatchEvent(new CustomEvent('ohd:date',{detail:{t:LOCK?LOCK.t:null}}))}
+/* centre the charts on date t and lock the cursor there. The window keeps its length; a window showing (nearly) the whole record
+   can't move, so it narrows to o.wide (6 months by default) around the date. */
+function goToDate(t,o){o=o||{};if(!isFinite(t))return;let len=o.len||W.b-W.a;if(len>=(X1-X0)*.9)len=Math.min(X1-X0,o.wide||182*DAY);
+ len=Math.max(MINW,len);setWin(centreStart(t,len),centreStart(t,len)+len);setLock(t)}
+window.goToDate=goToDate;window.setLock=setLock;window.lockT=()=>LOCK?LOCK.t:null;
+/* the locked line on every timeline chart (the same test as the future tint: the shared time axis) */
+Chart.register({id:'lockCursor',afterDatasetsDraw(c){if(!LOCK)return;const sx=c.scales.x;if(!sx||sx.options.afterFit!==tEdge)return;
+ const a=c.chartArea,px=Math.round(sx.getPixelForValue(pos(LOCK.t)))+.5;if(px<a.left-1||px>a.right+1)return;const g=c.ctx;g.save();
+ g.strokeStyle=css('--accent');g.lineWidth=1.5;g.globalAlpha=.85;g.beginPath();g.moveTo(px,a.top);g.lineTo(px,a.bottom);g.stroke();
+ g.globalAlpha=1;g.fillStyle=css('--accent');g.beginPath();g.moveTo(px-4.5,a.top);g.lineTo(px+4.5,a.top);g.lineTo(px,a.top+6);g.closePath();g.fill();g.restore()}});
+/* and on the minimized bars' skins (same mapping as skinDraw) */
+{const _sd=skinDraw;skinDraw=function(cv){_sd(cv);if(!LOCK)return;const h=cv.parentElement;if(!h)return;const PADX=10,Lo=PADX+YW,Ro=PADX+h.clientWidth-8;
+ if(LOCK.t<W.a||LOCK.t>W.b)return;const x=Math.round(Lo+pos(LOCK.t)/100*(Ro-Lo))+.5,g=cv.getContext('2d'),H=cv.height/(devicePixelRatio||1);
+ g.save();g.strokeStyle=css('--accent');g.lineWidth=1.5;g.globalAlpha=.85;g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();g.restore()}}
+/* Shift-click on a timeline chart: lock the cursor there (the click does nothing else) */
+document.addEventListener('click',e=>{if(!e.shiftKey)return;const cv=e.target.closest&&e.target.closest('main canvas');if(!cv)return;const ch=Chart.getChart(cv);
+ const sx=ch&&ch.scales.x;if(!sx||sx.options.afterFit!==tEdge)return;const r=cv.getBoundingClientRect(),xv=sx.getValueForPixel(e.clientX-r.left);
+ if(!(xv>=0&&xv<=100))return;e.preventDefault();e.stopPropagation();setLock(unpos(xv))},true);
+/* L while pointing at a chart: lock there; L elsewhere: lock at the middle, or unlock if already locked */
+document.addEventListener('keydown',e=>{if(e.key!=='l'&&e.key!=='L'||e.metaKey||e.ctrlKey||e.altKey)return;const tg=e.target;if(tg&&(tg.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName)))return;
+ if(hoverX!=null)setLock(unpos(hoverX));else if(LOCK)setLock(null);else setLock(compressing()?unpos(50):(W.a+W.b)/2)});
+lockBar();
 /* drag any chart left/right to slide the window (the navigator follows). It only counts as a drag
    after 4 px, so a plain click still marks doses / opens editors. Listeners live on the document
    because charts are re-created while dragging. */

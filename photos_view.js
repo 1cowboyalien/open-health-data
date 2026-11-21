@@ -311,7 +311,7 @@
         (hp.length ? '<h4>What was happening</h4>' + hp.map(h => '<div class="sub">' + (h.stay ? '' : esc(h.date) + ' (' + (h.d === 0 ? 'same day' : Math.abs(h.d) + ' day' + (Math.abs(h.d) > 1 ? 's ' : ' ') + (h.d > 0 ? 'later' : 'earlier')) + '): ') + esc(h.text) + '</div>').join('') : '') +
         '<h4>Stories</h4>' + storyHtml(it);
       if (it.display !== 'intro') { const go = document.createElement('button'); go.type = 'button'; go.className = 'photoTog'; go.textContent = 'Show this date on the charts';
-        go.title = 'Move every chart to a window around this date'; go.onclick = () => { const t = tOf(it); setWin(Math.max(X0, t - 45 * DAY), Math.min(X1, t + 45 * DAY)); close(); }; side.append(go); }
+        go.title = 'Move every chart to a window centred on this date, with the cursor locked on it (the Brain MRI viewer shows the scan from then)'; go.onclick = () => { goToDate(tOf(it), {len: 90 * DAY}); close(); }; side.append(go); }
       const nav = document.createElement('div'); nav.className = 'photoNav';
       nav.innerHTML = '<button type="button" aria-label="Previous">‹</button><span>' + (k + 1) + ' of ' + list.length + '</span><button type="button" aria-label="Next">›</button><button type="button" aria-label="Close" class="x">✕</button>';
       const [pv, , nx, x] = nav.children; pv.onclick = () => step(-1); nx.onclick = () => step(1); x.onclick = close;
@@ -403,5 +403,5 @@
   updateBar(); list(); render();
   // labs.html#date=YYYY-MM-DD (links saved with a story): open the charts around that date
   const hd = /date=(\d{4}-\d{2}-\d{2})/.exec(location.hash);
-  if (hd) setTimeout(() => { try { setWin(ms(hd[1]) - 30 * DAY, ms(hd[1]) + 30 * DAY); } catch (e) {} }, 0);
+  if (hd) setTimeout(() => { try { goToDate(ms(hd[1]) + DAY / 2, {len: 60 * DAY}); } catch (e) {} }, 0);   // centred, cursor locked on that day
 })();

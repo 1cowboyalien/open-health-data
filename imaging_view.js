@@ -904,6 +904,7 @@
     if (!sel.includes(IDV)) setLabSel([IDV], true);
     setTimeout(() => { load(date).catch(() => {}); const w = document.querySelector(`.cmp[data-id="${IDV}"]`); if (w) w.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 50);
   }
+  window.openMriViewer = openViewer;   // the phone start screen's Latest MRI card (phone_view.js)
   /* follow the locked cursor ("go to a date", make_lab_view.py goToDate): the latest scan on or before that day; before the
      first scan a plain message instead of pictures. Only while the viewer is open; a scan picked by hand stays until the next jump. */
   const SC_ORD = SCANS.slice().sort((a, b) => a.date < b.date ? -1 : 1);

@@ -1170,7 +1170,7 @@
     let h = '<div style="overflow:auto;max-height:' + (hOf(IDL, PANELS[IDL].h0) + 40) + 'px"><table class="lesgrid" style="border-collapse:collapse;font-size:11px">';
     const md = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});   // "Jun 27"
     h += '<tr><th class="sub" style="position:sticky;left:0;background:var(--bg);text-align:left;font-weight:500;padding:2px 4px">date</th>' + dates.map(d => `<th title="${fd(d)}" style="padding:2px 4px;font-weight:500;white-space:nowrap;${inWin(d) ? '' : 'opacity:.45'}">${md(d)}<br><span class="sub">${d.slice(0, 4)}</span></th>`).join('') +
-      (DOSE ? `<th style="padding:2px 6px;color:#e0a020" title="Estimated total radiation dose to the lesion's centre">dose<br><span class="sub">${dunit()}</span></th>` : '') + '</tr>';
+      (DOSE ? `<th style="padding:2px 6px;color:#e0a020" title="Estimated total radiation dose to the lesion (how each number was made: see the note in Radiation dose by lesion)">dose<br><span class="sub">${dunit()}</span></th>` : '') + '</tr>';
     // treatment row
     h += '<tr><td style="position:sticky;left:0;background:var(--bg)" class="sub">treated</td>' + dates.map((d, i) => {
       const tx = LS.treatments.filter(t => t.start > (dates[i - 1] || '0') && t.start <= d);
@@ -1211,7 +1211,7 @@
     charts.set(id, new Chart(cv, {type: 'bar', data: {labels: les, datasets: ds},
       options: {animation: false, maintainAspectRatio: false,
         scales: {x: {stacked: true, ticks: {color: c => LCOL[les[c.index]] || css('--muted'), font: {weight: 'bold', size: 10}}, grid: {display: false}},
-                 y: {stacked: true, title: {display: true, text: dunit() + ' (dose at the lesion centre)', color: css('--muted')}, ticks: {color: css('--muted')}, grid: {color: css('--line')}}},
+                 y: {stacked: true, title: {display: true, text: dunit() + ' (dose to the lesion)', color: css('--muted')}, ticks: {color: css('--muted')}, grid: {color: css('--line')}}},
         plugins: {legend: {labels: {color: css('--ink'), boxWidth: 12}},
           tooltip: {callbacks: {title: it => it[0].label + ' ' + (LNAME[it[0].label] || ''),
             label: it => { const k = Object.keys(CLAB)[it.datasetIndex], r = DROWS.find(x => x.lesion === it.label && x.course === k), c = conf[k] || {};

@@ -46,6 +46,7 @@ body.revFocus .revTarget>.cmph .ctl{display:none!important}
 #rvSide [hidden]{display:none!important}
 #rvSide{position:fixed;top:0;right:0;width:var(--rv-w);height:100vh;display:flex;flex-direction:column;z-index:10050;background:var(--card);color:var(--ink);border-left:1px solid var(--line);font-size:13.5px;line-height:1.45}
 @media (max-width:900px){:root{--rv-w:100vw}body.revFocus{padding-right:0;padding-bottom:48vh}#rvSide{top:auto;bottom:0;height:46vh;border-left:none;border-top:2px solid var(--line)}body.revFocus .pth-lb{right:0;bottom:46vh}}
+@media (max-width:760px){body.revFocus .pth-main{flex-direction:column}body.revFocus .pth-img{min-height:0}}
 #rvSide button,#rvSide input,#rvSide textarea{font:inherit;color:inherit}
 .rv-b{background:transparent;border:1px solid var(--line);border-radius:7px;padding:3px 9px;cursor:pointer;color:inherit}
 .rv-b:hover{border-color:var(--accent)}.rv-b.on{background:var(--accent);border-color:var(--accent);color:#fff}.rv-b:disabled{opacity:.4;cursor:default}

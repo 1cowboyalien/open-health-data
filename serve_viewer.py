@@ -104,8 +104,11 @@ REVIEWERS = os.path.join(LOCAL, "review", "reviewers.json")   # who may review: 
 REVIEW_CONF = os.path.join(LOCAL, "review", "settings.json")  # {"chatServer": "http://127.0.0.1:8821"} for the chat and uploads
 REVIEW_UPLOAD_MAX = 60_000_000
 # The review page keeps its own view settings ("labsrev.*"), apart from the viewer's on the same address, and starts
-# with only the Pathology panel ticked.
-REVIEW_SHIM = ("(function(){try{var S=Storage.prototype,g=S.getItem,s=S.setItem,r=S.removeItem,"
+# with only the Pathology panel ticked. It also adds phone=0 to its address before the viewer's scripts run, so a phone
+# opens on the slide photos and not on the viewer's phone start screen (phone_view.js).
+REVIEW_SHIM = ("(function(){try{var u=new URL(location.href);if(u.searchParams.get('phone')==null){u.searchParams.set('phone','0');"
+               "history.replaceState(history.state,'',u.pathname+u.search+u.hash)}}catch(e){}"
+               "try{var S=Storage.prototype,g=S.getItem,s=S.setItem,r=S.removeItem,"
                "m=function(k){k=String(k);return k.indexOf('labs.')===0?'labsrev.'+k.slice(5):k};"
                "S.getItem=function(k){return g.call(this,m(k))};S.setItem=function(k,v){return s.call(this,m(k),v)};"
                "S.removeItem=function(k){return r.call(this,m(k))};"

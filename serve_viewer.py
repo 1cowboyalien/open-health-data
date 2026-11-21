@@ -42,6 +42,14 @@ Usage:
   question (through the chat server) and saves approved stories to local/photos/stories/. All of it answers only this
   Mac and the home network (VPN included). The browser only allows the microphone on a secure page, so start the
   viewer with --https-port 8767 (certificate: python3 serve_viewer.py --make-cert) and open https://<this Mac>:8767/story.
+- Review page (review.py + review_view.js): GET /review is the viewer with only the Pathology panel and a side column
+  (chat, history, files) for a reviewer, for example a pathologist. Their changes are small operations kept in
+  local/review/log.jsonl; POST /review/api/change | flip | undo | redo add lines to it, and GET /review/api/state returns
+  the page data with those changes applied. The family viewer's own files and page are not touched. GET
+  /review/pathology/... serves the photos as /pathology/ does, plus the tissue maps the review has changed and the
+  pictures a reviewer added. POST /review/api/chat and /review/api/upload pass on to the reviewer's chat server named in
+  local/review/settings.json. On only when local/review/reviewers.json exists, and it answers only this Mac and the
+  home network.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -60,6 +68,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import usage
 import story
+import review
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL = os.path.join(HERE, "local")
@@ -88,6 +97,19 @@ USAGE_CONF = os.path.join(LOCAL, "usage.json")
 NOLOG = ("/stats", "/api/stats", "/api/ping", "/usage.js", "/api/usage")
 ASK_CONF = os.path.join(LOCAL, "ask.json")
 START = os.path.join(LOCAL, "start_view.json")
+REVIEW = review.Workspace(LOCAL)   # review.py: a reviewer's changes to the Pathology panel, with their history
+REVIEW_JS = os.path.join(HERE, "review_view.js")
+REVIEWERS = os.path.join(LOCAL, "review", "reviewers.json")   # who may review: [{"id", "name", "role"}]; no file = no review page
+REVIEW_CONF = os.path.join(LOCAL, "review", "settings.json")  # {"chatServer": "http://127.0.0.1:8821"} for the chat and uploads
+REVIEW_UPLOAD_MAX = 60_000_000
+# The review page keeps its own view settings ("labsrev.*"), apart from the viewer's on the same address, and starts
+# with only the Pathology panel ticked.
+REVIEW_SHIM = ("(function(){try{var S=Storage.prototype,g=S.getItem,s=S.setItem,r=S.removeItem,"
+               "m=function(k){k=String(k);return k.indexOf('labs.')===0?'labsrev.'+k.slice(5):k};"
+               "S.getItem=function(k){return g.call(this,m(k))};S.setItem=function(k,v){return s.call(this,m(k),v)};"
+               "S.removeItem=function(k){return r.call(this,m(k))};"
+               "if(localStorage.getItem('labs.selected')==null){localStorage.setItem('labs.selected','[\"path:slides\"]');"
+               "localStorage.setItem('labs.mode','\"compare\"')}}catch(e){}})();")
 START_JS = os.path.join(HERE, "start_view.js")
 START_SKIP = {"txedits", "txdirty", "open"}   # medication edits are shared separately; "open" is not used any more
 START_MAX = 2_000_000
@@ -336,15 +358,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, open(f, "rb").read(), "application/octet-stream")
             return self.send(404, {"error": "not found"})
         if path.startswith("/pathology/"):   # pathology slide photos: inside local/pathology/, .jpg only
-            rel = urllib.parse.unquote(path[len("/pathology/"):])
-            base = os.path.realpath(os.path.join(LOCAL, "pathology"))
-            f = os.path.realpath(os.path.join(base, rel))
-            if f.startswith(base + os.sep) and f.lower().endswith(".jpg") and os.path.isfile(f):
-                return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True)
-            if (f.startswith(base + os.sep) and os.path.basename(os.path.dirname(f)) in ("spots", "masks")
-                    and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots / tissue maps, one file per slide
-                return self.send(200, open(f, "rb").read(), "application/json")
-            return self.send(404, {"error": "not found"})
+            return self.pathology_file(urllib.parse.unquote(path[len("/pathology/"):]))
+        if path == "/review" or path.startswith("/review/"):
+            return self.review_get(path)
         if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
             return self.photos(urllib.parse.unquote(path[len("/photos/"):]))
         if path == "/story" or path.startswith("/story/"):
@@ -374,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.save_photo_edit()
         if self.path.split("?")[0].startswith("/story/api/"):
             return self.story_post(self.path.split("?")[0][len("/story/api/"):])
+        if self.path.split("?")[0].startswith("/review/api/"):
+            return self.review_post(self.path.split("?")[0][len("/review/api/"):])
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -392,6 +410,217 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(409, {"rev": rev, "edits": cur})
             write_edits(rev + 1, edits)
         self.send(200, {"rev": rev + 1})
+
+    def pathology_file(self, rel):
+        base = os.path.realpath(os.path.join(LOCAL, "pathology"))
+        f = os.path.realpath(os.path.join(base, rel))
+        if f.startswith(base + os.sep) and f.lower().endswith(".jpg") and os.path.isfile(f):
+            return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True)
+        if (f.startswith(base + os.sep) and os.path.basename(os.path.dirname(f)) in ("spots", "masks")
+                and f.endswith(".json") and os.path.isfile(f)):   # automatic nucleus spots / tissue maps, one file per slide
+            return self.send(200, open(f, "rb").read(), "application/json")
+        return self.send(404, {"error": "not found"})
+
+    # ---- review page (review.py): this Mac and the home network only ----
+    def review_who(self, body=None):
+        """The reviewer named by ?as=<id> (or "as" in the request), from local/review/reviewers.json; the first one when none is named."""
+        try:
+            people = json.load(open(REVIEWERS))
+        except (OSError, ValueError):
+            return None
+        ok = [p for p in people if isinstance(p, dict) and re.fullmatch(r"[a-z0-9-]{1,40}", str(p.get("id", ""))) and p.get("name")] if isinstance(people, list) else []
+        want = (body or {}).get("as") or urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("as", [""])[0]
+        hit = next((p for p in ok if p["id"] == want), ok[0] if ok and not want else None)
+        return {"id": hit["id"], "name": str(hit["name"])[:80], "role": str(hit.get("role") or "")[:40]} if hit else None
+
+    def review_conf(self):
+        try:
+            c = json.load(open(REVIEW_CONF))
+            return c if isinstance(c, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def review_state(self, who):
+        return dict(REVIEW.state(), reviewer=who, chat=bool(self.review_conf().get("chatServer")))
+
+    def review_get(self, path):
+        who = self.review_who() if usage.is_local_request(self) and REVIEW.ready() else None
+        if not who:
+            return self.send(404, {"error": "not found"})
+        if path in ("/review", "/review/"):
+            if not os.path.exists(PAGE):
+                return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
+            html = open(PAGE, "rb").read()
+            cfg = json.dumps({"reviewer": who, "api": "/review/api", "base": "/review/pathology/"}).replace("</", "<\\/")
+            tag = ("<script>" + REVIEW_SHIM + "window.REVIEW=" + cfg + ";</script>").encode()
+            i = html.find(b"<script")   # before the viewer's first script: it reads its saved settings as it starts
+            html = html[:i] + tag + html[i:] if i >= 0 else tag + html
+            i = html.rfind(b"</body>")
+            tag = b'<script src="/review/review_view.js"></script>'
+            html = html[:i] + tag + html[i:] if i >= 0 else html + tag
+            return self.send(200, html, "text/html; charset=utf-8")
+        if path == "/review/review_view.js":
+            return self.send(200, open(REVIEW_JS, "rb").read(), "text/javascript; charset=utf-8")
+        if path == "/review/api/state":
+            w = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("without", [""])[0]
+            if w.isdigit():   # "Before / after": the review without one change; nothing is saved
+                return self.send(200, dict(REVIEW.state(int(w)), reviewer=who))
+            return self.send(200, self.review_state(who))
+        if path == "/review/api/version":
+            return self.send(200, {"version": len(REVIEW.records())})
+        pk = re.match(r"/review/pathology(?:~(\d{1,9}))?/", path)
+        if pk:
+            rel = urllib.parse.unquote(path[pk.end():])
+            m = re.fullmatch(r"([^/]+)/masks/([^/]+)\.json", rel)
+            built = REVIEW.without(int(pk.group(1))) if pk.group(1) else REVIEW.build()
+            hit = built["masks"].get(m.group(1) + "/" + m.group(2)) if m else None
+            if hit:   # a tissue map this review has changed
+                return self.send(200, hit)
+            m = re.fullmatch(r"review-files/(u\d{1,6})\.jpg", rel)
+            if m:   # a picture the reviewer added
+                f = os.path.join(REVIEW.files, m.group(1) + ".jpg")
+                return self.send(200, open(f, "rb").read(), "image/jpeg", cache=True) if os.path.isfile(f) else self.send(404, {"error": "not found"})
+            return self.pathology_file(rel)
+        return self.send(404, {"error": "not found"})
+
+    def review_post(self, sub):
+        if not usage.is_local_request(self) or not REVIEW.ready():
+            return self.send(404, {"error": "not found"})
+        n = int(self.headers.get("Content-Length") or 0)
+        if sub == "upload":
+            return self.review_upload(n)
+        if n <= 0 or n > MAXBODY:
+            return self.send(413, {"error": "empty or too large"})
+        try:
+            body = json.loads(self.rfile.read(n))
+            assert isinstance(body, dict)
+        except Exception:  # noqa: BLE001 - any bad input is a 400
+            return self.send(400, {"error": "bad request"})
+        who = self.review_who(body)
+        if not who:
+            return self.send(404, {"error": "not found"})
+        made = None
+        try:
+            with lock:
+                if sub == "change":
+                    made = REVIEW.add(who, body.get("op"), "tool", body.get("words") or "")["id"]
+                elif sub == "flip":
+                    REVIEW.flip(who, body.get("id"), bool(body.get("on")))
+                elif sub == "undo":
+                    made = REVIEW.undo(who)["id"]
+                elif sub == "redo":
+                    made = REVIEW.redo(who)["id"]
+                elif sub != "chat":
+                    return self.send(404, {"error": "not found"})
+        except review.Bad as e:
+            return self.send(422, dict(self.review_state(who), error=str(e)))
+        if sub == "chat":
+            return self.review_chat(who, body)
+        return self.send(200, dict(self.review_state(who), made=made))
+
+    def review_upload(self, n):
+        """A file or picture the reviewer adds: passed to the reviewer's chat server, which keeps it outside this folder."""
+        who, chat = self.review_who(), self.review_conf().get("chatServer")
+        if not who:
+            return self.send(404, {"error": "not found"})
+        if not chat:
+            return self.send(503, {"error": "The reviewer's chat is not running, so files cannot be added yet."})
+        if n <= 0 or n > REVIEW_UPLOAD_MAX:
+            return self.send(413, {"error": "The file is empty or larger than 60 MB."})
+        name = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("name", [""])[0][:200]
+        data, t, conn = self.rfile.read(n), urllib.parse.urlparse(chat), None
+        try:
+            conn = http.client.HTTPConnection(t.hostname, t.port or 80, timeout=300)
+            conn.request("POST", "/api/review-upload?" + urllib.parse.urlencode({"name": name, "by": who["id"]}), body=data,
+                         headers={"Content-Type": "application/octet-stream"})
+            r = conn.getresponse()
+            out = json.loads(r.read() or b"{}")
+        except (OSError, ValueError):
+            return self.send(502, {"error": "The reviewer's chat is not running, so files cannot be added yet."})
+        finally:
+            if conn:
+                conn.close()
+        if r.status != 200 or not isinstance(out, dict) or not review.FID.match(str(out.get("fid", ""))):
+            return self.send(r.status if r.status != 200 else 502, {"error": (out.get("error") if isinstance(out, dict) else None) or "The file could not be added."})
+        meta = {k: out[k] for k in ("fid", "name", "kind", "bytes", "web", "read", "pages") if k in out}
+        meta.update(at=review.now(), by=who["id"], who=who["name"])
+        REVIEW.record_upload(meta)
+        return self.send(200, {k: v for k, v in meta.items() if k != "read"})
+
+    def review_chat(self, who, body):
+        """One message to the reviewer's Claude. Its steps are passed on as they come; the changes it asks for are applied at the end."""
+        chat = self.review_conf().get("chatServer")
+        if not chat:
+            return self.send(503, {"error": "The reviewer's chat is not running."})
+        words = str(body.get("text") or "")[:6000]
+        try:
+            prompt, att = REVIEW.chat_prompt(who, words, body.get("attach"), body.get("view"))
+        except review.Bad as e:
+            return self.send(422, {"error": str(e)})
+        if not words.strip() and not att:
+            return self.send(400, {"error": "empty message"})
+        sid = body.get("sessionId")
+        req = json.dumps({"prompt": prompt, "guide": review.OPS_GUIDE, "reviewer": who,
+                          "sessionId": sid if isinstance(sid, str) and re.fullmatch(r"[0-9a-f-]{36}", sid) else None}).encode()
+        t = urllib.parse.urlparse(chat)
+        try:
+            conn = http.client.HTTPConnection(t.hostname, t.port or 80, timeout=900)
+            conn.request("POST", "/api/review-chat", body=req, headers={"Content-Type": "application/json"})
+            r = conn.getresponse()
+        except OSError:
+            return self.send(502, {"error": "The reviewer's chat is not running."})
+        if r.status != 200:
+            msg = r.read()[:600].decode("utf-8", "replace")
+            conn.close()
+            return self.send(r.status, {"error": msg or "The chat could not answer."})
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        gone, done = False, None
+
+        def out(o):
+            nonlocal gone
+            if gone:
+                return
+            try:
+                self.wfile.write((json.dumps(o) + "\n").encode())
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                gone = True   # the page was closed; the answer is still finished and its changes still go into the history
+
+        try:
+            for raw in r:
+                try:
+                    ev = json.loads(raw.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                if ev.get("type") == "done":
+                    done = ev
+                elif ev.get("type") in ("step", "text"):
+                    out({"type": ev["type"], "text": str(ev.get("text", ""))[:4000]})
+        except OSError:
+            pass
+        finally:
+            conn.close()
+        res = {"type": "reply", "text": "", "made": [], "failed": [], "sessionId": None}
+        if not done or done.get("error"):
+            res["error"] = str((done or {}).get("error") or "The chat stopped before it answered.")[:600]
+            res["sessionId"] = (done or {}).get("sessionId")
+        else:
+            clean, ops, problem = REVIEW.parse_reply(done.get("text") or "")
+            res.update(text=clean, sessionId=done.get("sessionId"))
+            if problem:
+                res["failed"].append({"why": problem})
+            for op in ops:
+                try:
+                    with lock:
+                        rec = REVIEW.add(who, REVIEW.resolve(op, att), "chat", words)
+                    res["made"].append({"id": rec["id"], "sum": rec["sum"], "info": rec.get("info"), "where": rec.get("where")})
+                except review.Bad as e:
+                    res["failed"].append({"what": str(op.get("op"))[:40], "why": str(e)})
+        res["state"] = self.review_state(who)
+        out(res)
 
     # ---- story sessions (story.py): this Mac and the home network only ----
     def story_get(self, path):

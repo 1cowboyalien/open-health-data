@@ -38,7 +38,9 @@
   const KCOL = {routine: '#a03a8c', IHC: '#9a6a1c', control: '#6b7280'};
   const MODES = ['overview', 'learn', 'gallery', 'viewer', 'spots', 'compare'];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-  const url = (c, kind, f) => '/pathology/' + encodeURIComponent(c.key) + '/' + kind + '/' + encodeURIComponent(f);
+  let BASE = '/pathology/';   // where photos, spots and tissue maps come from (a review page points this at its own copy)
+  const X = () => window.PATH_EXT || {};   // optional additions from such a page: tools(bar, it, redraw), photo(holder, img, it, redraw), side(side, it, redraw), drawn(where)
+  const url = (c, kind, f) => BASE + encodeURIComponent(c.key) + '/' + kind + '/' + encodeURIComponent(f);
   const slideKey = (c, s) => c.key + '/' + s.stain + '_' + s.slide;
   const slideName = (c, s) => { const st = ST[s.stain] || {label: s.stain}, same = c.slides.filter(x => x.stain === s.stain).length > 1;
     return st.label + (same || s.slide !== '1' ? ' · slide ' + s.slide : ''); };
@@ -95,7 +97,7 @@
   const isClean = (s, f) => !((s.marks && s.marks[f]) || []).some(m => m[0] === 'art' || m[0] === 'fat' || m[0] === 'dup');
   const spotCache = {};
   const spotsFor = (c, s) => spotCache[slideKey(c, s)] || (spotCache[slideKey(c, s)] =
-    fetch('/pathology/' + encodeURIComponent(c.key) + '/spots/' + encodeURIComponent(s.stain + '_' + s.slide) + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
+    fetch(BASE + encodeURIComponent(c.key) + '/spots/' + encodeURIComponent(s.stain + '_' + s.slide) + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
   function spotLayer(holder, img, it) {   // small rings on every nucleus the program found
     const NS = 'http://www.w3.org/2000/svg', ov = document.createElement('div'); ov.className = 'pth-ov pth-sp';
     const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('preserveAspectRatio', 'none'); ov.append(svg); holder.append(ov);
@@ -169,7 +171,7 @@
   const pc = x => x >= 9.95 || x === 0 ? Math.round(x) + '%' : x < 1 ? '<1%' : x.toFixed(1).replace(/\.0$/, '') + '%';
   const maskCache = {};
   const masksFor = (c, s) => maskCache[slideKey(c, s)] || (maskCache[slideKey(c, s)] =
-    fetch('/pathology/' + encodeURIComponent(c.key) + '/masks/' + encodeURIComponent(s.stain + '_' + s.slide) + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
+    fetch(BASE + encodeURIComponent(c.key) + '/masks/' + encodeURIComponent(s.stain + '_' + s.slide) + '.json').then(r => r.ok ? r.json() : null).catch(() => null));
   function tmapLayer(holder, img, it) {   // the tinted map, name tags on the biggest patches, and a "here:" readout under the pointer
     const cv = document.createElement('canvas'); cv.className = 'pth-ov pth-tm'; cv.style.opacity = V.tmapOp || .5;
     const tg = document.createElement('div'); tg.className = 'pth-ov pth-tg';
@@ -350,7 +352,7 @@
     top.append(mkBtn('✕ Close', false, 'Close (Esc)', close));
     const stage = document.createElement('div'); stage.className = 'pth-ref';
     const fig = (u, cap) => { const f = document.createElement('figure'); f.innerHTML = `<img alt="" src="${u}"><figcaption>${cap}</figcaption>`; return f; };
-    stage.append(fig('/pathology/' + encodeURI(src), '<b>Textbook</b> · ' + fmt(x.by || '')));
+    stage.append(fig(BASE + encodeURI(src), '<b>Textbook</b> · ' + fmt(x.by || '')));
     if (it) stage.append(fig(url(c, 'full', it.f), '<b>This case</b> · ' + esc(slideName(c, it.s) + ' · photo ' + (it.i + 1) + (result(it) ? ' · report: ' + result(it) : ''))));
     stage.onclick = e => { if (e.target === stage) close(); };
     const cap = document.createElement('div'); cap.className = 'lcap'; cap.innerHTML = fmt(x.d || '');
@@ -380,7 +382,7 @@
           const it = x.see && byFile(c, x.see), pics = x.img ? [[x.img, 'Textbook']] : (x.imgs || []);
           const fig = (src, cap, tip, fn) => { const f = document.createElement('figure'); f.innerHTML = `<img loading="lazy" alt="" src="${src}"><figcaption>${esc(cap)}</figcaption>`; f.title = tip; f.onclick = fn; return f; };
           if (pics.length) { const pr = document.createElement('div'); pr.className = 'pth-pair' + (x.imgs ? ' sm' : '');   // saved pictures: the textbook one(s), then this case's matching photo
-            pics.forEach(([src, cap]) => pr.append(fig('/pathology/' + encodeURI(src), cap, 'Click: see it large' + (it ? ', next to the matching photo from this case' : ''), () => refBox(c, x, it, src))));
+            pics.forEach(([src, cap]) => pr.append(fig(BASE + encodeURI(src), cap, 'Click: see it large' + (it ? ', next to the matching photo from this case' : ''), () => refBox(c, x, it, src))));
             if (it && x.img) pr.append(fig(url(c, 'thumb', it.f), 'This case · ' + slideName(c, it.s) + ' #' + (it.i + 1), 'Click: see the two side by side, large', () => refBox(c, x, it, x.img)));
             e.append(pr); }
           const tx = document.createElement('div');
@@ -465,7 +467,14 @@
     return _openMoment.apply(this, arguments);
   };
   window.PATH = {forProcedure: id => P.cases.filter(c => c.procedure && c.procedure === id).map(c => ({key: c.key, title: c.title, n: nOf(c)})),
-                 open: key => { V.caseKey = key; openPanel('overview'); }};
+                 open: key => { V.caseKey = key; openPanel('overview'); },
+                 // for a page built around this panel (a review page): swap the data, point at another copy of the files, find and drive the panel
+                 setData: d => { Object.keys(P).forEach(k => delete P[k]); Object.assign(P, d); Object.keys(ST).forEach(k => delete ST[k]); P.stains.forEach(s => { ST[s.key] = s; });
+                   Object.keys(maskCache).forEach(k => delete maskCache[k]); redraw(); },
+                 setBase: b => { BASE = b; }, redraw: () => redraw(), el: () => BODY && BODY.isConnected ? BODY.closest('.cmp, .card') : null,
+                 where: () => ({mode: V.mode, caseKey: V.caseKey, learn: V.learn, cur: V.cur, tmap: !!V.tmap, labels: !!V.labels, spots: !!V.spots}),
+                 photo: (f, layer) => { for (const c of P.cases) { const it = byFile(c, f); if (it) { V.caseKey = c.key; openWith(it, layer); return true; } } return false; },
+                 lesson: key => go('learn', {learn: key})};
   const keyBtn = (it, after) => mkBtn(isKey(it) ? '🔖 On the timeline' : '🔖 Keyframe', isKey(it),
     isKey(it) ? 'This photo is a line on the timeline charts (click to remove it)' : 'Save this photo as a line on the timeline charts, on the biopsy date',
     () => { toggleKey(it); if (after) after(); });
@@ -568,6 +577,7 @@
       body.append(f);
     }
     ({overview: drawOverview, learn: drawLearn, gallery: drawGallery, viewer: drawViewer, spots: drawSpots, compare: drawCompare})[V.mode](body, c, id);
+    if (X().drawn) X().drawn(window.PATH.where());
   }
 
   function drawOverview(body, c) {
@@ -634,6 +644,7 @@
       : 'Show or hide teaching labels (this photo has none: use Tour to go to the labeled ones)', () => { V.labels = !V.labels; save(); redraw(); }));
     ctl.append(spotBtn(it, redraw));
     ctl.append(tmapBtn(it, redraw));
+    if (X().tools) X().tools(ctl, it, redraw);
     const T = c.tour || [];
     if (T.length) { const j = T.indexOf(pkey(it));
       ctl.append(mkBtn('◀', false, 'Previous photo in the guided tour', () => tourGo(c, -1)));
@@ -651,12 +662,14 @@
     box.onkeydown = e => { const d = {ArrowLeft: -1, ArrowRight: 1}[e.key]; if (!d) return; e.preventDefault(); e.stopPropagation(); step(d); };
     box.append(img, prev, next);
     const side = document.createElement('div'); side.className = 'pth-side';
+    if (X().side) X().side(side, it, redraw);
     let ovl = null, rows = [];
     const pick = i => { labSel = labSel === i ? -1 : i; if (ovl) ovl.paint(); rows.forEach((r, j) => r.classList.toggle('on', j === labSel));
       if (labSel >= 0 && rows[labSel]) rows[labSel].scrollIntoView({block: 'nearest'}); };
     const hov = i => { rows.forEach((r, j) => r.style.outline = j === i ? '1px solid var(--line)' : ''); };
     if (V.tmap && tmOf(it)) { tmapLayer(box, img, it); side.style.flexBasis = '300px'; }
     if (V.spots && autoOf(it)) spotLayer(box, img, it);
+    if (X().photo) X().photo(box, img, it, redraw);
     if (lab) {
       ovl = overlay(box, img, ann, pick, hov);
       side.style.flexBasis = '320px';
@@ -849,6 +862,7 @@
       if (ann) top.append(mkBtn('🏷 Labels' + (V.labels ? ': on' : ''), !!V.labels, 'Show or hide the teaching labels', () => { V.labels = !V.labels; save(); show(); }));
       if (autoOf(it)) top.append(spotBtn(it, show));
       if (tmOf(it)) top.append(tmapBtn(it, show));
+      if (X().tools) X().tools(top, it, show);
       top.append(a, mkBtn('✕ Close', false, 'Close (Esc)', close));
       const stage = document.createElement('div'); stage.className = 'stage' + (zoom ? ' z' : '');
       const img = document.createElement('img'); img.src = url(it.c, 'full', it.f); img.alt = caption(it);
@@ -857,6 +871,7 @@
       stage.append(img);
       if (V.tmap && tmOf(it)) tmapLayer(stage, img, it);
       if (V.spots && autoOf(it)) spotLayer(stage, img, it);
+      if (X().photo) X().photo(stage, img, it, show);
       if (ann && V.labels) {
         const cap = document.createElement('div'); cap.className = 'lcap';
         const say = i => { const L = ann.labels[i]; cap.innerHTML = L ? `<span class="pth-bdg s" style="background:${LCOL[L.kind] || '#fff'};color:#000">${L.kind === 'measure' ? '↔' : i + 1}</span> <b>${esc(L.name)}</b> ${esc(L.text)}`

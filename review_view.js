@@ -1,5 +1,5 @@
 /* Review page: the viewer with only the Pathology panel, and a side column where a reviewer (for example a pathologist)
-   changes what the panel teaches. Served by serve_viewer.py at /review, which puts window.REVIEW = {reviewer, api, base}
+   changes what the panel teaches. Served by serve_viewer.py at /pathology-review, which puts window.REVIEW = {reviewer, api, base}
    in the page and loads this file after the viewer's own script.
 
    - Tools on a photo (Viewer and full window): "Outline" an area or "Point" at a spot, then say what it is. An outline
@@ -42,7 +42,8 @@ body.revFocus aside,body.revFocus .navpin,body.revFocus #kfCard,body.revFocus #t
 body.revFocus .wrap{grid-template-columns:minmax(0,1fr)!important}
 body.revFocus :is(.card,.cmp):not(.revTarget):not(:has(.revTarget)){display:none!important}
 body.revFocus .pth-lb{right:var(--rv-w)}
-body.revFocus .revTarget>.cmph .ctl{display:none!important}
+body.revFocus .revTarget>.cmph .ctl,body.revFocus #compare~.sub{display:none!important}
+body.revFocus .pth-lb .top .t{flex-basis:100%}
 #rvSide [hidden]{display:none!important}
 #rvSide{position:fixed;top:0;right:0;width:var(--rv-w);height:100vh;display:flex;flex-direction:column;z-index:10050;background:var(--card);color:var(--ink);border-left:1px solid var(--line);font-size:13.5px;line-height:1.45}
 @media (max-width:900px){:root{--rv-w:100vw}body.revFocus{padding-right:0;padding-bottom:48vh}#rvSide{top:auto;bottom:0;height:46vh;border-left:none;border-top:2px solid var(--line)}body.revFocus .pth-lb{right:0;bottom:46vh}}
@@ -52,6 +53,7 @@ body.revFocus .revTarget>.cmph .ctl{display:none!important}
 .rv-b:hover{border-color:var(--accent)}.rv-b.on{background:var(--accent);border-color:var(--accent);color:#fff}.rv-b:disabled{opacity:.4;cursor:default}
 .rv-head{padding:8px 10px 6px;border-bottom:1px solid var(--line)}
 .rv-head .t{font-weight:700;font-size:15px}.rv-head .s{color:var(--muted);font-size:12px}
+.rv-what{margin-top:5px;padding:1px 0 1px 8px;border-left:3px solid #f59e0b;font-size:12.5px;font-weight:600}
 .rv-row{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
 .rv-live{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;margin-right:auto}
 .rv-live i{width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block}
@@ -134,7 +136,7 @@ body.revFocus .revTarget>.cmph .ctl{display:none!important}
       if (draft && draft.file === it.f) s += draft.pts.length > 1 ? path(draft.pts, '#fff', true, drawing) : ring(draft.pts[0], '#fff');
       svg.innerHTML = s; }
     photoLayer.paint = paint;
-    new ResizeObserver(fit).observe(img); if (!img.complete) img.addEventListener('load', () => { fit(); paint(); }, {once: true});
+    (PATH.follow || ((h, i, f) => new ResizeObserver(f).observe(i)))(holder, img, fit); if (!img.complete) img.addEventListener('load', () => { fit(); paint(); }, {once: true});
     paint(); setTimeout(() => { fit(); paint(); }, 0);   // the photo box is put on the page after this call; a hidden page gets no resize callback
     const at = e => { const r = img.getBoundingClientRect(), [w, h] = size(); if (!r.width || !r.height) return null; return [Math.max(0, Math.min(w, (e.clientX - r.left) / r.width * w)), Math.max(0, Math.min(h, (e.clientY - r.top) / r.height * h))]; };
     ov.addEventListener('pointerdown', e => { if (tool === 'look' || e.target.closest('.rv-bd')) return; e.preventDefault(); e.stopPropagation(); fit(); const q = at(e); if (!q) return;
@@ -163,10 +165,10 @@ body.revFocus .revTarget>.cmph .ctl{display:none!important}
 
   // ---- the side column ----
   const side = el('div'); side.id = 'rvSide';
-  side.innerHTML = `<div class="rv-head"><div class="rv-row"><div style="margin-right:auto"><span class="t">Slide review</span> <span class="s">for ${esc(me.name)}${me.role ? ', ' + esc(me.role) : ''}</span></div>
+  side.innerHTML = `<div class="rv-head"><div class="rv-row"><div style="margin-right:auto"><span class="t">Pathology review</span> <span class="s">for ${esc(me.name)}${me.role ? ', ' + esc(me.role) : ''}</span></div>
       <button class="rv-b" id="rvUndo" title="Undo the latest change">↩ Undo</button><button class="rv-b" id="rvRedo" title="Put back the change that was undone last">↪ Redo</button></div>
-    <div class="rv-row" style="margin-top:4px"><div class="rv-live" id="rvLive"><i></i><span id="rvLiveT">Live: every change shows here at once</span></div>
-      <span class="s">A teaching review, not a pathology report</span></div></div>
+    <div class="rv-row" style="margin-top:4px"><div class="rv-live" id="rvLive"><i></i><span id="rvLiveT">Live: every change shows here at once</span></div></div>
+    <div class="rv-what">A teaching review, not a pathology report</div></div>
     <div class="rv-tabs"><button class="rv-b" data-t="chat">Chat with Claude</button><button class="rv-b" data-t="history">History <span class="rv-n" id="rvHN">0</span></button><button class="rv-b" data-t="files">Files <span class="rv-n" id="rvFN">0</span></button></div>
     <div id="rvPeek"></div><div id="rvNew"></div>
     <div class="rv-pane" id="rvP-chat"><div class="rv-scroll" id="rvMsgs"></div>
@@ -177,7 +179,7 @@ body.revFocus .revTarget>.cmph .ctl{display:none!important}
           <button class="rv-b on" id="rvSend" style="margin-left:auto">Send</button></div></div></div>
     <div class="rv-pane" id="rvP-history" hidden><div class="rv-scroll" id="rvHist"></div></div>
     <div class="rv-pane" id="rvP-files" hidden><div class="rv-scroll" id="rvFiles"></div></div>`;
-  document.body.append(side); document.body.classList.add('revFocus');
+  document.body.append(side); document.body.classList.add('revFocus'); document.title = 'Pathology review';
   function showTab(t) { tab = t; keep.set('tab', t); draw(); }
 
   // the card that asks what a freshly drawn outline or spot is

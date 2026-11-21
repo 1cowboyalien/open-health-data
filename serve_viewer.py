@@ -43,12 +43,13 @@ Usage:
   question (through the chat server) and saves approved stories to local/photos/stories/. All of it answers only this
   Mac and the home network (VPN included). The browser only allows the microphone on a secure page, so start the
   viewer with --https-port 8767 (certificate: python3 serve_viewer.py --make-cert) and open https://<this Mac>:8767/story.
-- Review page (review.py + review_view.js): GET /review is the viewer with only the Pathology panel and a side column
+- Review page (review.py + review_view.js): GET /pathology-review is the viewer with only the Pathology panel and a side column
   (chat, history, files) for a reviewer, for example a pathologist. Their changes are small operations kept in
-  local/review/log.jsonl; POST /review/api/change | flip | undo | redo add lines to it, and GET /review/api/state returns
+  local/review/log.jsonl; POST /pathology-review/api/change | flip | undo | redo add lines to it, and GET
+  /pathology-review/api/state returns
   the page data with those changes applied. The family viewer's own files and page are not touched. GET
-  /review/pathology/... serves the photos as /pathology/ does, plus the tissue maps the review has changed and the
-  pictures a reviewer added. POST /review/api/chat and /review/api/upload pass on to the reviewer's chat server named in
+  /pathology-review/pathology/... serves the photos as /pathology/ does, plus the tissue maps the review has changed and the
+  pictures a reviewer added. POST /pathology-review/api/chat and .../upload pass on to the reviewer's chat server named in
   local/review/settings.json. On only when local/review/reviewers.json exists, and it answers only this Mac and the
   home network.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
@@ -100,6 +101,7 @@ ASK_CONF = os.path.join(LOCAL, "ask.json")
 START = os.path.join(LOCAL, "start_view.json")
 REVIEW = review.Workspace(LOCAL)   # review.py: a reviewer's changes to the Pathology panel, with their history
 REVIEW_JS = os.path.join(HERE, "review_view.js")
+REVIEW_AT = "/pathology-review"   # the review page's address; everything of the page lives under it. /review, its first address, forwards here
 REVIEWERS = os.path.join(LOCAL, "review", "reviewers.json")   # who may review: [{"id", "name", "role"}]; no file = no review page
 REVIEW_CONF = os.path.join(LOCAL, "review", "settings.json")  # {"chatServer": "http://127.0.0.1:8821"} for the chat and uploads
 REVIEW_UPLOAD_MAX = 60_000_000
@@ -368,8 +370,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {"error": "not found"})
         if path.startswith("/pathology/"):   # pathology slide photos: inside local/pathology/, .jpg only
             return self.pathology_file(urllib.parse.unquote(path[len("/pathology/"):]))
-        if path == "/review" or path.startswith("/review/"):
-            return self.review_get(path)
+        if path == REVIEW_AT or path.startswith(REVIEW_AT + "/"):
+            return self.review_get(path[len(REVIEW_AT):])
+        if path in ("/review", "/review/"):   # the review page's first address
+            return self.review_moved()
         if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
             return self.photos(urllib.parse.unquote(path[len("/photos/"):]))
         if path == "/story" or path.startswith("/story/"):
@@ -399,8 +403,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.save_photo_edit()
         if self.path.split("?")[0].startswith("/story/api/"):
             return self.story_post(self.path.split("?")[0][len("/story/api/"):])
-        if self.path.split("?")[0].startswith("/review/api/"):
-            return self.review_post(self.path.split("?")[0][len("/review/api/"):])
+        if self.path.split("?")[0].startswith(REVIEW_AT + "/api/"):
+            return self.review_post(self.path.split("?")[0][len(REVIEW_AT + "/api/"):])
         if self.path.split("?")[0] != "/api/edits":
             return self.send(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length") or 0)
@@ -452,32 +456,40 @@ class Handler(BaseHTTPRequestHandler):
     def review_state(self, who):
         return dict(REVIEW.state(), reviewer=who, chat=bool(self.review_conf().get("chatServer")))
 
+    def review_moved(self):
+        """/review was the page's first address: forward to the new one, for the same people only."""
+        if not (usage.is_local_request(self) and REVIEW.ready() and self.review_who()):
+            return self.send(404, {"error": "not found"})
+        q = urllib.parse.urlparse(self.path).query
+        return self.send(302, b"", "text/plain", headers=(("Location", REVIEW_AT + ("?" + q if q else "")),))
+
     def review_get(self, path):
+        """path = what follows the page's address: "" for the page itself, /api/state, /pathology/<file>, ..."""
         who = self.review_who() if usage.is_local_request(self) and REVIEW.ready() else None
         if not who:
             return self.send(404, {"error": "not found"})
-        if path in ("/review", "/review/"):
+        if path in ("", "/"):
             if not os.path.exists(PAGE):
                 return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
             html = open(PAGE, "rb").read()
-            cfg = json.dumps({"reviewer": who, "api": "/review/api", "base": "/review/pathology/"}).replace("</", "<\\/")
+            cfg = json.dumps({"reviewer": who, "api": REVIEW_AT + "/api", "base": REVIEW_AT + "/pathology/"}).replace("</", "<\\/")
             tag = ("<script>" + REVIEW_SHIM + "window.REVIEW=" + cfg + ";</script>").encode()
             i = html.find(b"<script")   # before the viewer's first script: it reads its saved settings as it starts
             html = html[:i] + tag + html[i:] if i >= 0 else tag + html
             i = html.rfind(b"</body>")
-            tag = b'<script src="/review/review_view.js"></script>'
+            tag = ('<script src="' + REVIEW_AT + '/review_view.js"></script>').encode()
             html = html[:i] + tag + html[i:] if i >= 0 else html + tag
             return self.send(200, html, "text/html; charset=utf-8")
-        if path == "/review/review_view.js":
+        if path == "/review_view.js":
             return self.send(200, open(REVIEW_JS, "rb").read(), "text/javascript; charset=utf-8")
-        if path == "/review/api/state":
+        if path == "/api/state":
             w = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("without", [""])[0]
             if w.isdigit():   # "Before / after": the review without one change; nothing is saved
                 return self.send(200, dict(REVIEW.state(int(w)), reviewer=who))
             return self.send(200, self.review_state(who))
-        if path == "/review/api/version":
+        if path == "/api/version":
             return self.send(200, {"version": len(REVIEW.records())})
-        pk = re.match(r"/review/pathology(?:~(\d{1,9}))?/", path)
+        pk = re.match(r"/pathology(?:~(\d{1,9}))?/", path)
         if pk:
             rel = urllib.parse.unquote(path[pk.end():])
             m = re.fullmatch(r"([^/]+)/masks/([^/]+)\.json", rel)

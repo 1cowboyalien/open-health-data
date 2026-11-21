@@ -40,6 +40,10 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   let BASE = '/pathology/';   // where photos, spots and tissue maps come from (a review page points this at its own copy)
   const X = () => window.PATH_EXT || {};   // optional additions from such a page: tools(bar, it, redraw), photo(holder, img, it, redraw), side(side, it, redraw), drawn(where)
+  // Keeps a layer on its photo. place() runs when the photo changes size, and also when only the box around it does: a taller
+  // or wider box moves a centred photo without resizing it. placeAll(root) runs it by hand, right after a change known to move the photo.
+  const follow = (holder, img, place) => { const ro = new ResizeObserver(place); ro.observe(img); ro.observe(holder); (holder.pthPlace = holder.pthPlace || []).push(place); };
+  const placeAll = root => root.querySelectorAll('.pth-img').forEach(b => (b.pthPlace || []).forEach(f => f()));
   const url = (c, kind, f) => BASE + encodeURIComponent(c.key) + '/' + kind + '/' + encodeURIComponent(f);
   const slideKey = (c, s) => c.key + '/' + s.stain + '_' + s.slide;
   const slideName = (c, s) => { const st = ST[s.stain] || {label: s.stain}, same = c.slides.filter(x => x.stain === s.stain).length > 1;
@@ -102,7 +106,7 @@
     const NS = 'http://www.w3.org/2000/svg', ov = document.createElement('div'); ov.className = 'pth-ov pth-sp';
     const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('preserveAspectRatio', 'none'); ov.append(svg); holder.append(ov);
     const place = () => Object.assign(ov.style, {left: img.offsetLeft + 'px', top: img.offsetTop + 'px', width: img.offsetWidth + 'px', height: img.offsetHeight + 'px'});
-    new ResizeObserver(place).observe(img);
+    follow(holder, img, place);
     spotsFor(it.c, it.s).then(d => { const p = d && d.photos[it.f]; if (!p) return;
       svg.setAttribute('viewBox', '0 0 ' + p.w + ' ' + p.h);
       const cols = SCLS[d.mode] || {}, hide = new Set(V.spotHide || []); let h = '';
@@ -178,7 +182,7 @@
     const here = document.createElement('div'); here.className = 'pth-here';
     holder.append(cv, tg, here);
     const place = () => [cv, tg].forEach(e => Object.assign(e.style, {left: img.offsetLeft + 'px', top: img.offsetTop + 'px', width: img.offsetWidth + 'px', height: img.offsetHeight + 'px'}));
-    new ResizeObserver(place).observe(img);
+    follow(holder, img, place);
     masksFor(it.c, it.s).then(d => { const m = d && d.photos[it.f]; if (!m) { here.textContent = 'No tissue map for this photo'; here.style.display = 'block'; return; }
       const w = d.gw, h = d.gh, g = new Uint8Array(w * h), rule = d.rule || tRule(it.s), two = V.tmapMode !== 'detail', hide = new Set((V.tmapHide || []).map(String));
       const re = /([a-g])(\d+)/g; let x, i = 0; while ((x = re.exec(m.rle))) { const n = +x[2]; g.fill(x[1].charCodeAt(0) - 97, i, i + n); i += n; }
@@ -291,7 +295,7 @@
         x.g.querySelectorAll('.k').forEach(e => e.setAttribute('stroke-width', j === cur ? 5 : 2.5));
         x.g.querySelectorAll('.h').forEach(e => e.setAttribute('stroke-width', j === cur ? 8 : 5)); }); }
     function place() { Object.assign(ov.style, {left: img.offsetLeft + 'px', top: img.offsetTop + 'px', width: img.offsetWidth + 'px', height: img.offsetHeight + 'px'}); }
-    new ResizeObserver(place).observe(img);
+    follow(holder, img, place);
     if (img.complete && img.naturalWidth) build(); else img.addEventListener('load', build, {once: true});
     return {paint, hl: i => { hover = i; paint(); }};
   }
@@ -471,7 +475,7 @@
                  // for a page built around this panel (a review page): swap the data, point at another copy of the files, find and drive the panel
                  setData: d => { Object.keys(P).forEach(k => delete P[k]); Object.assign(P, d); Object.keys(ST).forEach(k => delete ST[k]); P.stains.forEach(s => { ST[s.key] = s; });
                    Object.keys(maskCache).forEach(k => delete maskCache[k]); redraw(); },
-                 setBase: b => { BASE = b; }, redraw: () => redraw(), el: () => BODY && BODY.isConnected ? BODY.closest('.cmp, .card') : null,
+                 setBase: b => { BASE = b; }, follow, redraw: () => redraw(), el: () => BODY && BODY.isConnected ? BODY.closest('.cmp, .card') : null,
                  where: () => ({mode: V.mode, caseKey: V.caseKey, learn: V.learn, cur: V.cur, tmap: !!V.tmap, labels: !!V.labels, spots: !!V.spots}),
                  photo: (f, layer) => { for (const c of P.cases) { const it = byFile(c, f); if (it) { V.caseKey = c.key; openWith(it, layer); return true; } } return false; },
                  lesson: key => go('learn', {learn: key})};
@@ -633,7 +637,7 @@
     const it = L[k], st = ST[it.s.stain] || {label: it.s.stain, kind: '', what: ''};
     const step = d => { const j = k + d; if (j < 0 || j >= L.length) return; V.cur = pkey(L[j]); save(); focusImg = true; redraw(); };
     const ctl = document.createElement('div'); ctl.className = 'pth-bar';
-    ctl.append(range('Size', 240, 1400, 20, V.size, 'Make the photo smaller or bigger', v => { V.size = v; save(); const m = body.querySelector('.pth-main'); if (m) m.style.height = v + 'px'; }));
+    ctl.append(range('Size', 240, 1400, 20, V.size, 'Make the photo smaller or bigger', v => { V.size = v; save(); const m = body.querySelector('.pth-main'); if (m) { m.style.height = v + 'px'; placeAll(m); } }));
     ctl.append(mkBtn('⛶ Full window', false, 'Show this photo as big as the window (Esc to close)', () => lightbox(L, k)));
     ctl.append(mkBtn(pinned(it) ? '✓ In Compare' : '＋ Compare', pinned(it), 'Add this photo to Compare, to see it next to others', () => { togglePin(it); redraw(); }));
     ctl.append(keyBtn(it));
@@ -852,7 +856,7 @@
     const nav = (d, side, label) => { const b = document.createElement('button'); b.className = 'pth-nav'; b.style[side] = '10px'; b.textContent = label;
       b.disabled = k + d < 0 || k + d >= L.length; b.onclick = e => { e.stopPropagation(); stepLb(d); }; return b; };
     function show() {
-      const it = L[k]; ov.innerHTML = '';
+      const now = P.cases.find(x => x.key === L[k].c.key), it = L[k] = (now && byFile(now, L[k].f)) || L[k]; ov.innerHTML = '';   // the data may have been swapped since (setData)
       const top = document.createElement('div'); top.className = 'top';
       const t = document.createElement('span'); t.className = 't';
       t.innerHTML = `<b>${esc(slideName(it.c, it.s))}</b> · ${esc(result(it) || '—')} · <span style="opacity:.7">photo ${it.i + 1} of ${it.s.photos.length}${L.length > 1 ? ' · ' + (k + 1) + '/' + L.length + ' here' : ''} · click the photo to see it at full resolution · ← → · Esc</span>`;

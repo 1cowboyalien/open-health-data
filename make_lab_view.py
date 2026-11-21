@@ -597,6 +597,11 @@ function endSoloLab(){if(!soloLab)return;sel=soloBack(soloLab.prev,sel,soloLab.i
 /* Only button for a group heading: lit when the group is "only"; outlined when one item inside it is */
 function groupOnlyBtn(what,key,ids,on,inside,fn){const b=miniBtn('Only',on?'Turn off "only" and bring back the earlier selection':inside?'"Only" is on for one '+what+' in this group':'Show only this group (deselect the others)',fn);
  b.classList.add('gonly');if(on)b.classList.add('on');else if(inside)b.classList.add('inside');b.setAttribute('aria-pressed',!!on);return b}
+/* All / None / Only on a Library heading whose rows are Stage panels (ids in sel). The Library uses these
+   wherever a heading holds two or more things you can tick, so every section works the same way. */
+function panelBtns(D,what,key,ids,label,opt){opt=opt||{};const s=D.firstChild,add=b=>s.insertBefore(b,s.lastChild),one=ids.length===1;
+ if(!opt.noAllNone){add(miniBtn('All',(one?'Show the ':'Show every ')+what,()=>setLabSel(ids,true)));add(miniBtn('None',(one?'Hide the ':'Hide every ')+what,()=>setLabSel(ids,false)))}
+ add(groupOnlyBtn(what,key,ids,soloLab&&soloLab.key===key,!!(soloLab&&soloLab.key!==key&&soloLab.ids.length===1&&ids.includes(soloLab.ids[0])),()=>onlyLab(key,ids,label)))}
 /* the pills at the top: "Only: <name> ✕" for labs and for medications */
 function soloBarRender(){const el=$('soloBar');el.innerHTML='';
  const pill=(what,name,off)=>{const p=document.createElement('span');p.className='solo';const t=document.createElement('span');t.textContent='Only '+what+': '+name;t.title=t.textContent;
@@ -610,7 +615,13 @@ function list(){const q=$('q').value.toLowerCase();const el=$('list');el.innerHT
  if(L){const all=Object.values(groups).flat().map(t=>t.id),ls=L.firstChild;
   ls.insertBefore(miniBtn('All','Select every '+(q?'matching ':'')+'lab test for comparison',async()=>{
    if(all.length>30&&!await uiAsk('Add all '+all.length+' tests to the comparison? That draws '+all.length+' charts.',undefined,'Add all'))return;setLabSel(all,true)}),ls.lastChild);
-  ls.insertBefore(miniBtn('None','Deselect every '+(q?'matching ':'')+'lab test',()=>setLabSel(all,false)),ls.lastChild)}
+  ls.insertBefore(miniBtn('None','Deselect every '+(q?'matching ':'')+'lab test',()=>setLabSel(all,false)),ls.lastChild);
+  /* Only here keeps the lab tests you have ticked and hides everything else (vitals, MRD, imaging, ...);
+     with no lab ticked it would mean every test, so it asks first, like All */
+  const on=soloLab&&soloLab.key==='grp:labs',mine=all.filter(id=>sel.includes(id));
+  ls.insertBefore(groupOnlyBtn('lab test','grp:labs',all,on,false,async()=>{if(on||mine.length){onlyLab('grp:labs',on?all:mine,'Lab results');return}
+   if(all.length>30&&!await uiAsk('No lab test is ticked. Show only lab tests, all '+all.length+' of them? That draws '+all.length+' charts.',undefined,'Show all'))return;onlyLab('grp:labs',all,'Lab results')}),ls.lastChild);
+  ls.lastChild.previousSibling.title=on?'Turn off "only" and bring back the earlier selection':'Show only the ticked lab tests (hide vitals, MRD, imaging and the other panels)'}
  Object.keys(groups).sort().forEach(g=>{const ids=groups[g].map(t=>t.id),k=ids.filter(id=>sel.includes(id)).length;
   const G=section(L,'lab:'+g,g,k?k+'/'+ids.length:ids.length,true,'grp',q),gs=G.firstChild;
   const cb0=document.createElement('input');cb0.type='checkbox';cb0.checked=k===ids.length;cb0.indeterminate=k>0&&k<ids.length;

@@ -287,7 +287,7 @@
     const hay = ('costs cost money price prices bill bills billing insurance blue cross medicare dollars total spending ' + D.cats.map(c => c.label).join(' ') + ' ' + Object.values(FACN).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     const SEC = section(el, 'cost', 'Costs', k$(sumBy(DONE, 'al')) + ' est.', false, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn('Costs panels', 'grp:cost', [IDT, IDD], soloLab && soloLab.key === 'grp:cost', false, () => onlyLab('grp:cost', [IDT, IDD], 'Costs')), s0.lastChild);
+    panelBtns(SEC, 'Costs panel', 'grp:cost', [IDT, IDD], 'Costs');
     const row = (id, label, count, tip) => { const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes(id); cb.setAttribute('aria-label', 'Show ' + label);
       cb.onclick = e => { e.stopPropagation(); setLabSel([id], cb.checked); };

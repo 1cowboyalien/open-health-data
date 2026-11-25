@@ -4,11 +4,14 @@
 
 Inputs (paths kept out of this public script, in the private local/mrd_sources.json):
     {"natera_reports": ["<extracted report text>", ...],   # text of Natera Signatera PDFs (records/pdftext.swift)
-     "allele_dir": "<folder with Natera's per-draw allele .xlsx files>"}
+     "allele_dir": "<folder with Natera's per-draw allele .xlsx files>",
+     "northstar_reports": ["<extracted report text>", ...]}  # BillionToOne Northstar Response PDFs (optional)
 Also reads local/labs_all.tsv to note which draws the hospitals' records already have.
 
 Writes (all in local/, never committed):
-    mrd_tests.tsv    one row per Signatera draw: date, MTM/mL, result, where it is recorded
+    mrd_tests.tsv    one row per draw: date, value, result, where it is recorded. Signatera rows are in MTM/mL;
+                     Northstar Response rows (test="Northstar Response") are a Tumor Methylation Score (TMS),
+                     a different scale: never plot them on the Signatera MTM/mL axis
     mrd_alleles.tsv  one row per draw x tracked variant: allele ratio and Natera's per-variant call
 Then run  python3 liftover_mrd.py --ensembl --genes  when new variants appear (GRCh38 positions,
 genes); it writes local/mrd_variants.tsv. make_lab_view.py inlines all three when they exist.
@@ -70,6 +73,20 @@ def report_history(path):
     return rdate, hist
 
 
+def northstar_history(path):
+    """(report date, [(draw date, TMS, call)]) from one Northstar Response report's text (its history table, p.3)."""
+    txt = open(path).read()
+    m = re.search(r"Report Date\s+(\d\d)/(\d\d)/(\d{4})", txt)
+    rdate = f"{m[3]}-{m[1]}-{m[2]}" if m else ""
+    hist = []
+    if "Historical Results" in txt:
+        for line in txt.split("Historical Results", 1)[1].splitlines():
+            m = re.match(r"(\d\d)/(\d\d)/(\d{4})\s+(\d+)\s+([\d.<>]+)\s+(.+?)\s*$", line.strip())
+            if m:
+                hist.append((f"{m[3]}-{m[1]}-{m[2]}", m[5], m[6]))
+    return rdate, hist
+
+
 def main():
     if not os.path.exists(CFG):
         sys.exit(f"no {CFG}: nothing to do (see the docstring for its format)")
@@ -98,7 +115,14 @@ def main():
             rows.append(dict(test="Signatera", vendor="Natera", kind="ctDNA (blood, tumor-informed)", draw_date=d, value="", unit="MTM/mL",
                              result="NOT PERFORMED" if "not performed" in vt.lower() else ("DETECTED" if vt not in ("", "0", "0.0") else "NOT DETECTED"),
                              source=site, also_in="", note=vt))
-    rows.sort(key=lambda r: r["draw_date"])
+    ns = {}
+    for rdate, hist, p in sorted((northstar_history(os.path.expanduser(p)) + (p,) for p in cfg.get("northstar_reports", [])), key=lambda r: r[0]):
+        for d, v, call in hist:   # newest report wins
+            ns[d] = dict(test="Northstar Response", vendor="BillionToOne", kind="ctDNA (blood, tumor-naive methylation)", draw_date=d, value=v,
+                         unit="TMS", result=call.upper(), source="northstar_report_" + rdate, also_in="",
+                         note="Tumor Methylation Score, reportable range >=10; not comparable with Signatera MTM/mL")
+    rows += ns.values()
+    rows.sort(key=lambda r: (r["draw_date"], r["test"]))
     write(os.path.join(LOCAL, "mrd_tests.tsv"), rows)
 
     al = []
@@ -121,7 +145,7 @@ def main():
     if al:
         write(os.path.join(LOCAL, "mrd_alleles.tsv"), al)
     nd = len({r["draw_date"] for r in al})
-    print(f"mrd_tests.tsv: {len(rows)} draws ({sum(r['result'] == 'DETECTED' for r in rows)} detected) from {len(reports)} report(s); "
+    print(f"mrd_tests.tsv: {len(rows) - len(ns)} Signatera draws + {len(ns)} Northstar ({sum(r['result'] == 'DETECTED' for r in rows)} detected) from {len(reports)} report(s); "
           f"mrd_alleles.tsv: {len(al)} rows, {nd} draws")
     var = os.path.join(LOCAL, "mrd_variants.tsv")
     known = {r["target_id"] for r in csv.DictReader(open(var), delimiter="\t")} if os.path.exists(var) else set()

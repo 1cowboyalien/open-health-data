@@ -4,7 +4,8 @@
    liftover_mrd.py). Uses the viewer's time window (W, pos, ticks), hover line (hoverX, setHover), moment lines
    (momentPlugin), chart registry (charts), heights (hOf/setH) and selection (sel, setLabSel), so MRD panels move,
    line up and behave like the rest of the Stage. Everything is wrapped in one object so names don't clash.
-   Panel ids (in sel, Compare): 'mrd:ot' = Over time, 'mrd:var' = Tumor variants tracked. */
+   Panel ids (in sel, Compare): 'mrd:ot' = Over time, 'mrd:var' = Tumor variants tracked, 'mrd:ns' = Northstar Response
+   (BillionToOne, D.mrd.other: a Tumor Methylation Score, its own scale, never drawn on the Signatera MTM/mL axis). */
 const MRD = (() => {
   const M = D.mrd;
   const NONE = {has: false, isId: () => false, active: () => false, section() {}, render() {}, close() {}, panel() {}, refresh() {}, title: () => ''};
@@ -43,6 +44,7 @@ const MRD = (() => {
   document.head.appendChild(st);
 
   /* ---------- data helpers ---------- */
+  const NS = (M.other || []).filter(r => r.test === 'Northstar Response' && r.draw_date);
   const ROWS = M.rows, ALLELES = M.alleles || [], VARS = M.vars || {};
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   const fd = d => new Date(ms(d)).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'});
@@ -80,6 +82,8 @@ const MRD = (() => {
   /* ---------- panels that can be ticked into Compare ---------- */
   const PANELS = {'mrd:ot': {title: 'Signatera · Over time', unit: 'MTM/mL or allele score'}};
   if (ADATES.length) PANELS['mrd:var'] = {title: 'Signatera · Tumor variants tracked', unit: NT + ' variants'};
+  const SIG_IDS = Object.keys(PANELS);
+  if (NS.length) PANELS['mrd:ns'] = {title: 'Northstar Response · Over time', unit: 'Tumor Methylation Score (log)'};
   const IDS = Object.keys(PANELS);
 
   /* ---------- settings (remembered in this browser; shared by the page and the Compare panels) ---------- */
@@ -170,6 +174,45 @@ const MRD = (() => {
         options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(),
           plugins: {legend: {display: false}, tooltip: {filter: i => i.datasetIndex > 0 && (measure === 'allele' || i.datasetIndex < 4), callbacks: {label: tip}}},
           scales: {x: xAxis(), y: yAx}}});
+    }
+    draw();
+    draw.box = box;
+    return draw;
+  }
+
+  /* ---------- Northstar Response (BillionToOne): Tumor Methylation Score over time, on its own log scale ----------
+     A different test from Signatera (tumor-naive, methylation at >2000 places; reportable range >= 10, shaded), so it gets its
+     own chart on the shared time axis and is never put on the MTM/mL axis. The lab's call for each draw is in the tooltip. */
+  const NS_FLOOR = 10;
+  const NS_NOTE = 'Northstar Response (BillionToOne) counts tumor DNA in the blood that carries a chemical tag (methylation) at more than 2,000 places often tagged in cancer. It does not use the tumor\'s own mutations (Signatera does), so a Tumor Methylation Score is not MTM/mL and the two numbers cannot be compared directly. The lab calls a change an increase or decrease only when it passes its statistical threshold. Scores under 10 (shaded) are below the reportable range. The lab says the test tracks change over time and is not meant for minimal residual disease detection.';
+  function northstar(box, key, opt) {
+    box.classList.add('mrdp');
+    box.innerHTML = `<div class="mrdh">${opt.title ? '<b>Northstar Response</b> <span class="sub">BillionToOne · tumor-naive methylation · a different test and scale from Signatera</span>' : '<span></span>'}<div class="bar" data-r="ctl"></div></div>
+      <div class="legend"><span><span class="dot" style="background:var(--amb);border-radius:2px;transform:rotate(45deg)"></span>Tumor Methylation Score (log scale)</span><span><span class="dot" style="background:var(--line);border-radius:2px"></span>Below the reportable range (&lt;${NS_FLOOR})</span></div>
+      <div style="position:relative;height:${hOf(key, opt.h)}px;margin-top:6px"><canvas role="img" aria-label="Northstar Tumor Methylation Score over time"></canvas></div>
+      ${opt.note ? `<div class="note">${NS_NOTE}</div>` : ''}`;
+    const ctl = R(box, 'ctl'), cv = box.querySelector('canvas');
+    if (opt.height) ctl.append(btn('−', 'Shorter', () => { setH(key, hOf(key, opt.h) - 40); window.render(); }), btn('+', 'Taller', () => { setH(key, hOf(key, opt.h) + 40); window.render(); }));
+    function draw() {
+      drop(key + '#');
+      const amb = css('--amb'), grid = css('--line'), ink = css('--ink2'), card = css('--card');
+      const pts = NS.map(r => ({x: X(r.draw_date), y: +r.value, r}));
+      const top = Math.max(1000, ...pts.map(p => p.y * 3));
+      const shade = {id: 'nsFloor', beforeDatasetsDraw(c) { const {ctx, chartArea: a, scales: {y}} = c, t = Math.max(a.top, y.getPixelForValue(NS_FLOOR));
+        ctx.save(); ctx.fillStyle = grid; ctx.globalAlpha = .6; ctx.fillRect(a.left, t, a.right - a.left, a.bottom - t); ctx.restore(); }};
+      const labels = {id: 'nsLbl', afterDatasetsDraw(c) { const {ctx, chartArea: a} = c, m = c.getDatasetMeta(1); ctx.save(); ctx.fillStyle = css('--ink'); ctx.font = '12px ' + getComputedStyle(document.body).fontFamily; ctx.textBaseline = 'middle';
+        m.data.forEach((p, i) => { if (p.x < a.left || p.x > a.right) return; const last = i === m.data.length - 1;   // the newest label to the right, earlier ones to the left, so close draws don't overlap
+          ctx.textAlign = last ? 'left' : 'right'; ctx.fillText(String(Math.round(pts[i].y)), p.x + (last ? 9 : -9), p.y); }); ctx.restore(); }};
+      keep(key + '#c', cv, {type: 'scatter', plugins: plugins(shade, labels),
+        data: {datasets: [
+          {type: 'line', data: pts, borderColor: ink, borderWidth: 2, pointRadius: 0, tension: 0, order: 2},
+          {data: pts, pointStyle: 'rectRot', pointRadius: 6, pointHoverRadius: 7, pointBackgroundColor: amb, pointBorderColor: card, pointBorderWidth: 2, order: 1}]},
+        options: {maintainAspectRatio: false, animation: false, onHover: hov, layout: TLAY(),
+          plugins: {legend: {display: false}, tooltip: {filter: i => i.datasetIndex === 1, callbacks: {label: c => { const r = c.raw.r;
+            return [`${fd(r.draw_date)}: Tumor Methylation Score ${r.value}`, 'Northstar: ' + r.result.charAt(0) + r.result.slice(1).toLowerCase(), 'Not on the Signatera MTM/mL scale']; }}}},
+          scales: {x: xAxis(), y: {...yw(YW), type: 'logarithmic', min: 3, max: top, grid: {color: grid},
+            afterBuildTicks: a => { a.ticks = [10, 100, 1000, 10000, 100000].filter(v => v <= top).map(v => ({value: v})); },
+            ticks: {color: css('--muted'), callback: v => (+v).toLocaleString('en-US')}}}}});
     }
     draw();
     draw.box = box;
@@ -367,6 +410,7 @@ const MRD = (() => {
     s.innerHTML = `<div class="dethead" style="margin-top:16px"><div><h2>Signatera <span class="sub">ctDNA · ${esc(LAST.vendor || 'Natera')} · tumor-informed MRD test</span></h2><div class="sub" data-r="desc"></div></div>${stage}</div>
 <div class="stats" data-r="stats"></div>
 <div class="card" data-r="ot"></div>
+${NS.length ? '<div class="card" data-r="ns"></div>' : ''}
 ${ADATES.length ? `<div class="card" data-r="var"></div>
 <div class="card"><b>Variant positions</b>
   <div class="sub">Natera reports positions on hs37d5 (GRCh37 / hg19). GRCh38 positions come from the UCSC hg19→hg38 chain file, cross-checked with Ensembl (which also confirmed the reference base at both). Both are kept. Genes and effects: Ensembl VEP (GRCh38, one standard transcript per variant); hover an effect for the exact notation. Natera picks these mutations as trackable markers of the tumor, so most are not known cancer drivers.</div>
@@ -389,6 +433,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
       (streak && streak < done.length ? stat(streak, 'Not detected in a row, since ' + fd(done[done.length - streak].draw_date)) : '');
     // panels
     LIVE.set('mrd:ot@page', overTime(R(s, 'ot'), 'mrd:ot@page', {title: true, note: true, h: 280, height: true}));
+    if (NS.length) LIVE.set('mrd:ns@page', northstar(R(s, 'ns'), 'mrd:ns@page', {title: true, note: true, h: 200, height: true}));
     if (ADATES.length) {
       LIVE.set('mrd:var@page', variants(R(s, 'var'), 'mrd:var@page', {title: true, height: true}));
       R(s, 'pos').innerHTML = '<tr><th>Variant</th><th>Gene</th><th>Effect</th><th>Change</th><th>Type</th><th>GRCh37 / hs37d5 (Natera)</th><th>GRCh38</th><th>Shift</th><th>Check</th></tr>' +
@@ -408,25 +453,26 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
 
   /* ---------- Compare: one panel per ticked id, inside the viewer's own card (with ⤒↑↓⤓ − + ×) ---------- */
   function panel(id, body) {
-    const f = id === 'mrd:ot' ? overTime(body, id, {title: false, note: false, h: H0[id], compact: true}) : variants(body, id, {title: false});
+    const f = id === 'mrd:ot' ? overTime(body, id, {title: false, note: false, h: H0[id], compact: true})
+      : id === 'mrd:ns' ? northstar(body, id, {title: false, note: false, h: H0[id]}) : variants(body, id, {title: false});
     LIVE.set(id, f);
   }
   function refresh(id) { const f = LIVE.get(id); if (f && f.box.isConnected) f(); }
-  const H0 = {'mrd:ot': 160, 'mrd:var': 440};
+  const H0 = {'mrd:ot': 160, 'mrd:var': 440, 'mrd:ns': 150};
 
   /* ---------- Library section: Signatera group, a tick box per panel (Compare), the name opens the full page ---------- */
   function section(el, q) {
-    if (q && !'mrd ctdna signatera natera minimal residual disease tumor variants over time'.includes(q)) return;
-    const S = window.section(el, 'mrd', 'MRD tests', '1 test', true, 'sec', q);
-    const k = IDS.filter(id => sel.includes(id)).length;
-    panelBtns(S, 'Signatera panel', 'grp:mrd', IDS, 'MRD tests');
-    const G = window.section(S, 'mrd:sig', 'Signatera', k ? k + '/' + IDS.length : done.length + ' draws', true, 'grp', q), gs = G.firstChild;
-    const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === IDS.length; cb0.indeterminate = k > 0 && k < IDS.length;
+    if (q && !'mrd ctdna signatera natera minimal residual disease tumor variants over time northstar billiontoone methylation'.includes(q)) return;
+    const S = window.section(el, 'mrd', 'MRD tests', NS.length ? '2 tests' : '1 test', true, 'sec', q);
+    const k = SIG_IDS.filter(id => sel.includes(id)).length;
+    panelBtns(S, 'MRD panel', 'grp:mrd', IDS, 'MRD tests');
+    const G = window.section(S, 'mrd:sig', 'Signatera', k ? k + '/' + SIG_IDS.length : done.length + ' draws', true, 'grp', q), gs = G.firstChild;
+    const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === SIG_IDS.length; cb0.indeterminate = k > 0 && k < SIG_IDS.length;
     cb0.title = 'Tick or untick both Signatera panels for Compare'; cb0.setAttribute('aria-label', 'Select both Signatera panels');
-    cb0.onclick = e => { e.stopPropagation(); setLabSel(IDS, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
-    gs.insertBefore(miniBtn('All', 'Select both Signatera panels', () => setLabSel(IDS, true)), gs.lastChild);
-    gs.insertBefore(miniBtn('None', 'Deselect both Signatera panels', () => setLabSel(IDS, false)), gs.lastChild);
-    panelBtns(G, 'Signatera panel', 'grp:mrd:sig', IDS, 'Signatera', {noAllNone: true});
+    cb0.onclick = e => { e.stopPropagation(); setLabSel(SIG_IDS, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
+    gs.insertBefore(miniBtn('All', 'Select both Signatera panels', () => setLabSel(SIG_IDS, true)), gs.lastChild);
+    gs.insertBefore(miniBtn('None', 'Deselect both Signatera panels', () => setLabSel(SIG_IDS, false)), gs.lastChild);
+    panelBtns(G, 'Signatera panel', 'grp:mrd:sig', SIG_IDS, 'Signatera', {noAllNone: true});
     // the whole-test row: opens the full page
     const pg = document.createElement('div'); pg.className = 't' + (active() ? ' on' : '');
     const pn = document.createElement('span'); pn.className = 'nm'; pn.innerHTML = 'Signatera <span class="tag">' + esc(LAST.vendor || 'Natera') + ' · full page</span>';
@@ -437,7 +483,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
     go.onclick = e => { e.preventDefault(); e.stopPropagation(); startFind(); };
     pg.append(pn, go, pc); pg.onclick = open; G.appendChild(pg);
     // one row per panel: tick = Compare; name = full page
-    IDS.forEach(id => {
+    SIG_IDS.forEach(id => {
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes(id); cb.setAttribute('aria-label', 'Compare ' + PANELS[id].title);
       cb.onclick = e => { e.stopPropagation(); setLabSel([id], cb.checked); };
@@ -447,6 +493,18 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
       d.onmouseenter = () => setHlLab(id); d.onmouseleave = () => setHlLab(null);
       G.appendChild(d);
     });
+    if (NS.length) {   // Northstar Response: its own group (a different test), one panel
+      const N = window.section(S, 'mrd:ns', 'Northstar Response', NS.length + ' draws', true, 'grp', q);
+      const d = document.createElement('div'); d.className = 't';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes('mrd:ns'); cb.setAttribute('aria-label', 'Compare ' + PANELS['mrd:ns'].title);
+      cb.onclick = e => { e.stopPropagation(); setLabSel(['mrd:ns'], cb.checked); };
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.innerHTML = 'Over time <span class="tag">BillionToOne · methylation score</span>';
+      nm.title = 'Northstar Response Tumor Methylation Score (tick to compare; click to open the MRD page)';
+      const n = document.createElement('span'); n.className = 'n'; n.textContent = 'latest ' + NS[NS.length - 1].value;
+      d.append(cb, nm, n); d.onclick = open;
+      d.onmouseenter = () => setHlLab('mrd:ns'); d.onmouseleave = () => setHlLab(null);
+      N.appendChild(d);
+    }
   }
   function open() { on = true; store.set('mrd.on', true); setMode('single'); }
 

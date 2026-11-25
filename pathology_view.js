@@ -65,7 +65,15 @@
     for (const c of P.cases) { const s = c.slides.find(x => slideKey(c, x) === sk); if (s && s.photos.includes(f)) return {c, s, f, i: s.photos.indexOf(f)}; }
     return null; };
   V.pins = V.pins.filter(findKey);
-  const items = c => c.slides.filter(s => V.filter === 'all' || slideKey(c, s) === V.filter).flatMap(s => s.photos.map((f, i) => ({c, s, f, i})));
+  /* which slides are shown (Gallery, Viewer): V.filter = 'all', one slide key, or a list of slide keys (ticked in the Library) */
+  const allKeys = c => c.slides.map(s => slideKey(c, s));
+  if (Array.isArray(V.filter)) { const ok = new Set(P.cases.flatMap(allKeys)); V.filter = V.filter.filter(k => ok.has(k)); }
+  const inF = (c, s) => V.filter === 'all' || [].concat(V.filter).includes(slideKey(c, s));
+  const oneF = () => typeof V.filter === 'string' && V.filter !== 'all';
+  const picks = c => V.filter === 'all' ? allKeys(c) : allKeys(c).filter(k => [].concat(V.filter).includes(k));
+  const setPicks = (c, keys) => { const ks = allKeys(c).filter(k => keys.includes(k));
+    V.caseKey = c.key; V.filter = ks.length === c.slides.length ? 'all' : ks.length === 1 ? ks[0] : ks; };
+  const items = c => c.slides.filter(s => inF(c, s)).flatMap(s => s.photos.map((f, i) => ({c, s, f, i})));
   const pinned = it => V.pins.includes(pkey(it));
   const togglePin = it => { const k = pkey(it), j = V.pins.indexOf(k); j >= 0 ? V.pins.splice(j, 1) : V.pins.push(k); save(); };
   const result = it => it.c.results[it.s.stain] || '';
@@ -576,7 +584,7 @@
     if (V.mode === 'gallery' || V.mode === 'viewer') {   // row 2: which slide(s)
       const f = document.createElement('div'); f.className = 'pth-bar';
       f.append(mkBtn('All slides', V.filter === 'all', 'Photos of every slide', () => go(V.mode, {filter: 'all'})));
-      c.slides.forEach(s => f.append(mkBtn(slideName(c, s), V.filter === slideKey(c, s), (c.results[s.stain] || '') + ' · ' + s.photos.length + ' photos',
+      c.slides.forEach(s => f.append(mkBtn(slideName(c, s), V.filter !== 'all' && inF(c, s), (c.results[s.stain] || '') + ' · ' + s.photos.length + ' photos' + (V.filter !== 'all' && !oneF() ? '\nClick: show only this slide (tick slides in the Library to choose several)' : ''),
         () => go(V.mode, {filter: slideKey(c, s), cur: V.mode === 'viewer' ? slideKey(c, s) + '|' + coverOf(c, s) : V.cur}))));
       body.append(f);
     }
@@ -618,21 +626,21 @@
       const g = body.querySelector('.pth-grid'); if (g) g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(' + v + 'px,1fr))';
       body.querySelectorAll('.pth-grid img').forEach(im => { const want = v > 240 ? 'full' : 'thumb'; if (im.dataset.k !== want) { im.dataset.k = want; im.src = url(c, want, im.dataset.f); } }); }));
     const n = document.createElement('span'); n.className = 'sub'; n.style.fontSize = '11px';
-    n.textContent = L.length + ' photos · click one to open it in the Viewer · ＋ adds it to Compare'; ctl.append(n);
+    n.textContent = (!L.length && !oneF() && V.filter !== 'all' ? 'No slide is ticked: tick slides in the Library, or press All slides · ' : '') + L.length + ' photos · click one to open it in the Viewer · ＋ adds it to Compare'; ctl.append(n);
     body.append(ctl);
     const g = document.createElement('div'); g.className = 'pth-grid';
     g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(' + V.thumb + 'px,1fr))'; g.style.maxHeight = hOf(id, PANEL.h0) + 'px';
     const kind = V.thumb > 240 ? 'full' : 'thumb';
     L.forEach(it => { const t = document.createElement('div'); t.className = 'pth-tile'; t.title = caption(it) + '\n' + result(it) + (marksOf(it).length ? '\n' + markText(it) : '');
       const im = document.createElement('img'); im.loading = 'lazy'; im.alt = caption(it); im.dataset.f = it.f; im.dataset.k = kind; im.src = url(c, kind, it.f);
-      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = (V.filter === 'all' ? slideName(c, it.s) + ' · ' : '') + '#' + (it.i + 1) + (markSym(it) ? ' ' + markSym(it) : '');
+      const cap = document.createElement('div'); cap.className = 'cap'; cap.textContent = (!oneF() ? slideName(c, it.s) + ' · ' : '') + '#' + (it.i + 1) + (markSym(it) ? ' ' + markSym(it) : '');
       t.append(im, cap, pinBtn(it)); t.ondblclick = e => { e.preventDefault(); lightbox(L, L.indexOf(it)); };
       t.onclick = () => { focusImg = true; go('viewer', {cur: pkey(it)}); }; g.append(t); });
     body.append(g);
   }
 
   function drawViewer(body, c) {
-    const L = items(c); if (!L.length) { body.append('No photos.'); return; }
+    const L = items(c); if (!L.length) { body.append(V.filter === 'all' || oneF() ? 'No photos.' : 'No slide is ticked. Tick slides in the Library, or press All slides.'); return; }
     let k = L.findIndex(it => pkey(it) === V.cur); if (k < 0) k = 0;
     const it = L[k], st = ST[it.s.stain] || {label: it.s.stain, kind: '', what: ''};
     const step = d => { const j = k + d; if (j < 0 || j >= L.length) return; V.cur = pkey(L[j]); save(); focusImg = true; redraw(); };
@@ -701,7 +709,7 @@
       ${it.s.note ? '<p style="margin:6px 0"><b>What you can see:</b> ' + esc(it.s.note) + '</p>' : ''}
       ${LS && LS.look && LS.look.length ? '<div style="margin:6px 0"><b>What to look for on this slide</b><ul class="pth-look">' + LS.look.map(x => '<li>' + fmt(x) + '</li>').join('') + '</ul></div>' : ''}
       <p style="margin:6px 0" class="sub">${esc(st.what)}</p>
-      <div class="sub">Photo ${it.i + 1} of ${it.s.photos.length} on this slide${V.filter === 'all' ? ' · ' + (k + 1) + ' of ' + L.length + ' in all' : ''}<br>${esc(it.f)}</div>`;
+      <div class="sub">Photo ${it.i + 1} of ${it.s.photos.length} on this slide${!oneF() ? ' · ' + (k + 1) + ' of ' + L.length + ' in all' : ''}<br>${esc(it.f)}</div>`;
     const acts = document.createElement('div'); acts.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-top:6px';
     if (LS) acts.append(mkBtn('📖 Full lesson', false, 'The written lesson for this slide: how the stain works, how it is scored, textbook examples, pitfalls', () => go('learn', {learn: lessonKey(it.s)})));
     acts.append(mkBtn(isCover ? '★ Cover' : '☆ Use as cover', isCover, 'The cover is the photo shown for this slide in the Overview (kept in this browser)', () => {
@@ -935,11 +943,23 @@
         onLine.has(c.key), v => setOnLine([c.key], v)));
       keyframes.map(findKey).filter(it => it && it.c === c).forEach(it => G.append(row('🔖 ' + slideName(c, it.s) + ' #' + (it.i + 1), 'keyframe',
         'Saved as a line on the timeline\nUntick: remove it · Click: open this photo', true, v => { if (!v) toggleKey(it); }, () => openPhoto(pkey(it)))));
+      /* slide ticks choose which slides the Gallery and Viewer show (several at once); the name opens just that slide */
+      const shown = () => sel.includes(ID) && V.caseKey === c.key;
+      const showPicks = keys => { setPicks(c, keys); if (V.mode !== 'gallery' && V.mode !== 'viewer') V.mode = 'gallery'; save();
+        if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } };
       c.slides.forEach(s => { const sk = slideKey(c, s), open = () => { V.caseKey = c.key; V.filter = sk; V.cur = sk + '|' + coverOf(c, s); V.mode = 'viewer'; save(); };
-        G.append(row(slideName(c, s), (c.results[s.stain] || '').slice(0, 14), (c.results[s.stain] || '') + '\nClick: open this slide in the Pathology viewer',
-          sel.includes(ID) && V.mode === 'viewer' && V.filter === sk,
-          v => { if (v) { open(); sel.includes(ID) ? (redraw(), list()) : setLabSel([ID], true); } else go('overview'); },
+        G.append(row(slideName(c, s), (c.results[s.stain] || '').slice(0, 14), (c.results[s.stain] || '') + '\nTick: show this slide in the Gallery and Viewer (tick several to see them together)\nClick the name: open just this slide in the Viewer',
+          shown() && inF(c, s),
+          v => { const base = shown() ? picks(c) : []; showPicks(v ? base.concat(sk) : base.filter(k => k !== sk)); },
           () => { open(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } })); });
+      const gs = G.firstChild, add = b => gs.insertBefore(b, gs.lastChild), gkey = 'grp:path:' + c.key;
+      add(miniBtn('All', 'Tick every slide of this biopsy', () => showPicks(allKeys(c))));
+      add(miniBtn('None', 'Untick every slide of this biopsy', () => showPicks([])));
+      add(groupOnlyBtn('Pathology panel', gkey, [ID], soloLab && soloLab.key === gkey, false, () => {
+        if (!(soloLab && soloLab.key === gkey)) { if (V.caseKey !== c.key) setPicks(c, allKeys(c)); else V.caseKey = c.key;
+          if (V.mode !== 'gallery' && V.mode !== 'viewer') V.mode = 'gallery'; save(); }
+        onlyLab(gkey, [ID], c.title); }));
+      gs.lastChild.previousSibling.title = soloLab && soloLab.key === gkey ? 'Turn off "only" and bring back the earlier selection' : 'Show only the Pathology panel, with the slides ticked here';
     });
   };
 

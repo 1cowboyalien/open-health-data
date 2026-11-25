@@ -56,6 +56,13 @@ Usage:
   link has an end date and an off switch). The part after # never reaches a server: a small gate page hands the key to
   POST /pathology-review/api/enter and gets a cookie that stands for it. Without one, outside visitors get that gate
   page (while a link is live) or 404, and never the page or its data.
+- Consent page (consent.py + consent_view.html, at /consent): what the patient's consent to share her health information
+  allows, a link to it (local/consent/consent.pdf), and a form where a doctor or scientist types their name, role,
+  institution and email to get a one-page Recipient Copy as a PDF with those filled in (POST /consent/api/issue; made from
+  the private local/consent/recipient_template.html by html2pdf.swift, compiled once into local/consent/bin/). Each copy is
+  kept as local/consent/issued/<random id>.pdf (GET /consent/copy/<id>.pdf, so its link can be emailed) and listed in
+  local/consent/issued.jsonl, which only this Mac and the home network can read (GET /consent/api/issued). Outside
+  addresses may make 20 copies an hour. Off (404) until local/consent/settings.json exists.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -76,6 +83,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import usage
 import story
 import review
+import consent
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL = os.path.join(HERE, "local")
@@ -104,6 +112,7 @@ USAGE_CONF = os.path.join(LOCAL, "usage.json")
 NOLOG = ("/stats", "/api/stats", "/api/ping", "/usage.js", "/api/usage")
 ASK_CONF = os.path.join(LOCAL, "ask.json")
 START = os.path.join(LOCAL, "start_view.json")
+CONSENT = consent.Consent(LOCAL, HERE)   # consent.py: the /consent page and Recipient Copies (off until local/consent/settings.json exists)
 REVIEW = review.Workspace(LOCAL)   # review.py: a reviewer's changes to the Pathology panel, with their history
 REVIEW_JS = os.path.join(HERE, "review_view.js")
 REVIEW_AT = review.AT   # the review page's address (/pathology-review); everything of the page lives under it. /review, its first address, forwards here
@@ -401,6 +410,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.pathology_file(urllib.parse.unquote(path[len("/pathology/"):]))
         if path == REVIEW_AT or path.startswith(REVIEW_AT + "/"):
             return self.review_get(path[len(REVIEW_AT):])
+        if path == consent.AT or path.startswith(consent.AT + "/"):
+            return consent.handle_get(self, path[len(consent.AT):], CONSENT, usage.is_local_request(self))
         if path in ("/review", "/review/"):   # the review page's first address
             return self.review_moved()
         if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
@@ -432,6 +443,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.save_photo_edit()
         if self.path.split("?")[0].startswith("/story/api/"):
             return self.story_post(self.path.split("?")[0][len("/story/api/"):])
+        if self.path.split("?")[0].startswith(consent.AT + "/"):
+            return consent.handle_post(self, self.path.split("?")[0][len(consent.AT):], CONSENT, usage.is_local_request(self),
+                                       usage.client_ip(self)[0], self.consent_base())
         if self.path.split("?")[0].startswith(REVIEW_AT + "/api/"):
             return self.review_post(self.path.split("?")[0][len(REVIEW_AT + "/api/"):])
         if self.path.split("?")[0] != "/api/edits":
@@ -452,6 +466,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(409, {"rev": rev, "edits": cur})
             write_edits(rev + 1, edits)
         self.send(200, {"rev": rev + 1})
+
+    def consent_base(self):
+        """The site address to print on a Recipient Copy: publicBase from local/consent/settings.json, else the address
+        the visitor used."""
+        s = CONSENT.settings() or {}
+        if s.get("publicBase"):
+            return s["publicBase"].rstrip("/")
+        host = re.sub(r"[^A-Za-z0-9.:\[\]-]", "", self.headers.get("Host") or "") or "127.0.0.1"
+        return ("https://" if isinstance(self.connection, ssl.SSLSocket) else "http://") + host
 
     def pathology_file(self, rel):
         base = os.path.realpath(os.path.join(LOCAL, "pathology"))

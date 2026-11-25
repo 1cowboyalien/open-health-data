@@ -15,7 +15,7 @@ function msRated(){return(E.moments||[]).filter(m=>m.date&&typeof m.concern==='n
 function msTe(m){return m.end?ms(m.end):null}
 function msRange(){const r=store.get('msrange',{lo:1,hi:10});return{lo:+r.lo||1,hi:+r.hi||10}}
 function msIn(m){const r=msRange();return m.concern>=r.lo&&m.concern<=r.hi}
-function msInit(){const row=$('msRow');if(!row)return;row.classList.remove('hide');
+function msInit(){const row=$('msRow');if(!row)return;row.classList.remove('hide');const bar=$('msBar');if(bar)bar.classList.remove('hide');
  {const q=new URLSearchParams(location.search),lo=+q.get('msLo'),hi=+q.get('msHi');if(lo>=1&&hi<=10&&lo<=hi)store.set('msrange',{lo,hi})}
  const LO=$('msLo'),HI=$('msHi'),r=msRange();LO.value=r.lo;HI.value=r.hi;
  const upd=e=>{if(+LO.value>+HI.value){if(e&&e.target===LO)LO.value=HI.value;else HI.value=LO.value}
@@ -25,7 +25,7 @@ function msInit(){const row=$('msRow');if(!row)return;row.classList.remove('hide
 function msControls(){const{lo,hi}=msRange(),p=v=>(v-1)/9*100,F=$('msFill');F.style.left=p(lo)+'%';F.style.width=(p(hi)-p(lo))+'%';
  $('msLo').style.zIndex=lo>=9.5?3:2;$('msRv').textContent=lo===1&&hi===10?'all':lo===hi?String(lo):lo+' – '+hi;
  const R=msRated(),n=R.filter(m=>momentOn(m)&&msIn(m)).length,inW=R.filter(m=>momentOn(m)&&msIn(m)&&(msTe(m)||momentT(m))>=W.a&&momentT(m)<=W.b).length;
- $('msCount').textContent=n+' of '+R.length+' rated keyframes · '+inW+' in this window'}
+ const C=$('msCount');C.textContent=n+'/'+R.length;C.title=n+' of '+R.length+' rated keyframes in this concern range · '+inW+' in this time window'}
 function renderConcern(){const cv=$('msc');if(!cv)return;msControls();const TK=ticks();
  if(charts.has('msc')){charts.get('msc').destroy();charts.delete('msc')}
  const shown=msRated().filter(m=>momentOn(m)&&msIn(m)).sort((a,b)=>momentT(a)-momentT(b));

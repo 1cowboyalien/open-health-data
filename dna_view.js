@@ -27,6 +27,13 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   const V = Object.assign({view: 'genes', sort: 'group', cur: null, onlyDrugs: false}, store.get('dna.view', {}));
   const save = () => store.set('dna.view', V);
+  /* which genes the table shows: V.genes is 'all' or a list of gene names (ticked in the Library) */
+  const ALLG = D.genes.map(g => g.gene);
+  if (V.genes == null) V.genes = 'all';
+  if (Array.isArray(V.genes)) V.genes = V.genes.filter(x => ALLG.includes(x));
+  const inG = name => V.genes === 'all' || V.genes.includes(name);
+  const picksG = () => V.genes === 'all' ? ALLG.slice() : V.genes.slice();
+  const setPicksG = names => { const ks = ALLG.filter(x => names.includes(x)); V.genes = ks.length === ALLG.length ? 'all' : ks; };
   let BODY = null;
   const redraw = () => { if (BODY && BODY.isConnected) draw(ID, BODY); };
   const STATE = {amplified: 'amplified', gained: 'gained', average: 'about average', lower: 'fewer copies'};
@@ -92,7 +99,8 @@
       h += '<div class="dna-leg"><span><span class="dna-chip given">✓ drug</span>given (medication records)</span><span><span class="dna-chip">drug</span>' + esc(STAT['approved-here'] || 'approved for this cancer') + ', not in records</span>' +
         '<span><span class="dna-chip other">drug</span>' + esc(STAT['approved-other'] || 'approved elsewhere') + '</span><span><span class="dna-chip inv">drug</span>' + esc(STAT.investigational || 'trials only') + '</span><span><span class="dna-mut">mutation</span>tumor-only mutation found</span></div>';
       const cur = D.genes.find(g => g.gene === V.cur); if (cur) h += card(cur);
-      let gs = D.genes.filter(g => !V.onlyDrugs || g.drugs.length);
+      let gs = D.genes.filter(g => (!V.onlyDrugs || g.drugs.length) && inG(g.gene));
+      if (V.genes !== 'all') h += '<div class="dna-sub" style="margin:4px 0">' + (V.genes.length ? 'Showing ' + V.genes.length + ' of ' + ALLG.length + ' genes (ticked in the Library). ' : 'No gene is ticked. Tick genes in the Library, or ') + '<button class="dna-b" data-allg>Show all genes</button></div>';
       const row = g => '<tr class="r' + (g.gene === V.cur ? ' cur' : '') + '" data-gene="' + esc(g.gene) + '"><td><span class="dna-gene">' + esc(g.gene) + '</span>' + (g.mutation ? '<span class="dna-mut" title="' + esc(g.mutation.name + '\n' + g.mutation.reads) + '">mutation</span>' : '') +
         '<div class="dna-sub">' + esc(g.region || 'chr' + g.chrom) + '</div></td><td>' + bar(g) + '</td><td>' +
         (g.drugs.length ? g.drugs.map(chip).join('') : '<span class="dna-none">no drug targets it</span>') + '</td></tr>';
@@ -151,6 +159,7 @@
     body.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { V.view = b.dataset.view; save(); redraw(); });
     body.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { V.sort = b.dataset.sort; save(); redraw(); });
     const od = body.querySelector('[data-od]'); if (od) od.onchange = () => { V.onlyDrugs = od.checked; save(); redraw(); };
+    const ag = body.querySelector('[data-allg]'); if (ag) ag.onclick = () => { V.genes = 'all'; save(); redraw(); list(); };
     body.querySelectorAll('tr.r').forEach(tr => tr.onclick = () => { V.cur = V.cur === tr.dataset.gene ? null : tr.dataset.gene; save(); redraw(); if (typeof list === 'function') list(); });
   }
 
@@ -186,13 +195,24 @@
     (D.views || []).forEach(X => { const d = document.createElement('div'); d.className = 't'; d.title = X.intro; d.innerHTML = '<span class="nm">' + esc(X.title) + '</span><span class="n">' + esc(X.count || '') + '</span>';
       d.onclick = () => { V.view = 'x:' + X.key; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } }; SEC.append(d); });
     SEC.append(row('Gene copies and drugs', D.genes.length + ' genes', 'Gene copy number in the tumor next to the drugs that target each gene', sel.includes(ID), v => setLabSel([ID], v)));
-    D.groups.forEach(G => { const gs = D.genes.filter(g => g.group === G.key);
-      const S = section(SEC, 'dna:' + G.key, G.title.replace(/ \(.*/, ''), gs.length + ' genes', false, 'grp', q);
-      gs.forEach(g => { const open = () => { V.view = 'genes'; V.cur = g.gene; save(); };
-        S.append(row(g.gene + (g.mutation ? ' ●' : ''), fx(g.ratio), g.gene + ': ' + fx(g.ratio) + ' the genome average' + (g.mutation ? '\nMutation: ' + g.mutation.name : '') + '\nClick: open its card in the DNA panel',
-          sel.includes(ID) && V.cur === g.gene,
-          v => { if (v) { open(); sel.includes(ID) ? (redraw(), list()) : setLabSel([ID], true); } else { V.cur = null; save(); redraw(); list(); } },
+    /* gene ticks choose which genes the table shows (several at once); the name opens that gene's card */
+    const shownG = () => sel.includes(ID) && V.view === 'genes';
+    const showGenes = names => { setPicksG(names); V.view = 'genes'; save(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } };
+    D.groups.forEach(G => { const gs = D.genes.filter(g => g.group === G.key), names = gs.map(g => g.gene);
+      const k = shownG() ? names.filter(inG).length : 0;
+      const S = section(SEC, 'dna:' + G.key, G.title.replace(/ \(.*/, ''), (k ? k + '/' : '') + gs.length + ' genes', false, 'grp', q);
+      gs.forEach(g => { const open = () => { V.view = 'genes'; V.cur = g.gene; if (!inG(g.gene)) setPicksG(picksG().concat(g.gene)); save(); };
+        S.append(row(g.gene + (g.mutation ? ' ●' : ''), fx(g.ratio), g.gene + ': ' + fx(g.ratio) + ' the genome average' + (g.mutation ? '\nMutation: ' + g.mutation.name : '') + '\nTick: show this gene in the table (tick several to see them together)\nClick the name: open its card in the DNA panel',
+          shownG() && inG(g.gene),
+          v => { const base = shownG() ? picksG() : []; showGenes(v ? base.concat(g.gene) : base.filter(x => x !== g.gene)); },
           () => { open(); if (!sel.includes(ID)) setLabSel([ID], true); else { redraw(); list(); } })); });
+      const ss = S.firstChild, add = b => ss.insertBefore(b, ss.lastChild), gkey = 'grp:dna:' + G.key;
+      add(miniBtn('All', 'Tick every gene in this group', () => showGenes((shownG() ? picksG() : []).concat(names))));
+      add(miniBtn('None', 'Untick every gene in this group', () => showGenes(shownG() ? picksG().filter(x => !names.includes(x)) : [])));
+      add(groupOnlyBtn('DNA panel', gkey, [ID], soloLab && soloLab.key === gkey, false, () => {
+        if (!(soloLab && soloLab.key === gkey)) { const mine = shownG() ? names.filter(inG) : []; setPicksG(mine.length ? mine : names); V.view = 'genes'; save(); }
+        onlyLab(gkey, [ID], 'DNA · ' + G.title.replace(/ \(.*/, '')); }));
+      ss.lastChild.previousSibling.title = soloLab && soloLab.key === gkey ? 'Turn off "only" and bring back the earlier selection' : 'Show only the DNA panel, with just the genes of this group (or the ones ticked in it)';
     });
   };
 

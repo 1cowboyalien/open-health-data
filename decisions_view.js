@@ -99,7 +99,7 @@
     if (q && !hay.includes(q)) return;
     const nb = D.steps.reduce((n, s) => n + s.br.filter(b => b.k !== 'supp').length, 0);
     const SEC = section(el, 'dec', D.title, D.steps.length + ' steps', false, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn(D.title + ' panel', 'grp:dec', [ID], soloLab && soloLab.key === 'grp:dec', false, () => onlyLab('grp:dec', [ID], D.title)), s0.lastChild);
+    panelBtns(SEC, D.title + ' panel', 'grp:dec', [ID], D.title);
     const d = document.createElement('div'); d.className = 't';
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes(ID); cb.setAttribute('aria-label', 'Show ' + D.title);
     cb.onclick = e => { e.stopPropagation(); setLabSel([ID], cb.checked); };

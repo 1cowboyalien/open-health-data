@@ -495,6 +495,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
     });
     if (NS.length) {   // Northstar Response: its own group (a different test), one panel
       const N = window.section(S, 'mrd:ns', 'Northstar Response', NS.length + ' draws', true, 'grp', q);
+      panelBtns(N, 'Northstar Response panel', 'grp:mrd:ns', ['mrd:ns'], 'Northstar Response');
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes('mrd:ns'); cb.setAttribute('aria-label', 'Compare ' + PANELS['mrd:ns'].title);
       cb.onclick = e => { e.stopPropagation(); setLabSel(['mrd:ns'], cb.checked); };

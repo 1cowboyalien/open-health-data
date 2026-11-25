@@ -87,8 +87,12 @@ const MRD = (() => {
   const IDS = Object.keys(PANELS);
 
   /* ---------- settings (remembered in this browser; shared by the page and the Compare panels) ---------- */
-  let on = store.get('mrd.on', false), view = store.get('mrd.view', 'grid'), measure = store.get('mrd.measure', 'natera');
+  let on = store.get('mrd.on', false), view = store.get('mrd.view', 'grid'), measure = store.get('mrd.measure', 'allele');
   let logMode = store.get('mrd.log', false), hideNever = store.get('mrd.hideNever', false), sameY = false, orderMost = false, hoverT = null;
+  /* Over time starts in Allele-based each time it is turned on (ticked in the Library or the full page opened);
+     switching to Natera MTM/mL holds while it stays on. Presets keep their own saved choice. */
+  let otOn = sel.includes('mrd:ot');
+  function startAllele() { if (ADATES.length) { measure = 'allele'; store.set('mrd.measure', measure); } }
   const shownT = () => ALL_T.filter(t => !(hideNever && NEVER.has(t)));
   const rowOf = t => shownT().indexOf(t) + 1;
   const active = () => on && mode === 'single';
@@ -460,19 +464,25 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   function refresh(id) { const f = LIVE.get(id); if (f && f.box.isConnected) f(); }
   const H0 = {'mrd:ot': 160, 'mrd:var': 440, 'mrd:ns': 150};
 
+  /* a test's group heading in the MRD section: a tick box (all of its panels on/off) and All / None / Only,
+     the same for every test so each one can be turned on and off by itself */
+  function groupHead(S, key, name, ids, idle, q) {
+    const k = ids.filter(id => sel.includes(id)).length, both = ids.length > 1;
+    const G = window.section(S, key, name, k ? k + '/' + ids.length : idle, true, 'grp', q), gs = G.firstChild;
+    const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === ids.length; cb0.indeterminate = k > 0 && k < ids.length;
+    cb0.title = 'Tick or untick ' + (both ? 'every ' + name + ' panel' : 'the ' + name + ' panel') + ' for Compare'; cb0.setAttribute('aria-label', cb0.title);
+    cb0.onclick = e => { e.stopPropagation(); setLabSel(ids, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
+    panelBtns(G, name + ' panel', 'grp:' + key, ids, name);
+    return G;
+  }
+
   /* ---------- Library section: Signatera group, a tick box per panel (Compare), the name opens the full page ---------- */
   function section(el, q) {
+    const nowOn = sel.includes('mrd:ot'); if (nowOn && !otOn) startAllele(); otOn = nowOn;
     if (q && !'mrd ctdna signatera natera minimal residual disease tumor variants over time northstar billiontoone methylation'.includes(q)) return;
     const S = window.section(el, 'mrd', 'MRD tests', NS.length ? '2 tests' : '1 test', true, 'sec', q);
-    const k = SIG_IDS.filter(id => sel.includes(id)).length;
     panelBtns(S, 'MRD panel', 'grp:mrd', IDS, 'MRD tests');
-    const G = window.section(S, 'mrd:sig', 'Signatera', k ? k + '/' + SIG_IDS.length : done.length + ' draws', true, 'grp', q), gs = G.firstChild;
-    const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === SIG_IDS.length; cb0.indeterminate = k > 0 && k < SIG_IDS.length;
-    cb0.title = 'Tick or untick both Signatera panels for Compare'; cb0.setAttribute('aria-label', 'Select both Signatera panels');
-    cb0.onclick = e => { e.stopPropagation(); setLabSel(SIG_IDS, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
-    gs.insertBefore(miniBtn('All', 'Select both Signatera panels', () => setLabSel(SIG_IDS, true)), gs.lastChild);
-    gs.insertBefore(miniBtn('None', 'Deselect both Signatera panels', () => setLabSel(SIG_IDS, false)), gs.lastChild);
-    panelBtns(G, 'Signatera panel', 'grp:mrd:sig', SIG_IDS, 'Signatera', {noAllNone: true});
+    const G = groupHead(S, 'mrd:sig', 'Signatera', SIG_IDS, done.length + ' draws', q);
     // the whole-test row: opens the full page
     const pg = document.createElement('div'); pg.className = 't' + (active() ? ' on' : '');
     const pn = document.createElement('span'); pn.className = 'nm'; pn.innerHTML = 'Signatera <span class="tag">' + esc(LAST.vendor || 'Natera') + ' · full page</span>';
@@ -494,7 +504,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
       G.appendChild(d);
     });
     if (NS.length) {   // Northstar Response: its own group (a different test), one panel
-      const N = window.section(S, 'mrd:ns', 'Northstar Response', NS.length + ' draws', true, 'grp', q);
+      const N = groupHead(S, 'mrd:ns', 'Northstar Response', ['mrd:ns'], NS.length + ' draws', q);
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes('mrd:ns'); cb.setAttribute('aria-label', 'Compare ' + PANELS['mrd:ns'].title);
       cb.onclick = e => { e.stopPropagation(); setLabSel(['mrd:ns'], cb.checked); };
@@ -506,7 +516,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
       N.appendChild(d);
     }
   }
-  function open() { on = true; store.set('mrd.on', true); setMode('single'); }
+  function open() { if (!on) startAllele(); on = true; store.set('mrd.on', true); setMode('single'); }
 
   /* ---------- Find: step through the Signatera draws (⌖ in the Library), like the medications' Find bar ----------
      Each step moves the window to the draw (keeping its length, or 3 months when it is longer than 6), makes sure an
@@ -561,6 +571,6 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   function setSettings(o) { const m = o && o.mrd; if (!m) return;
     if (m.view) { view = m.view; store.set('mrd.view', view); } if (m.measure) { measure = m.measure; store.set('mrd.measure', measure); }
     if ('log' in m) { logMode = !!m.log; store.set('mrd.log', logMode); } if ('hideNever' in m) { hideNever = !!m.hideNever; store.set('mrd.hideNever', hideNever); }
-    refreshAll(); }
+    otOn = sel.includes('mrd:ot'); refreshAll(); }
   return {has: true, isId: id => !!PANELS[id], active, section, getSettings, setSettings, render, close, panel, refresh, title: id => (PANELS[id] || {}).title || id, unit: id => (PANELS[id] || {}).unit || '', h0: id => H0[id] || 160};
 })();

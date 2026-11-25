@@ -139,6 +139,15 @@ REVIEW_SHIM = ("(function(){function key(){try{var k=(/[#&]k=([A-Za-z0-9_-]{30,8
 # photos. Like the review page it keeps its own view settings ("labsslides.*") and adds phone=0 to its address; unlike
 # it, every visit starts with only the Pathology panel ticked and open, since the page has no Library to tick it in.
 SLIDES_AT = "/pathology-slides"
+# Link previews (the card Messages, WhatsApp, Slack... show when a link is sent): each page gets a real title, a one-line
+# description and a picture (Open Graph / Twitter tags), right after <head> because some preview readers only read the start
+# of a page and labs.html is several MB. Pictures are plain title cards with no health data (make_preview_cards.py, preview/).
+PREVIEW_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "preview")
+PREVIEWS = {
+    "records": ("Health records timeline", "Labs, scans, treatments and notes on one shared timeline."),
+    "slides": ("Pathology slides", "Microscope slide photos by hospital, slide and date."),
+    "story": ("Tell your story", "Photos, memories and the records from that time."),
+}
 SLIDES_JS = os.path.join(HERE, "slides_view.js")
 SLIDES_SHIM = ("(function(){try{var u=new URL(location.href);if(u.searchParams.get('phone')==null){u.searchParams.set('phone','0');"
                "history.replaceState(history.state,'',u.pathname+u.search+u.hash)}}catch(e){}"
@@ -370,10 +379,16 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/ask" or path.startswith("/ask/"):
             return self.ask_proxy()
+        if path in ("/favicon.ico", "/apple-touch-icon.png") or re.fullmatch(r"/preview/[a-z0-9-]+\.png", path):   # link-preview cards and the site icon
+            f = {"/favicon.ico": "icon-32.png", "/apple-touch-icon.png": "icon-180.png"}.get(path) or path.rsplit("/", 1)[1]
+            fp = os.path.join(PREVIEW_DIR, f)
+            if not os.path.isfile(fp):
+                return self.send(404, {"error": "not found"})
+            return self.send(200, open(fp, "rb").read(), "image/png", cache=True)
         if path in ("/", "/labs.html"):
             if not os.path.exists(PAGE):
                 return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
-            html, extra = open(PAGE, "rb").read(), []
+            html, extra = self.with_preview(open(PAGE, "rb").read(), "records", path), []
             i = html.find(b"<script")   # before the viewer's first script, so the start view is in place when it reads its settings
             tag = start_tag(usage.is_local_request(self))
             html = html[:i] + tag + html[i:] if i >= 0 else tag + html
@@ -556,11 +571,29 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.urlparse(self.path).query
         return self.send(302, b"", "text/plain", headers=(("Location", REVIEW_AT + ("?" + q if q else "")),))
 
+    def with_preview(self, html, kind, path):
+        """html (bytes) with its <title> set and the link-preview tags put right after <head>"""
+        title, desc = PREVIEWS[kind]
+        host = self.headers.get("Host") or "127.0.0.1:8766"
+        base = ("https://" if isinstance(self.connection, ssl.SSLSocket) else "http://") + host
+        e = lambda t: t.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+        tags = (f'<meta property="og:type" content="website"><meta property="og:title" content="{e(title)}">'
+                f'<meta property="og:description" content="{e(desc)}"><meta name="description" content="{e(desc)}">'
+                f'<meta property="og:url" content="{e(base + path)}"><meta property="og:image" content="{base}/preview/{kind}.png">'
+                f'<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">'
+                f'<meta property="og:image:alt" content="{e(title)}"><meta name="twitter:card" content="summary_large_image">'
+                f'<link rel="icon" type="image/png" sizes="32x32" href="/preview/icon-32.png">'
+                f'<link rel="apple-touch-icon" href="/preview/icon-180.png">').encode()
+        html = re.sub(rb"<title>[^<]*</title>", ("<title>" + e(title) + "</title>").encode(), html, count=1)
+        m = re.search(rb"<head[^>]*>", html[:4096])
+        i = m.end() if m else 0
+        return html[:i] + tags + html[i:]
+
     def slides_page(self):
         """The viewer's own page, set up to show only the Pathology panel. No data is added or taken away."""
         if not os.path.exists(PAGE):
             return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
-        html = open(PAGE, "rb").read()
+        html = self.with_preview(open(PAGE, "rb").read(), "slides", SLIDES_AT)
         tag = ("<script>" + SLIDES_SHIM + "</script>").encode()
         i = html.find(b"<script")   # before the viewer's first script: it reads its saved settings as it starts
         html = html[:i] + tag + html[i:] if i >= 0 else tag + html
@@ -770,7 +803,7 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         try:
             if path in ("/story", "/story/"):
-                return self.send(200, open(os.path.join(HERE, "story_view.html"), "rb").read(), "text/html; charset=utf-8")
+                return self.send(200, self.with_preview(open(os.path.join(HERE, "story_view.html"), "rb").read(), "story", "/story"), "text/html; charset=utf-8")
             if path == "/story/api/photos":
                 return self.send(200, story.photo_data())
             if path == "/story/api/sessions":

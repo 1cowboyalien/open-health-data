@@ -134,7 +134,11 @@ function medGroupsOf(rows){const by={};rows.forEach(r=>{const d=by[r.drug]=by[r.
  const out=[];CLS_ORDER.forEach(c=>{const drugs=Object.values(by).filter(d=>d.cls===c).sort((p,q)=>p.drug.localeCompare(q.drug));if(drugs.length)out.push({cls:c,drugs})});
  Object.values(by).filter(d=>!CLS_ORDER.includes(d.cls)).forEach(d=>{let g=out.find(x=>x.cls===d.cls);if(!g)out.push(g={cls:d.cls,drugs:[]});g.drugs.push(d)});return out}
 const medGroups=()=>medGroupsOf(effRows(TX,E));
-function setMedSel(drugs,on){txSel=txSel.filter(d=>!drugs.includes(d));if(on)txSel.push(...drugs);store.set('txsel',txSel);list();render()}
+/* picking a medication in the Library brings the Treatments panel back if it was closed (×, Close all) or minimized,
+   otherwise the tick seems to do nothing. Returns true when something changed. closedP/closedSync live in the page script. */
+function txReveal(){let ch=false;if(txHidden){txHidden=false;store.set('txhidden',false);ch=true}
+ if(typeof closedP!=='undefined'&&closedP.tx){delete closedP.tx;store.set('closed',closedP);closedSync();ch=true}return ch}
+function setMedSel(drugs,on){txSel=txSel.filter(d=>!drugs.includes(d));if(on){txSel.push(...drugs);txReveal()}store.set('txsel',txSel);list();render()}
 function medSection(el,q){const groups=medGroups().map(g=>({cls:g.cls,drugs:g.drugs.filter(d=>!q||drugLabel(d.drug,d.brands).toLowerCase().includes(q)||g.cls.toLowerCase().includes(q))})).filter(g=>g.drugs.length);
  if(!groups.length)return;const n=groups.reduce((a,g)=>a+g.drugs.length,0);
  const M=section(el,'meds','Medications',n+' drugs',true,'sec',q);
@@ -186,7 +190,7 @@ let txShown=[];let hlDrug=null;
 /* "only" for medications: same idea as onlyLab() in the page script */
 let soloMed=store.get('solomed',null);if(soloMed&&!soloMed.key)soloMed=null;
 function onlyMed(key,drugs,label){if(soloMed&&soloMed.key===key){endSoloMed();return}
- soloMed={key,ids:drugs,label,prev:soloMed?soloMed.prev:txSel.slice()};store.set('solomed',soloMed);txSel=drugs.slice();store.set('txsel',txSel);list();render();if(drugs.length===1)setHlDrug(drugs[0])}
+ soloMed={key,ids:drugs,label,prev:soloMed?soloMed.prev:txSel.slice()};store.set('solomed',soloMed);txSel=drugs.slice();txReveal();store.set('txsel',txSel);list();render();if(drugs.length===1)setHlDrug(drugs[0])}
 function endSoloMed(){if(!soloMed)return;txSel=soloBack(soloMed.prev,txSel,soloMed.ids);soloMed=null;store.set('solomed',null);store.set('txsel',txSel);list();render()}
 /* ---- Find bar: step through one medication's doses and orders (⌖ in the Library) ----
    Each step ticks the drug if needed, moves the window to the event (keeping its length, or 3 months when it is
@@ -201,7 +205,7 @@ function startFind(drug,label){const evs=findEvents(drug);if(!evs.length)return;
  const j=evs.findIndex(e=>e.t>=W.a&&e.t<=W.b);findGo(j>=0?j:0)}
 function findGo(i){const F=FIND;if(!F)return;F.i=i=Math.max(0,Math.min(F.evs.length-1,i));const ev=F.evs[i];let redo=false;
  if(!txSel.includes(F.drug)){txSel.push(F.drug);store.set('txsel',txSel);redo=true}
- if(txHidden){txHidden=false;store.set('txhidden',false);redo=true}
+ if(txReveal())redo=true;
  let len=W.b-W.a;if(len>180*DAYMS)len=90*DAYMS;const a=Math.max(X0,Math.min(centreStart(ev.t,len),X1-len));
  if(redo){W={a,b:a+len};store.set('window',W);syncWin();list();render()}else setWin(a,a+len);
  hlDrug=null;setHlDrug(F.drug);findBar();setLock(ev.t);setTimeout(()=>{setHover(pos(ev.t));findScroll()},40)}   // cursor locked on it

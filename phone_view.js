@@ -132,11 +132,11 @@
     let RADS = [];
     if (M.visual) {   // visual pathway on: optic tracts (drawn: chiasm -> LGN) and optic radiations (traced on her DTI: LGN -> back of the brain)
       eyesG.add(new T.Mesh(tubes(M.visual.tracts.map(t => ({p: t.p, r: 1.3})), 1.5), new T.MeshPhongMaterial({color: 0xf2d27a, emissive: 0x4a3a10, transparent: true, opacity: .55, depthWrite: false})));
-      // one set of radiations per DTI date (or the single older set); the one nearest in time to the playhead shows
+      // one set of radiations per DTI date (or the single older set); the nearest in time to the playhead shows, fading into the next one between DTI dates
       const sets = M.visual.by_date || {'': {radiations: M.visual.radiations || []}};
       RADS = Object.entries(sets).filter(([, v]) => v.radiations.length).map(([d, v]) => { const m = new T.Mesh(tubes(v.radiations.map(t => ({p: t.p, r: .45})), 3),
         new T.MeshPhongMaterial({color: 0xffc46b, emissive: 0x6a4210, transparent: true, opacity: .5, depthWrite: false, shininess: 20}));
-        m.visible = false; eyesG.add(m); return {t: d ? ms(d) : 0, d, m}; });
+        m.visible = false; eyesG.add(m); return {t: d ? ms(d) : 0, d, m}; }).sort((a, b) => a.t - b.t);
     }
     S.add(vessels, eyesG);
     // ---- lesions: one mesh per lesion, the same points on every scan (make_phone_model.py fits a shared sphere layout to
@@ -232,8 +232,14 @@
       const wb = LAY.rad ? Math.max(0, ...RC.filter(c => c.whole).map(radW)) : 0;   // whole-brain course: the brain glows amber
       brain.material.uniforms.c.value.set(0xff9fb0).lerp(AMBER, wb); brain.material.uniforms.s.value = .38 + .5 * wb; brain.material.uniforms.b.value = .035 + .05 * wb;
       brain.visible = LAY.brain; head.visible = LAY.skin; vessels.visible = LAY.ves; eyesG.visible = LAY.eyes;
-      if (RADS.length) { const near = RADS.reduce((a, r) => Math.abs(r.t - tNow) < Math.abs(a.t - tNow) ? r : a); RADS.forEach(r => r.m.visible = r === near);
-        const vl = $('.vlab'); const txt = LAY.eyes && near.d ? 'Optic radiations: DTI of ' + fmt(near.d) : ''; if (vl.textContent !== txt) vl.textContent = txt; }
+      if (RADS.length) {   // the DTI sets either side of the playhead: hold the nearer one, and fade from one to the next around the
+        // halfway point (over the middle 80 % of the time between the two DTI dates; the playhead moves fastest there), so a whole bundle never swaps in one frame
+        let k = 0; while (k < RADS.length - 1 && RADS[k + 1].t <= tNow) k++;
+        const A = RADS[k], B = RADS[k + 1] && tNow > A.t ? RADS[k + 1] : null, g = B ? B.t - A.t : 0;
+        const f = B ? sm(A.t + .1 * g, A.t + .9 * g, tNow) : 0;
+        RADS.forEach(r => { const w = r === A ? 1 - f : r === B ? f : 0; r.m.visible = w > .01; r.m.material.opacity = .5 * w; });
+        const vl = $('.vlab'); const txt = !LAY.eyes || !A.d ? '' : f > .02 && f < .98 ? 'Optic radiations: DTI of ' + fmt(A.d) + ' → ' + fmt(B.d)
+          : 'Optic radiations: DTI of ' + fmt((f >= .98 ? B : A).d); if (vl.textContent !== txt) vl.textContent = txt; }
       if (LAY.grid && !grid) makeGrid(); if (grid) { grid.ln.visible = LAY.grid; if (LAY.grid) warp(); } }
     function size() { const w = wrap.clientWidth, h = wrap.clientHeight; if (!w || !h) return; R.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
       const d = 212 / (2 * Math.tan(16 * Math.PI / 180) * Math.min(1, cam.aspect)); dist = dist * d / dist0; dist0 = d; }

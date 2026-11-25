@@ -56,6 +56,10 @@ Usage:
   link has an end date and an off switch). The part after # never reaches a server: a small gate page hands the key to
   POST /pathology-review/api/enter and gets a cookie that stands for it. Without one, outside visitors get that gate
   page (while a link is live) or 404, and never the page or its data.
+- Slides page (slides_view.js): GET /pathology-slides is the viewer with only the Pathology panel on it, a plain link
+  for showing the slide photos to someone. It has no tools, no chat and no key, and nothing can be changed on it. It is
+  the same page as / with the rest hidden (not removed), so it is exactly as open as the viewer itself: whoever can
+  reach / can reach this, and the other way round. It keeps its own view settings, apart from the viewer's.
 There is no login: anyone who can reach the address can view, and switch the page to Edit.
 Use --lan only on a private home network, and stop the server (Ctrl+C) when you're done.
 Python standard library only.
@@ -131,6 +135,19 @@ REVIEW_SHIM = ("(function(){function key(){try{var k=(/[#&]k=([A-Za-z0-9_-]{30,8
                "S.removeItem=function(k){return r.call(this,m(k))};"
                "if(localStorage.getItem('labs.selected')==null){localStorage.setItem('labs.selected','[\"path:slides\"]');"
                "localStorage.setItem('labs.mode','\"compare\"')}}catch(e){}})();")
+# The slides page: the viewer with only the Pathology panel on it (slides_view.js), a plain link for showing the slide
+# photos. Like the review page it keeps its own view settings ("labsslides.*") and adds phone=0 to its address; unlike
+# it, every visit starts with only the Pathology panel ticked and open, since the page has no Library to tick it in.
+SLIDES_AT = "/pathology-slides"
+SLIDES_JS = os.path.join(HERE, "slides_view.js")
+SLIDES_SHIM = ("(function(){try{var u=new URL(location.href);if(u.searchParams.get('phone')==null){u.searchParams.set('phone','0');"
+               "history.replaceState(history.state,'',u.pathname+u.search+u.hash)}}catch(e){}"
+               "try{var S=Storage.prototype,g=S.getItem,s=S.setItem,r=S.removeItem,"
+               "m=function(k){k=String(k);return k.indexOf('labs.')===0?'labsslides.'+k.slice(5):k};"
+               "S.getItem=function(k){return g.call(this,m(k))};S.setItem=function(k,v){return s.call(this,m(k),v)};"
+               "S.removeItem=function(k){return r.call(this,m(k))};"
+               "localStorage.setItem('labs.selected','[\"path:slides\"]');localStorage.setItem('labs.mode','\"compare\"');"
+               "localStorage.removeItem('labs.mins')}catch(e){}})();")
 # What an outside visitor without a link's cookie gets at the page's address: no data, only the hand-over of the key.
 REVIEW_GATE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer"><title>Pathology review</title>
@@ -401,6 +418,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.pathology_file(urllib.parse.unquote(path[len("/pathology/"):]))
         if path == REVIEW_AT or path.startswith(REVIEW_AT + "/"):
             return self.review_get(path[len(REVIEW_AT):])
+        if path in (SLIDES_AT, SLIDES_AT + "/"):   # the viewer with only the Pathology panel on it
+            return self.slides_page()
+        if path == SLIDES_AT + "/slides_view.js":
+            return self.send(200, open(SLIDES_JS, "rb").read(), "text/javascript; charset=utf-8")
         if path in ("/review", "/review/"):   # the review page's first address
             return self.review_moved()
         if path.startswith("/photos/"):   # photo story: website copies in local/photos/{thumb,web}/, and the stories
@@ -534,6 +555,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {"error": "not found"})
         q = urllib.parse.urlparse(self.path).query
         return self.send(302, b"", "text/plain", headers=(("Location", REVIEW_AT + ("?" + q if q else "")),))
+
+    def slides_page(self):
+        """The viewer's own page, set up to show only the Pathology panel. No data is added or taken away."""
+        if not os.path.exists(PAGE):
+            return self.send(404, {"error": "local/labs.html not built yet: python3 make_lab_view.py"})
+        html = open(PAGE, "rb").read()
+        tag = ("<script>" + SLIDES_SHIM + "</script>").encode()
+        i = html.find(b"<script")   # before the viewer's first script: it reads its saved settings as it starts
+        html = html[:i] + tag + html[i:] if i >= 0 else tag + html
+        i = html.rfind(b"</body>")
+        tag = ('<script src="' + SLIDES_AT + '/slides_view.js"></script>').encode()
+        html = html[:i] + tag + html[i:] if i >= 0 else html + tag
+        return self.send(200, html, "text/html; charset=utf-8", headers=(("X-Robots-Tag", "noindex, nofollow"),))
 
     def review_get(self, path):
         """path = what follows the page's address: "" for the page itself, /api/state, /pathology/<file>, ..."""

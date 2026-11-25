@@ -175,7 +175,9 @@ def load_mrd():
     if not any(r.get("test", "Signatera") == "Signatera" for r in tests):
         return None
     return {"rows": [r for r in tests if r.get("test", "Signatera") == "Signatera"], "other": [r for r in tests if r.get("test", "Signatera") != "Signatera"],
-            "alleles": alleles, "vars": vars_}
+            "alleles": alleles, "vars": vars_,
+            # private local/mrd_flags.json: [{"genes": [...], "targets": [...], "label": "...", "note": "..."}] marks variants to watch
+            "flags": json.load(open(f("mrd_flags.json"))) if os.path.exists(f("mrd_flags.json")) else []}
 mrd = load_mrd()
 # Each hospital's time zone (IANA name) for the navigator's time zone choice, from the private
 # local/site_zones.json ({"<site>": "America/Chicago", ...}); hospital names stay out of this script.

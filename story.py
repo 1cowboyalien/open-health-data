@@ -503,7 +503,7 @@ def overview():
     try:
         for line in open(os.path.join(LOCAL, "mrd_tests.tsv")).read().splitlines()[1:]:
             f = line.split("\t")
-            out.append("- %s: Signatera blood test, %s" % (f[3], f[6]))
+            out.append("- %s: %s blood test, %s" % (f[3], f[0], f[6] if f[0] == "Signatera" else "%s, score %s %s" % (f[6].lower(), f[4], f[5])))
     except (OSError, IndexError):
         pass
     by = {}

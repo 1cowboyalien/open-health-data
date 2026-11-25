@@ -27,6 +27,7 @@ Start by reading `HANDOFF.md` in this folder. It has the full state of the proje
 
 ## New Natera (Signatera) files
 - Extract a new report PDF with `swift ../records/pdftext.swift in.pdf out.txt`, add the text path to `local/mrd_sources.json`, save emailed allele .xlsx files in its `allele_dir`, then run `python3 flatten_mrd.py`. If it says "new variants", run `python3 liftover_mrd.py --ensembl --genes` (sends only chromosome, position and base to Ensembl). Then `python3 make_lab_view.py`.
+- Northstar Response (BillionToOne) reports: extract the same way and add the text path to `northstar_reports` in `local/mrd_sources.json`. flatten_mrd.py writes them into mrd_tests.tsv as `test="Northstar Response"` (Tumor Methylation Score, unit TMS). make_lab_view.py keeps them out of the Signatera panels (`D.mrd.rows` is Signatera only; Northstar is in `D.mrd.other`). Never plot a TMS on the MTM/mL axis. The viewer shows them in their own panel `mrd:ns` ("Northstar Response · Over time", mrd_view.js `northstar()`): log scale, reportable range <10 shaded, the lab's call in the tooltip; a card on the MRD full page, its own Library group under MRD tests (Compare tick), and a minimized bar (▲ log / ▲ linear).
 
 ## Viewer
 - Serve it with `python3 serve_viewer.py` (port 8766, this Mac only; `--lan` for the home Wi-Fi). Don't use `python3 -m http.server` for it any more: that lists every private file in `local/` and doesn't save shared edits.

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Permission to use these health records</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:720px;margin:0 auto;padding:18px 16px 60px;line-height:1.45;font-size:17px}
+h1{font-size:26px;margin:6px 0 4px}
+h2{font-size:19px;margin:22px 0 6px}
+.status{border-radius:8px;padding:10px 12px;margin:10px 0;font-weight:600}
+.signed{background:#e6f6ea;color:#14532d;border:1px solid #86c99a}
+.unsigned{background:#fdecec;color:#8a1111;border:1px solid #e3a0a0}
+.card{border:1px solid #bbb;border-radius:10px;padding:14px 16px;margin:12px 0}
+label{display:block;margin:10px 0 3px;font-weight:600}
+input{width:100%;box-sizing:border-box;font-size:17px;padding:9px 10px;border:1px solid #999;border-radius:7px}
+button,.btn{display:inline-block;font-size:17px;padding:10px 16px;border-radius:8px;border:1px solid #1f5fa8;background:#1f6fd1;color:#fff;
+  text-decoration:none;cursor:pointer;margin:8px 8px 0 0}
+.btn.alt{background:transparent;color:#1f6fd1}
+.small{font-size:14px;opacity:.8}
+.err{color:#b00000;font-weight:600;margin-top:8px}
+ul{padding-left:22px} li{margin:3px 0}
+table{border-collapse:collapse;width:100%;font-size:14px} td,th{border:1px solid #bbb;padding:4px 6px;text-align:left}
+@media (prefers-color-scheme:dark){body{background:#111;color:#eee} .card{border-color:#555} input{background:#222;color:#eee}
+  .signed{background:#12321c;color:#bdf0c9} .unsigned{background:#3a1414;color:#ffc9c9}}
+</style></head><body>
+
+<h1>Permission to use <span id="who">these</span> health records</h1>
+<div id="status" class="status"></div>
+
+<p><b>In plain words:</b> <span class="pt">The patient</span> wants doctors, nurses, scientists and anyone else who can help to use her health
+information freely. You may look at it, download it, keep it, email it to colleagues, discuss it, teach with it, research it and publish
+about it, <b>with her name on it</b>. She has signed (or is about to sign) a consent and HIPAA authorization saying so, and she has promised
+not to treat these uses as a privacy violation.</p>
+<p><a class="btn alt" id="readpdf" href="/consent/consent.pdf" target="_blank">Read the full consent (PDF)</a></p>
+
+<div class="card">
+<h2 style="margin-top:0">Get your own copy, with your name on it</h2>
+<p class="small">A one-page Recipient Copy for your records or your institution's. Fill in your name or your institution (or both).</p>
+<form id="f" autocomplete="on">
+<label for="name">Your name</label><input id="name" name="name" maxlength="120" autocomplete="name">
+<label for="role">Role or title <span class="small">(for example oncologist, research scientist)</span></label><input id="role" name="role" maxlength="120" autocomplete="organization-title">
+<label for="institution">Institution</label><input id="institution" name="institution" maxlength="120" autocomplete="organization">
+<label for="email">Email <span class="small">(optional: for the email button)</span></label><input id="email" name="email" type="email" maxlength="120" autocomplete="email">
+<button type="submit" id="go">Make my copy</button>
+<div id="err" class="err"></div>
+</form>
+<div id="done" hidden>
+<p><b>Your copy is ready.</b> Its private link: <a id="link" target="_blank"></a></p>
+<a class="btn" id="dl" download>Download PDF</a>
+<a class="btn" id="mailme">Email it to me</a>
+<a class="btn alt" id="mailcol">Send to a colleague</a>
+<button class="btn alt" type="button" id="again">Make another</button>
+</div>
+<p class="small">The family keeps a list of the copies made (name, role, institution, email, date), so they know who has received
+<span class="pt">the patient</span>'s information. Nothing else you type is kept.</p>
+</div>
+
+<h2>What you may do</h2>
+<ul>
+<li>Download, print, store and keep copies, including in your institution's systems.</li>
+<li>Send copies to colleagues and discuss the case, including with her treating doctors.</li>
+<li>Use it for care, teaching, quality improvement and research.</li>
+<li>Publish about it, including identifiable case reports, images and photos.</li>
+</ul>
+<p id="dna" class="small"></p>
+<p class="small" id="contact"></p>
+
+<div id="home" hidden>
+<h2>Copies made <span class="small">(only this Mac and the home network see this)</span></h2>
+<div style="overflow-x:auto"><table><thead><tr><th>When (UTC)</th><th>Name</th><th>Role</th><th>Institution</th><th>Email</th><th>Copy</th></tr></thead><tbody id="rows"></tbody></table></div>
+</div>
+
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+let info = {};
+function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+fetch('/consent/api/info').then(r=>r.json()).then(i=>{
+  info = i;
+  if (i.patient){ $('who').textContent = i.patient + "'s"; document.querySelectorAll('.pt').forEach(e=>e.textContent=i.patient); document.title = 'Permission to use ' + i.patient + "'s health records"; }
+  const st = $('status');
+  if (i.signedOn){ st.className='status signed'; st.textContent = 'Signed on ' + i.signedOn + (i.version ? ' (version ' + i.version + ')' : '') + '. In effect.'; }
+  else { st.className='status unsigned'; st.textContent = 'Not signed yet. This page shows what the permission will say; it gives no permission until the consent is signed.'; }
+  if (!i.hasConsentPdf) $('readpdf').hidden = true;
+  $('dna').textContent = i.germlineOpen ? 'Her inherited (germline) DNA files are included.'
+    : 'Her inherited (germline) DNA files are shared only with professionals the family names, because her identical twin sister has the same inherited DNA. Ask the family if you need them.';
+  if (i.contact) $('contact').textContent = 'Questions: ' + i.contact;
+  if (i.home) loadIssued();
+});
+function loadIssued(){
+  fetch('/consent/api/issued').then(r=>r.ok?r.json():{issued:[]}).then(d=>{
+    $('home').hidden = false;
+    $('rows').innerHTML = d.issued.map(x=>'<tr><td>'+esc(x.at.replace('T',' ').replace('Z',''))+'</td><td>'+esc(x.name)+'</td><td>'+esc(x.role)+
+      '</td><td>'+esc(x.institution)+'</td><td>'+esc(x.email)+'</td><td><a target="_blank" href="/consent/copy/'+esc(x.id)+'.pdf">PDF</a></td></tr>').join('')
+      || '<tr><td colspan="6">None yet.</td></tr>';
+  });
+}
+$('f').addEventListener('submit', e=>{
+  e.preventDefault(); $('err').textContent=''; $('go').disabled=true; $('go').textContent='Making your copy…';
+  const body = {}; ['name','role','institution','email'].forEach(k=>body[k]=$(k).value);
+  fetch('/consent/api/issue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json().then(j=>({ok:r.ok,j})))
+    .then(({ok,j})=>{
+      $('go').disabled=false; $('go').textContent='Make my copy';
+      if(!ok){ $('err').textContent = j.error || 'Something went wrong.'; return; }
+      const full = j.fullUrl, who = info.patient || 'the patient';
+      $('link').href = j.url; $('link').textContent = full; $('dl').href = j.url;
+      const subj = encodeURIComponent('My copy: permission to use ' + who + "'s health information");
+      const text = encodeURIComponent('My Recipient Copy (PDF): ' + full + '\n\nThe full consent and its current status: ' + location.origin + '/consent');
+      $('mailme').href = 'mailto:' + encodeURI(body.email.trim()) + '?subject=' + subj + '&body=' + text;
+      $('mailme').hidden = !body.email.trim();
+      $('mailcol').href = 'mailto:?subject=' + encodeURIComponent(who + "'s health records: permission to use them") +
+        '&body=' + encodeURIComponent(who + ' has given permission for doctors and scientists to use her health information. You can get your own copy of the permission here: ' + location.origin + '/consent');
+      $('f').hidden = true; $('done').hidden = false;
+      if (info.home) loadIssued();
+    }).catch(()=>{ $('go').disabled=false; $('go').textContent='Make my copy'; $('err').textContent='Could not reach the server.'; });
+});
+$('again').addEventListener('click', ()=>{ $('done').hidden = true; $('f').hidden = false; });
+})();
+</script>
+</body></html>

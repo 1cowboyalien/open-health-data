@@ -171,7 +171,11 @@ def load_mrd():
         v["prot"] = (AA[m[1]] + m[2] + (AA[m[1]] if m[3] == "=" else AA[m[3]])) if m else ""
         v["near"] = r.get("consequence") in ("upstream_gene_variant", "downstream_gene_variant")
         v["effect"] = EFF.get(r.get("consequence", ""), r.get("consequence", "").replace("_", " "))
-    return {"rows": rd("mrd_tests.tsv"), "alleles": alleles, "vars": vars_}
+    tests = rd("mrd_tests.tsv")   # the MRD panels are Signatera (MTM/mL); other ctDNA tests (Northstar TMS) ride along separately
+    if not any(r.get("test", "Signatera") == "Signatera" for r in tests):
+        return None
+    return {"rows": [r for r in tests if r.get("test", "Signatera") == "Signatera"], "other": [r for r in tests if r.get("test", "Signatera") != "Signatera"],
+            "alleles": alleles, "vars": vars_}
 mrd = load_mrd()
 # Each hospital's time zone (IANA name) for the navigator's time zone choice, from the private
 # local/site_zones.json ({"<site>": "America/Chicago", ...}); hospital names stay out of this script.
@@ -441,7 +445,7 @@ function applyLib(){document.body.classList.toggle('nolib',libHidden);const b=$(
 $('libBtn').onclick=()=>{libHidden=!libHidden;if(sideLib())localStorage.setItem('libhidden.side',libHidden?'1':'0');else store.set('libhidden',libHidden);applyLib()};applyLib();
 new MutationObserver(()=>{const h=libPref();if(h!==libHidden){libHidden=h;applyLib()}}).observe(document.documentElement,{attributes:true,attributeFilter:['class']});
 let cur=store.get('current',D.tests[0].id);if(!BYID[cur])cur=D.tests[0].id;
-let sel=store.get('selected',[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var)$/.test(id)));   // lab ids, or the MRD panels (mrd_view.js)
+let sel=store.get('selected',[]).filter(id=>BYID[id]||(D.mrd&&/^mrd:(ot|var|ns)$/.test(id)));   // lab ids, or the MRD panels (mrd_view.js)
 let heights=store.get('heights',{});
 let hoverX=null;const charts=new Map();
 /* Minimize: panels folded to their title bar (ids as in the Stage: lab ids, MRD/procedure/imaging ids, 'dose:<drug>', '__det') */
@@ -846,8 +850,8 @@ const SKIN_BP=['dband','split','band','lines','days','heat','off'];   // blood p
 const isBP=id=>!!(BYID[id]&&BYID[id].pts.some(p=>p.v2!=null));
 const SKIN_SCANS=['height','rows','colour','site','rich','off'];   // Brain MRI · Scan dates
 const SKIN_LES=['lin','log','off'];   // Brain MRI · Lesions over time: mountain on a linear or a log scale
-const stylesFor=id=>id==='img:brain:lesions'?SKIN_LES:id==='img:brain:dates'?SKIN_SCANS:isBP(id)?SKIN_BP:id==='mrd:var'?SKIN_MRDV:id.startsWith('mrd:')?SKIN_MRD:id==='proc:list'?SKIN_PLIST:id==='proc:timeline'?SKIN_PROC:id==='img:brain:swell'?SKIN_SW:id==='img:brain:dose'?SKIN_DOSE:id==='img:brain:perf'?SKIN_PERF:SKIN_STYLES;
-const skinOf=id=>{const v=skins[id],L=stylesFor(id);return L.includes(v)?v:(id==='img:brain:lesions'?'lin':id==='img:brain:dates'?'height':isBP(id)?'dband':id==='mrd:var'?'sarea2':id.startsWith('mrd:')?'mount':id==='proc:list'?'both':id==='proc:timeline'?'merged':id==='img:brain:swell'?'lines':id==='img:brain:dose'?'stack':id==='img:brain:perf'?'peak':BYID[id]?'line':'mount')};
+const stylesFor=id=>id==='img:brain:lesions'?SKIN_LES:id==='img:brain:dates'?SKIN_SCANS:isBP(id)?SKIN_BP:id==='mrd:ns'?SKIN_LES:id==='mrd:var'?SKIN_MRDV:id.startsWith('mrd:')?SKIN_MRD:id==='proc:list'?SKIN_PLIST:id==='proc:timeline'?SKIN_PROC:id==='img:brain:swell'?SKIN_SW:id==='img:brain:dose'?SKIN_DOSE:id==='img:brain:perf'?SKIN_PERF:SKIN_STYLES;
+const skinOf=id=>{const v=skins[id],L=stylesFor(id);return L.includes(v)?v:(id==='img:brain:lesions'?'lin':id==='img:brain:dates'?'height':isBP(id)?'dband':id==='mrd:ns'?'log':id==='mrd:var'?'sarea2':id.startsWith('mrd:')?'mount':id==='proc:list'?'both':id==='proc:timeline'?'merged':id==='img:brain:swell'?'lines':id==='img:brain:dose'?'stack':id==='img:brain:perf'?'peak':BYID[id]?'line':'mount')};
 const skinLabel=id=>({line:'∿ line',mount:'▲ mountain',off:'skin off',lines:'∿ lines',fill:'▲▼ filled',band:'∿ + range',total:'∿ total',stack:'▤ stacked',split:'▬ split heat',lin:'▲ linear',log:'▲ log',rows:'☰ 3T / 1.5T rows',height:'┃ 3T tall',colour:'┃ 3T colour',site:'┃ hospital',rich:'┃ 3T + details',
   dband:'▒ daily band',band:'▒ every reading',days:'┃ daily range',heat:'▬ category',sdots:'◎ circles',sarea2:'◎ circles by area',szoom:'◎ circles ×3 (area)',sdraw:'◎ circles per draw',slog:'▤ stacked (log)',scount:'▤ stacked (count)',sarea:'▲ stacked area',slin:'▤ stacked (true size)',dots:'● calls',allele:'▲ allele (log)',grid:'⋮ variants',count:'▮ count',mtm:'▲ MTM',both:'● size + colour',size:'● size',color:'● colour',
   lolli:'⫯ stems',step:'▭ steps',fade:'◢ fade-out',lanes:'☰ lanes',tall:'☰ lanes ×2',merged:'• one row',activity:'▮ activity',vol:'∿ volume only',dots:'• dots',peak:'▲ highest',blocks:'▮ courses',lesions:'⌐ per lesion',range:'▒ range',heat:'▬ heat'})[skinOf(id)];
@@ -858,6 +862,9 @@ function skinData(id){
  if(isBP(id))return{kind:'bp'};
  if(BYID[id]){const p=BYID[id].pts.filter(x=>x.v!=null&&isFinite(+x.v)&&(x.ts||x.date));
   return{kind:'num',pts:p.map(x=>({t:x.ts||skT(x.date),v:+x.v,f:x.flag||''})),lo:skMed(p.map(x=>x.lo)),hi:skMed(p.map(x=>x.hi))}}
+ if(id==='mrd:ns'){   // Northstar Response: its own Tumor Methylation Score (never the Signatera MTM/mL), log or linear by the bar's own button
+  const r=((D.mrd||{}).other||[]).filter(x=>x.test==='Northstar Response'&&x.draw_date);
+  return{kind:'num',log:skinOf(id)==='log',edges:true,pts:r.map(x=>({t:skT(x.draw_date),v:+x.value})),lo:null,hi:null}}
  if(id.startsWith('mrd:')&&D.mrd&&D.mrd.rows&&!['mount','lolli','step','fade'].includes(skinOf(id)))return{kind:'mrd'};
  if(id.startsWith('mrd:')&&D.mrd&&D.mrd.rows){const r=D.mrd.rows.filter(x=>x.draw_date);
   /* the filled mountain, on the open panel's measure (Allele-based: summed allele ratio of the variants found, from Natera's allele files;
@@ -1470,7 +1477,7 @@ msjs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "milestones
 open(out, "w").write(html.replace("__TXJS__", txjs).replace("__MSJS__", msjs).replace("__MRDJS__", mrdjs).replace("__DATA__", data).replace("__IMGJS__", imgjs).replace("__PROCJS__", procjs).replace("__PATHJS__", pathjs).replace("__PHOTOJS__", photojs).replace("__DNAJS__", dnajs).replace("__COSTJS__", costjs).replace("__DECJS__", decjs).replace("__ASKJS__", askjs).replace("__PHONEJS__", phonejs).replace("__PHONEFITJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "phone_fit.js")).read()).replace("__NAVFOLDJS__", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "navfold.js")).read()))
 print(f"wrote {out}: {len(tests)} numeric tests from {len(sources)} sources: {sources}"
       f"; Treatment panel: {len(tx)} drug rows" + (f"; your edits from {edits_file}" if edits else "")
-      + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files" if mrd else "")
+      + (f"; MRD: {len(mrd['rows'])} Signatera draws, {len({a['draw_date'] for a in mrd['alleles']})} allele files, {len(mrd['other'])} Northstar draws" if mrd else "")
       + ("; imaging: local/imaging/imaging.json" if imgjs else "")
       + ("; procedures: local/procedures/procedures.json" if procjs else "")
       + ("; pathology: local/pathology/pathology.json" if pathjs else "")

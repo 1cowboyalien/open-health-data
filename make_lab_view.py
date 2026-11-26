@@ -118,8 +118,9 @@ if os.path.exists(NAMES_FILE):
             t["full"] = full
 # One fixed time axis for every chart: from the month of the earliest result of any kind
 # to the end of the month of the latest, so charts line up when switching tests.
-# Time before COMPRESS_BEFORE is squeezed into the first COMPRESS_WIDTH of the axis, so the
-# busy recent period gets most of the room. Set COMPRESS_BEFORE = None for a plain axis.
+# Time before COMPRESS_BEFORE can be squeezed into the first COMPRESS_WIDTH of the axis, so the
+# busy recent period gets most of the room. Since 2026-11-26 the axis is even by default; the Navigator's
+# "Time: even / squeezed" button (#wsq) turns the squeeze on. Set COMPRESS_BEFORE = None to remove the option.
 COMPRESS_BEFORE = "2023-05-01"
 COMPRESS_WIDTH = 0.15
 all_dates = sorted([r["date"] for r in rows if r["date"]] + [r["date"] for r in vit_rows if r["date"]])
@@ -287,7 +288,7 @@ main canvas{cursor:grab}body.dragging,body.dragging main canvas{cursor:grabbing!
 .nrow button{font-size:12px;padding:2px 8px}.nrow .wbtn,.nrow .wnav{display:inline-flex;align-items:center;gap:3px;margin-left:6px}
 .nrow .wnav input{width:150px;margin:0 2px}.nrow .zl{color:var(--ink2);margin-left:6px}.nrow #wlen{color:var(--ink2);font-weight:500;margin-left:4px;min-width:62px}
 .nrow.win .wl{color:var(--ink2)}.nrow.win input{flex:1;min-width:80px;margin:0}.nrow.win b{font-weight:600;min-width:78px}
-.nrow.win .wfl{width:auto;margin-left:6px}.nrow.win input.fine{outline:1px solid var(--accent);outline-offset:2px;border-radius:4px}.nrow.win .wstep1{padding:1px 6px;font-size:12px;line-height:16px;flex:none}.nrow #wfut{font-size:12px;padding:1px 3px;max-width:190px}.nrow #wfut.on{border-color:var(--accent);color:var(--accent)}
+.nrow.win .wfl{width:auto;margin-left:6px}.nrow.win input.fine{outline:1px solid var(--accent);outline-offset:2px;border-radius:4px}.nrow.win .wstep1{padding:1px 6px;font-size:12px;line-height:16px;flex:none}.nrow #wfut{font-size:12px;padding:1px 3px;max-width:190px}.nrow #wsq{font-size:12px;padding:1px 7px;margin-left:4px;white-space:nowrap}.nrow #wsq.on{border-color:var(--accent)}.nrow #wfut.on{border-color:var(--accent);color:var(--accent)}
 .nrow .legend{margin:0 0 0 8px;gap:8px;font-size:11px}.nrow #soloBar{margin-left:6px}
 @media (max-width:760px){.navpin{margin:-14px -14px 0;padding:10px 14px}}
 .txh{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}.txh b{font-size:15px;font-weight:600}
@@ -325,7 +326,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <button id="roleBtn" style="margin-left:auto"></button><span id="soloBar" class="bar"></span><span class="sub hide" id="hint"></span></div>
 <div class="nrow win"><span class="wl">From</span><button class="wstep1" data-ws="a" data-d="-1" aria-label="Start earlier">−</button><input type="range" id="wa" aria-label="Window start"><button class="wstep1" data-ws="a" data-d="1" aria-label="Start later">+</button><button id="wal" class="datebtn" title="Pick the start on a calendar"></button>
 <span class="wl">To</span><button class="wstep1" data-ws="b" data-d="-1" aria-label="End earlier">−</button><input type="range" id="wb" aria-label="Window end"><button class="wstep1" data-ws="b" data-d="1" aria-label="End later">+</button><button id="wbl" class="datebtn" title="Pick the end on a calendar"></button>
-<span class="wl wfl" title="How far the timeline runs past the last data. Use it to see projections and planned dates (keyframes can be dated in the future); every panel gets the same longer axis, so they stay lined up. The part after today is tinted.">Future</span><select id="wfut" aria-label="How far the timeline runs past the last data"></select>
+<span class="wl wfl" title="How far the timeline runs past the last data. Use it to see projections and planned dates (keyframes can be dated in the future); every panel gets the same longer axis, so they stay lined up. The part after today is tinted.">Future</span><select id="wfut" aria-label="How far the timeline runs past the last data"></select><button id="wsq" class="wsq" title="Time scale. Even: every month has the same width across the whole timeline (default). Squeezed: in windows over 3 years, time before May 2023 is squeezed to the left, so the busy treatment years get more room."></button>
 <button id="wml" class="datebtn" title="Go to a date: it moves to the middle of the charts and the cursor locks there (the window keeps its length)"></button><span id="lockBar" class="lockbar"></span><button id="saveRange" title="Save this time range with a name (listed under Presets → Timeline)">☆ Save timeline</button>
 <span class="pall"><span id="closedBar" class="closedbar"></span><button id="maxAll" title="Open every panel">▴ Maximize all</button><button id="minAll" title="Minimize every panel to its title bar (with its data skin), to find a panel or compare patterns">▾ Minimize all</button><button id="closeAll" title="Close every panel: the Compare panels and dose charts are unticked, Keyframes, Treatments and the detail panel get a + button here to bring them back">× All</button></span><span class="legend" id="srcLegend"></span></div>
 <div class="nrow lay hide" id="layBar"></div>
@@ -354,7 +355,7 @@ body.nolib .wrap{grid-template-columns:minmax(0,1fr)}body.nolib aside{display:no
 <section id="mrd" class="hide"></section>
 <section id="compare" class="hide"><div id="cmpList"></div>
 <div class="sub" id="cmpEmpty" style="margin-top:14px">Tick the boxes next to tests in the list to stack them here on the same time scale.</div></section>
-<div class="sub" style="margin-top:12px">Point color = hospital. Shaded band = normal range (latest result). Larger points with a red ring = flagged high, blue ring = flagged low. In wide windows, time before May 2023 is compressed left of the darker vertical line. Window, selection and heights are remembered in this browser.
+<div class="sub" style="margin-top:12px">Point color = hospital. Shaded band = normal range (latest result). Larger points with a red ring = flagged high, blue ring = flagged low. Every month has the same width (Time: even); the "Time" button next to Future can squeeze time before May 2023 to the left of a darker line in windows over 3 years. Window, selection and heights are remembered in this browser.
 Treatments: bars show the periods drugs were <i>ordered</i> for (thicker where the dose is higher, with the dose written where it changes; tick "dose" next to a drug for a dose chart) (from the hospitals' records); marker shape tells how sure a dose is (see the legend). Assumed doses are drawn from the prescription's schedule and are not in any record. Click a bar to correct it, click an assumed dose to mark it taken or skipped, or add a medication; your changes stay in this browser until you export them. This is a view of records, not medical advice: check doses with the care team.</div>
 </main></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -484,7 +485,10 @@ function setAllMin(close){if(close)captureFour();minAllIds().forEach(i=>{if(clos
 function setMin(id,on){if(on&&id==='img:brain:viewer')captureFour();if(on)mins[id]=1;else delete mins[id];store.set('mins',mins);render()}
 const minLabel=id=>isMin(id)?'▸ Open':'▾ Minimize';
 
-function compressing(){return BRK!=null&&W.a<BRK&&W.b>BRK&&(W.b-W.a)>3*365*DAY}
+/* Time scale (2026-11-26): even by default, so patterns read the same across the years; "Squeezed" brings back the
+   compressed axis (time before COMPRESS_BEFORE in the left COMPRESS_WIDTH of windows over 3 years). Button #wsq, store 'squeeze'. */
+let SQUEEZE=store.get('squeeze',false);
+function compressing(){return SQUEEZE&&BRK!=null&&W.a<BRK&&W.b>BRK&&(W.b-W.a)>3*365*DAY}
 function pos(t){const a=W.a,b=W.b;if(!compressing())return 100*(t-a)/(b-a);
  const f=FR*(BRK-a)/(BRK-X0);return t<BRK?100*f*(t-a)/(BRK-a):100*f+100*(1-f)*(t-BRK)/(b-BRK)}
 function unpos(x){const a=W.a,b=W.b;if(!compressing())return a+(b-a)*x/100;
@@ -1227,6 +1231,8 @@ function openFutCal(){const P=$('calPop');P.innerHTML='';P.classList.remove('hid
  i.onkeydown=e=>{if(e.key==='Enter'){apply();closeCal()}};
  const bar=document.createElement('div');bar.className='bar';const done=document.createElement('button');done.type='button';done.textContent='Set';done.className='on';done.onclick=()=>{apply();closeCal()};bar.append(done);
  P.append(h,i,note,bar);const r=wfut.getBoundingClientRect();P.style.left=Math.max(6,Math.min(r.left,innerWidth-250))+'px';P.style.top=(r.bottom+6)+'px';i.focus();try{i.showPicker()}catch(e){}}
+const wsq=$('wsq');const sqSync=()=>{wsq.hidden=BRK==null;wsq.textContent=SQUEEZE?'Time: squeezed before '+MON[new Date(BRK||0).getUTCMonth()]+" '"+String(new Date(BRK||0).getUTCFullYear()).slice(2):'Time: even';wsq.classList.toggle('on',SQUEEZE);wsq.setAttribute('aria-pressed',SQUEEZE)};
+wsq.onclick=()=>{SQUEEZE=!SQUEEZE;store.set('squeeze',SQUEEZE);sqSync();setWin(W.a,W.b)};sqSync();
 wfut.onchange=()=>{if(wfut.value==='date'){wfut.value=String(FUT);openFutCal()}else setFuture(+wfut.value)};futSync();
 /* calendar pop-out for From / Middle / To: a date-and-time field that opens the browser's calendar.
    Picking a date applies it at once; Middle moves the window and keeps its length. */

@@ -150,8 +150,10 @@ REVIEW_SHIM = ("(function(){function key(){try{var k=(/[#&]k=([A-Za-z0-9_-]{30,8
 SLIDES_AT = "/pathology-slides"
 # Link previews (the card Messages, WhatsApp, Slack... show when a link is sent): each page gets a real title, a one-line
 # description and a picture (Open Graph / Twitter tags), right after <head> because some preview readers only read the start
-# of a page and labs.html is several MB. Pictures are plain title cards with no health data (make_preview_cards.py, preview/).
+# of a page and labs.html is several MB. Pictures are plain title cards with no health data (make_preview_cards.py, preview/);
+# a card made from a real photo (make_preview_cards.py --photo) is private, in local/preview/, and wins over the plain one.
 PREVIEW_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "preview")
+PREVIEW_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local", "preview")
 PREVIEWS = {
     "records": ("Health records timeline", "Labs, scans, treatments and notes on one shared timeline."),
     "slides": ("Pathology slides", "Microscope slide photos by hospital, slide and date."),
@@ -390,7 +392,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.ask_proxy()
         if path in ("/favicon.ico", "/apple-touch-icon.png") or re.fullmatch(r"/preview/[a-z0-9-]+\.png", path):   # link-preview cards and the site icon
             f = {"/favicon.ico": "icon-32.png", "/apple-touch-icon.png": "icon-180.png"}.get(path) or path.rsplit("/", 1)[1]
-            fp = os.path.join(PREVIEW_DIR, f)
+            fp = os.path.join(PREVIEW_LOCAL, f)
+            if not os.path.isfile(fp):
+                fp = os.path.join(PREVIEW_DIR, f)
             if not os.path.isfile(fp):
                 return self.send(404, {"error": "not found"})
             return self.send(200, open(fp, "rb").read(), "image/png", cache=True)

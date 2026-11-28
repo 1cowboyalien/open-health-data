@@ -35,6 +35,10 @@ const MRD = (() => {
 .mscale{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);margin-top:10px;flex-wrap:wrap}
 .mscale i{display:inline-block;width:22px;height:12px;border-radius:3px}
 .tt{display:inline-block;font-size:10px;font-weight:600;line-height:14px;padding:0 4px;border-radius:4px;border:1px solid var(--line);color:var(--ink2);margin-left:3px;vertical-align:1px}
+.flg{color:#d4a017;font-weight:700;font-style:normal;margin-left:3px;cursor:help}
+.hm tr.flag td.lab{box-shadow:inset 3px 0 0 #d4a017;background:color-mix(in srgb,#d4a017 20%,transparent);border-radius:3px;color:#d4a017}.hm tr.flag td.lab b{color:#d4a017;font-weight:700}
+.hm tr.flag td.c:not(.z){box-shadow:inset 0 0 0 2px #d4a017}.hm tr.flag td.z{box-shadow:inset 0 0 0 1px color-mix(in srgb,#d4a017 45%,transparent)}
+.vcard.flag{box-shadow:inset 3px 0 0 #d4a017;background:color-mix(in srgb,#d4a017 7%,transparent)}
 .tt.ts{border-color:var(--ink2)}.tt.tv{border-style:dashed}
 .bld{font-size:10px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:4px}
 .vcard{border:1px solid var(--line);border-left:0;border-right:0;padding:6px 16px 2px;margin:0 -16px;margin-top:-1px}.vcard:first-child{margin-top:6px}
@@ -55,7 +59,14 @@ const MRD = (() => {
   const VC = t => VPAL[(vnum(t) - 1) % VPAL.length];
   window.SIG_VCOL = VC;
   const geneTxt = t => V(t).gene ? (V(t).near ? 'near ' : '') + V(t).gene : '';
-  const geneHtml = t => V(t).gene ? (V(t).near ? '<span class="ndt">near</span> ' : '') + `<i>${esc(V(t).gene)}</i>` : '';
+  /* flagged variants (private local/mrd_flags.json, matched by gene or target id): a gold ⚑ and a gold edge in every
+     per-variant view; "Mark flagged variants" in the Tumor variants panel turns it off */
+  const FLAGS = M.flags || [];
+  const FLG = t => FLAGS.find(f => (f.targets || []).includes(t) || (V(t).gene && (f.genes || []).includes(V(t).gene)));
+  const flagTip = t => { const f = FLG(t); return f ? (f.label || 'Flagged') + (f.note ? ': ' + f.note : '') : ''; };
+  const isF = t => flagOn && !!FLG(t);
+  const flagHtml = t => isF(t) ? `<span class="flg" title="${esc(flagTip(t))}">⚑</span>` : '';
+  const geneHtml = t => V(t).gene ? (V(t).near ? '<span class="ndt">near</span> ' : '') + `<i>${esc(V(t).gene)}</i>` + flagHtml(t) : flagHtml(t);
   const effTxt = t => (V(t).effect || '') + (V(t).prot ? ' ' + V(t).prot : '');
   const tsShort = t => V(t).change_type === 'Transition' ? 'Ts' : 'Tv';
   const tsTag = t => `<span class="tt ${tsShort(t).toLowerCase()}" title="${V(t).change_type || ''}">${tsShort(t)}</span>`;
@@ -68,6 +79,7 @@ const MRD = (() => {
   const posCount = d => ALLELES.filter(a => a.draw_date === d && a.call === 'POSITIVE').length;
   const ALL_T = [...new Set(ALLELES.map(a => a.target_id))].sort((a, b) => vnum(a) - vnum(b));
   const NT = ALL_T.length;
+  const FT = ALL_T.filter(t => FLG(t));
   const NEVER = new Set(ALL_T.filter(t => !ALLELES.some(a => a.target_id === t && a.call === 'POSITIVE')));
   const done = ROWS.filter(r => r.result !== 'NOT PERFORMED');
   const det = done.filter(r => r.result === 'DETECTED');
@@ -87,8 +99,13 @@ const MRD = (() => {
   const IDS = Object.keys(PANELS);
 
   /* ---------- settings (remembered in this browser; shared by the page and the Compare panels) ---------- */
-  let on = store.get('mrd.on', false), view = store.get('mrd.view', 'grid'), measure = store.get('mrd.measure', 'natera');
+  let on = store.get('mrd.on', false), view = store.get('mrd.view', 'grid'), measure = store.get('mrd.measure', 'allele');
+  let flagOn = store.get('mrd.flagOn', true);
   let logMode = store.get('mrd.log', false), hideNever = store.get('mrd.hideNever', false), sameY = false, orderMost = false, hoverT = null;
+  /* Over time starts in Allele-based each time it is turned on (ticked in the Library or the full page opened);
+     switching to Natera MTM/mL holds while it stays on. Presets keep their own saved choice. */
+  let otOn = sel.includes('mrd:ot');
+  function startAllele() { if (ADATES.length) { measure = 'allele'; store.set('mrd.measure', measure); } }
   const shownT = () => ALL_T.filter(t => !(hideNever && NEVER.has(t)));
   const rowOf = t => shownT().indexOf(t) + 1;
   const active = () => on && mode === 'single';
@@ -238,7 +255,7 @@ const MRD = (() => {
     h += '<tr><th></th>' + cols.map(d => { const r = byDraw[d] || {}; return `<th data-d="${d}" class="call ${r.result === 'DETECTED' ? 'pos' : 'ndt'}">${r.result === 'DETECTED' ? r.value + ' MTM' : 'Negative'}</th>`; }).join('') + '</tr>';
     for (const t of shownT()) {
       const v = V(t);
-      h += `<tr><td class="lab" title="Variant ${vnum(t)} · ${esc(geneTxt(t))} · ${v.change_type || ''} · ${esc(effTxt(t))} · ${locTxt(t)}"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${VC(t)}"></span><b>V${vnum(t)}</b> · ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt}${tsTag(t)}</td>` + cols.map(d => {
+      h += `<tr${isF(t) ? ' class="flag"' : ''}><td class="lab" title="Variant ${vnum(t)} · ${esc(geneTxt(t))} · ${v.change_type || ''} · ${esc(effTxt(t))} · ${locTxt(t)}${isF(t) ? ' · ⚑ ' + esc(flagTip(t)) : ''}"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${VC(t)}"></span><b>V${vnum(t)}</b> · ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt}${tsTag(t)}</td>` + cols.map(d => {
         const a = cell(t, d), x = a ? +a.allele_ratio : 0;
         return x > 0 ? `<td data-d="${d}" class="c" style="background:color-mix(in srgb, ${VC(t)} ${Math.round(alpha(x) * 100)}%, transparent);color:${alpha(x) > 0.55 ? '#fff' : 'var(--ink)'}" title="${fd(d)} · ${v.ref}>${v.alt} · ${locTxt(t)} · ${pct(x)}%">${pct(x)}</td>`
                      : `<td data-d="${d}" class="c z" title="${fd(d)} · not detected">·</td>`; }).join('') + '</tr>';
@@ -249,14 +266,18 @@ const MRD = (() => {
   }
   // Timeline row labels, drawn inside the standard axis width so the plot lines up with every other panel:
   // bold "V1" on top, the gene (italic, "~" = next to it) underneath. The change and Ts/Tv are in the tooltip and the Grid.
-  const rowLabels = {id: 'mrdRows', afterDraw(c) {
+  const rowLabels = {id: 'mrdRows',
+    beforeDatasetsDraw(c) { const g = c.ctx, y = c.scales.y, A = c.chartArea; g.save(); g.fillStyle = '#d4a017'; g.globalAlpha = .13;
+      shownT().forEach((t, i) => { if (!isF(t)) return; const py = y.getPixelForValue(i + 1), hh = Math.abs(y.getPixelForValue(i + 1.5) - py);
+        g.fillRect(A.left - 58, py - hh, A.right - A.left + 58, 2 * hh); }); g.restore(); },
+    afterDraw(c) {
     const g = c.ctx, y = c.scales.y, x = c.chartArea.left - 6, fam = getComputedStyle(document.body).fontFamily, maxW = c.chartArea.left - 10;
     g.save(); g.textAlign = 'right';
     for (const tk of y.ticks) {
       const r = tk.value, py = y.getPixelForValue(r);
       if (r === 0) { g.textBaseline = 'middle'; g.font = `10.5px ${fam}`; g.fillStyle = css('--ink2'); g.fillText('no file', x, py); continue; }
       const tid = shownT()[r - 1], v = V(tid); if (!tid) continue;
-      g.textBaseline = 'alphabetic'; g.font = `600 11px ${fam}`; g.fillStyle = css('--ink'); g.fillText('V' + vnum(tid), x, py - 1);
+      g.textBaseline = 'alphabetic'; g.font = `600 11px ${fam}`; g.fillStyle = isF(tid) ? '#d4a017' : css('--ink'); g.fillText((isF(tid) ? '⚑ ' : '') + 'V' + vnum(tid), x, py - 1);
       let gene = v.gene ? (v.near ? '~' : '') + v.gene : '';
       g.font = `italic 9.5px ${fam}`; g.fillStyle = css('--ink2');
       while (gene.length > 3 && g.measureText(gene).width > maxW) gene = gene.slice(0, -2) + '…';
@@ -291,6 +312,7 @@ const MRD = (() => {
     box.classList.add('mrdp');
     box.innerHTML = `<div class="mrdh">${opt.title ? `<b>Tumor variants tracked <span class="sub" data-r="vsub"></span></b>` : '<span class="sub" data-r="vsub"></span>'}<div class="bar" data-r="views"></div></div>
       <label class="sub" style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-top:4px"><input type="checkbox" data-r="hide"> Hide variants never found <span>(${[...NEVER].map(t => 'V' + vnum(t)).join(', ') || 'none'})</span></label>
+      ${FT.length ? `<label class="sub" style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-top:2px" title="${esc(FT.map(t => 'V' + vnum(t) + ' ' + geneTxt(t) + ': ' + flagTip(t)).join('\n'))}"><input type="checkbox" data-r="flag"> <span class="flg" style="margin:0">⚑</span> Mark flagged variants <span>(${FT.map(t => 'V' + vnum(t) + ' ' + esc(geneTxt(t))).join(', ')}${FLG(FT[0]).label ? ' · ' + esc(FLG(FT[0]).label) : ''})</span></label>` : ''}
       <div class="sub" data-r="desc"></div>
       <div data-r="grid"><div style="overflow-x:auto;margin-top:10px"><table class="hm" data-r="hm"></table></div><div class="mscale" data-r="scale"></div>
         <div class="note">V1–V${NT} = the ${NT} tracked variants. <span class="tt ts">Ts</span> transition (A↔G or C↔T) · <span class="tt tv">Tv</span> transversion (purine↔pyrimidine).</div></div>
@@ -301,10 +323,11 @@ const MRD = (() => {
       <div class="note" data-r="vnote"></div>`;
     const hide = R(box, 'hide'); hide.checked = hideNever;
     hide.onchange = () => { hideNever = hide.checked; store.set('mrd.hideNever', hideNever); refreshAll(); };
+    const fl = R(box, 'flag'); if (fl) { fl.checked = flagOn; fl.onchange = () => { flagOn = fl.checked; store.set('mrd.flagOn', flagOn); refreshAll(); }; }
     R(box, 'vchart').addEventListener('mouseleave', () => { if (hoverT) { hoverT = null; draw(); } });
     function draw() {
       drop(key + '#');
-      hide.checked = hideNever;
+      hide.checked = hideNever; if (R(box, 'flag')) R(box, 'flag').checked = flagOn;
       const vb = R(box, 'views'); vb.innerHTML = '<span class="sub">View</span>';
       [['grid', 'Grid'], ['dots', 'Timeline'], ['lines', 'Lines'], ['stack', 'Charts']].forEach(([v, l]) => vb.append(btn(l, '', () => { view = v; hoverT = null; store.set('mrd.view', v); refreshAll(); }, view === v)));
       if (opt.height && (view === 'lines' || view === 'stack')) vb.append(btn('−', 'Shorter', () => { setH(key, hOf(key, 440) - 40); window.render(); }), btn('+', 'Taller', () => { setH(key, hOf(key, 440) + 40); window.render(); }));
@@ -326,7 +349,7 @@ const MRD = (() => {
       if (view === 'stack') return stack();
       const hi = css('--hi'), nd = css('--nd'), gridc = css('--line');
       R(box, 'vchart').style.height = view === 'dots' ? (90 + 30 * (shownT().length + 1)) + 'px' : hOf(key, 440) + 'px';
-      const tip = c => { const a = c.raw.a; return a ? [`V${vnum(a.target_id)} · ${geneTxt(a.target_id)} · ${V(a.target_id).chrom} ${a.ref}>${a.alt} (${(V(a.target_id).change_type || '').toLowerCase()}) · ${fd(a.draw_date)}: ` + (+a.allele_ratio > 0 ? pctS(+a.allele_ratio) : 'not found'), locTxt(a.target_id)] : `${fd(c.raw.d)}: ${c.raw.v} MTM/mL, no allele file`; };
+      const tip = c => { const a = c.raw.a; return a ? [`${isF(a.target_id) ? '⚑ ' : ''}V${vnum(a.target_id)} · ${geneTxt(a.target_id)} · ${V(a.target_id).chrom} ${a.ref}>${a.alt} (${(V(a.target_id).change_type || '').toLowerCase()}) · ${fd(a.draw_date)}: ` + (+a.allele_ratio > 0 ? pctS(+a.allele_ratio) : 'not found'), locTxt(a.target_id)] : `${fd(c.raw.d)}: ${c.raw.v} MTM/mL, no allele file`; };
       let cfg;
       if (view === 'dots') {
         const maxV = Math.max(...ALLELES.map(a => +a.allele_ratio)), rad = v => 3 + 13 * Math.sqrt(v / maxV);
@@ -342,7 +365,7 @@ const MRD = (() => {
               afterBuildTicks: a => { a.ticks = [0, ...shownT().map(rowOf)].map(v => ({value: v})); }, ticks: {autoSkip: false, callback: () => ''}}}}};
         cfg.data.datasets.forEach(d => d.data = d.data.filter(p => p.x >= -0.5 && p.x <= 100.5));   // only dots inside the window
         R(box, 'vleg').innerHTML = 'Allele ratio: ' + [0.0001, 0.001, maxV].map(v => { const d = 2 * rad(v); return `<span><span class="dot" style="width:${d}px;height:${d}px;background:${hi}cc"></span>${pctS(v)}</span>`; }).join('') +
-          `<span><span class="dot" style="border:1px solid ${nd};width:6px;height:6px"></span>not found</span><span style="color:${nd}">| draw with no allele file</span><span>~gene = next to that gene · hover a dot for the change and position</span>`;
+          `<span><span class="dot" style="border:1px solid ${nd};width:6px;height:6px"></span>not found</span><span style="color:${nd}">| draw with no allele file</span><span>~gene = next to that gene · hover a dot for the change and position</span>` + (FT.some(isF) ? '<span><span class="flg">⚑</span> gold band = flagged variant</span>' : '');
       } else {
         const FLOOR = 0.003;
         const ds = shownT().map(t => {
@@ -350,15 +373,15 @@ const MRD = (() => {
             .map(a => ({x: X(a.draw_date), y: +a.allele_ratio > 0 ? +a.allele_ratio * 100 : FLOOR, a, t: ms(a.draw_date)}))
             .flatMap((p, i, arr) => { const nx = arr[i + 1]; const gap = nx && done.some(r => !ADATES.includes(r.draw_date) && ms(r.draw_date) > p.t && ms(r.draw_date) < nx.t); return gap ? [p, {x: (p.x + nx.x) / 2, y: null}] : [p]; });
           const isOn = hoverT === t, dim = hoverT && !isOn;
-          return {type: 'line', label: 'V' + vnum(t), t, data: pts, borderColor: dim ? gridc : isOn ? VC(t) : VC(t) + 'a6', borderWidth: isOn ? 3 : 1.5, spanGaps: false,
-            pointRadius: pts.map(p => p.y === null ? 0 : p.y === FLOOR ? 2 : isOn ? 5 : 3.5), pointBackgroundColor: pts.map(p => p.y === FLOOR ? nd : dim ? gridc : VC(t)), pointBorderWidth: 0, tension: 0, order: isOn ? 0 : 1};
+          return {type: 'line', label: 'V' + vnum(t), t, data: pts, borderColor: dim ? gridc : isOn || isF(t) ? VC(t) : VC(t) + 'a6', borderWidth: isOn ? 3 : isF(t) && !dim ? 3 : 1.5, borderDash: isF(t) && !isOn ? [7, 3] : [], spanGaps: false,
+            pointRadius: pts.map(p => p.y === null ? 0 : p.y === FLOOR ? 2 : isOn || isF(t) ? 5 : 3.5), pointBackgroundColor: pts.map(p => p.y === FLOOR ? nd : dim ? gridc : VC(t)), pointBorderWidth: 0, tension: 0, order: isOn ? 0 : 1};
         });
         cfg = {type: 'line', plugins: plugins(), data: {datasets: ds}, options: {maintainAspectRatio: false, animation: false, layout: TLAY(), interaction: {mode: 'nearest', intersect: false},
           onHover: (e, els, c) => { hov(e, els, c); const t = els.length ? c.data.datasets[els[0].datasetIndex].t : null; if (t !== hoverT) { hoverT = t; setTimeout(draw, 0); } },
           plugins: {legend: {display: false}, tooltip: {callbacks: {label: tip}}},
           scales: {x: xAxis(), y: {...yw(YW), type: 'logarithmic', min: 0.0025, max: 1, grid: {color: gridc},
             afterBuildTicks: a => { a.ticks = [FLOOR, 0.01, 0.03, 0.1, 0.3, 1].map(v => ({value: v})); }, ticks: {color: css('--muted'), autoSkip: false, callback: v => v === FLOOR ? 'not found' : v + '%'}}}}};
-        R(box, 'vleg').innerHTML = hoverT ? `<span><b style="color:${VC(hoverT)}">V${vnum(hoverT)} · ${esc(geneTxt(hoverT))}</b> highlighted</span>` : '<span>Hover a line to highlight one variant</span>';
+        R(box, 'vleg').innerHTML = (hoverT ? `<span><b style="color:${VC(hoverT)}">V${vnum(hoverT)} · ${esc(geneTxt(hoverT))}</b> highlighted</span>` : '<span>Hover a line to highlight one variant</span>') + (FT.some(isF) ? '<span><span class="flg">⚑</span> thick dashed = flagged variant</span>' : '');
       }
       keep(key + '#v', R(box, 'vchart').querySelector('canvas'), cfg);
     }
@@ -376,7 +399,7 @@ const MRD = (() => {
         const mine = ALLELES.filter(a => a.target_id === t), v = V(t), peak = mine.reduce((m, a) => +a.allele_ratio > +m.allele_ratio ? a : m, mine[0]);
         const pts = done.map(r => { const a = mine.find(x => x.draw_date === r.draw_date);
           return a ? {x: X(r.draw_date), y: +a.allele_ratio * 100, a, k: +a.allele_ratio > 0 ? 'f' : 'n'} : {x: X(r.draw_date), y: 0, d: r.draw_date, v: r.value, k: 'u'}; });
-        const last = i === tids.length - 1, card = document.createElement('div'); card.className = 'vcard';
+        const last = i === tids.length - 1, card = document.createElement('div'); card.className = 'vcard' + (isF(t) ? ' flag' : '');
         card.innerHTML = `<div class="vhead"><span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${VC(t)}"></span><b>V${vnum(t)}</b> <span class="sub">· ${geneHtml(t)} · ${v.chrom} ${v.ref}&gt;${v.alt} ${(v.change_type || '').toLowerCase()} · ${esc(effTxt(t))}</span></span><span class="sub">${locHtml(t)}</span><span class="sub">found in ${nFound(t)} of ${ADATES.length} files</span>` +
           `<span class="pk">${+peak.allele_ratio > 0 ? 'peak ' + pctS(+peak.allele_ratio) + ', ' + fd(peak.draw_date) : 'never found'}</span></div><div class="vbox" style="height:${vh + (last ? 22 : 0)}px"><canvas></canvas></div>`;
         list.appendChild(card);
@@ -460,19 +483,25 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   function refresh(id) { const f = LIVE.get(id); if (f && f.box.isConnected) f(); }
   const H0 = {'mrd:ot': 160, 'mrd:var': 440, 'mrd:ns': 150};
 
+  /* a test's group heading in the MRD section: a tick box (all of its panels on/off) and All / None / Only,
+     the same for every test so each one can be turned on and off by itself */
+  function groupHead(S, key, name, ids, idle, q) {
+    const k = ids.filter(id => sel.includes(id)).length, both = ids.length > 1;
+    const G = window.section(S, key, name, k ? k + '/' + ids.length : idle, true, 'grp', q), gs = G.firstChild;
+    const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === ids.length; cb0.indeterminate = k > 0 && k < ids.length;
+    cb0.title = 'Tick or untick ' + (both ? 'every ' + name + ' panel' : 'the ' + name + ' panel') + ' for Compare'; cb0.setAttribute('aria-label', cb0.title);
+    cb0.onclick = e => { e.stopPropagation(); setLabSel(ids, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
+    panelBtns(G, name + ' panel', 'grp:' + key, ids, name);
+    return G;
+  }
+
   /* ---------- Library section: Signatera group, a tick box per panel (Compare), the name opens the full page ---------- */
   function section(el, q) {
+    const nowOn = sel.includes('mrd:ot'); if (nowOn && !otOn) startAllele(); otOn = nowOn;
     if (q && !'mrd ctdna signatera natera minimal residual disease tumor variants over time northstar billiontoone methylation'.includes(q)) return;
     const S = window.section(el, 'mrd', 'MRD tests', NS.length ? '2 tests' : '1 test', true, 'sec', q);
-    const k = SIG_IDS.filter(id => sel.includes(id)).length;
     panelBtns(S, 'MRD panel', 'grp:mrd', IDS, 'MRD tests');
-    const G = window.section(S, 'mrd:sig', 'Signatera', k ? k + '/' + SIG_IDS.length : done.length + ' draws', true, 'grp', q), gs = G.firstChild;
-    const cb0 = document.createElement('input'); cb0.type = 'checkbox'; cb0.checked = k === SIG_IDS.length; cb0.indeterminate = k > 0 && k < SIG_IDS.length;
-    cb0.title = 'Tick or untick both Signatera panels for Compare'; cb0.setAttribute('aria-label', 'Select both Signatera panels');
-    cb0.onclick = e => { e.stopPropagation(); setLabSel(SIG_IDS, cb0.checked); }; gs.insertBefore(cb0, gs.firstChild);
-    gs.insertBefore(miniBtn('All', 'Select both Signatera panels', () => setLabSel(SIG_IDS, true)), gs.lastChild);
-    gs.insertBefore(miniBtn('None', 'Deselect both Signatera panels', () => setLabSel(SIG_IDS, false)), gs.lastChild);
-    panelBtns(G, 'Signatera panel', 'grp:mrd:sig', SIG_IDS, 'Signatera', {noAllNone: true});
+    const G = groupHead(S, 'mrd:sig', 'Signatera', SIG_IDS, done.length + ' draws', q);
     // the whole-test row: opens the full page
     const pg = document.createElement('div'); pg.className = 't' + (active() ? ' on' : '');
     const pn = document.createElement('span'); pn.className = 'nm'; pn.innerHTML = 'Signatera <span class="tag">' + esc(LAST.vendor || 'Natera') + ' · full page</span>';
@@ -494,8 +523,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
       G.appendChild(d);
     });
     if (NS.length) {   // Northstar Response: its own group (a different test), one panel
-      const N = window.section(S, 'mrd:ns', 'Northstar Response', NS.length + ' draws', true, 'grp', q);
-      panelBtns(N, 'Northstar Response panel', 'grp:mrd:ns', ['mrd:ns'], 'Northstar Response');
+      const N = groupHead(S, 'mrd:ns', 'Northstar Response', ['mrd:ns'], NS.length + ' draws', q);
       const d = document.createElement('div'); d.className = 't';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes('mrd:ns'); cb.setAttribute('aria-label', 'Compare ' + PANELS['mrd:ns'].title);
       cb.onclick = e => { e.stopPropagation(); setLabSel(['mrd:ns'], cb.checked); };
@@ -507,7 +535,7 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
       N.appendChild(d);
     }
   }
-  function open() { on = true; store.set('mrd.on', true); setMode('single'); }
+  function open() { if (!on) startAllele(); on = true; store.set('mrd.on', true); setMode('single'); }
 
   /* ---------- Find: step through the Signatera draws (⌖ in the Library), like the medications' Find bar ----------
      Each step moves the window to the draw (keeping its length, or 3 months when it is longer than 6), makes sure an
@@ -558,10 +586,10 @@ ${ADATES.length ? `<div class="card" data-r="var"></div>
   function render() { LIVE.forEach((f, k) => { if (k.endsWith('@page')) LIVE.delete(k); }); page(); }
   function close() { if (on) { on = false; store.set('mrd.on', false); } }
   /* display settings, saved in Panel presets (med_timeline.js viewNow/applyView) */
-  function getSettings() { return {mrd: {view, measure, log: logMode, hideNever}}; }
+  function getSettings() { return {mrd: {view, measure, log: logMode, hideNever, flagOn}}; }
   function setSettings(o) { const m = o && o.mrd; if (!m) return;
     if (m.view) { view = m.view; store.set('mrd.view', view); } if (m.measure) { measure = m.measure; store.set('mrd.measure', measure); }
-    if ('log' in m) { logMode = !!m.log; store.set('mrd.log', logMode); } if ('hideNever' in m) { hideNever = !!m.hideNever; store.set('mrd.hideNever', hideNever); }
-    refreshAll(); }
+    if ('log' in m) { logMode = !!m.log; store.set('mrd.log', logMode); } if ('hideNever' in m) { hideNever = !!m.hideNever; store.set('mrd.hideNever', hideNever); } if ('flagOn' in m) { flagOn = !!m.flagOn; store.set('mrd.flagOn', flagOn); }
+    otOn = sel.includes('mrd:ot'); refreshAll(); }
   return {has: true, isId: id => !!PANELS[id], active, section, getSettings, setSettings, render, close, panel, refresh, title: id => (PANELS[id] || {}).title || id, unit: id => (PANELS[id] || {}).unit || '', h0: id => H0[id] || 160};
 })();

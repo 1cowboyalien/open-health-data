@@ -1,10 +1,13 @@
 """Link-preview pictures (the card Messages, WhatsApp, Slack... show when someone sends a link) and the site icon.
 Plain title cards with a drawn timeline: no health data, no names, so they are safe for anyone who sees a link.
 serve_viewer.py serves them from preview/ and points each page's og:image at its card.
+A card made from a real photo (--photo) is health data, so it goes to the private local/preview/ (never committed);
+serve_viewer.py uses a card there ahead of the plain one in preview/.
 
 Usage: ../imaging/.venv/bin/python -I make_preview_cards.py      (needs Pillow; run again after changing a card)
+       ../imaging/.venv/bin/python -I make_preview_cards.py --photo slides local/pathology/b2023/full/her2_1_013.jpg
 """
-import os, math
+import os, sys, math
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +53,29 @@ def card(name, title, sub, seed):
     im.save(os.path.join(OUT, name + ".png"), optimize=True)
 
 
+def photo_card(name, title, sub, photo):
+    """the photo filling the card (cropped to 1200x630), a dark band at the bottom with the title; to local/preview/"""
+    W, H = 1200, 630
+    ph = Image.open(photo).convert("RGB")
+    k = max(W / ph.width, H / ph.height)
+    ph = ph.resize((round(ph.width * k), round(ph.height * k)), Image.LANCZOS)
+    x, y = (ph.width - W) // 2, (ph.height - H) // 2
+    im = ph.crop((x, y, x + W, y + H))
+    shade = Image.new("L", (W, H), 0)
+    sd = ImageDraw.Draw(shade)
+    for yy in range(H):
+        t = (yy - H * .42) / (H * .3)
+        sd.line([(0, yy), (W, yy)], fill=int(225 * max(0, min(1, t)) ** .8))
+    im = Image.composite(Image.new("RGB", (W, H), BG), im, shade)
+    d = ImageDraw.Draw(im)
+    d.text((60, H - 170), title, font=font(72, True), fill=INK)
+    d.text((62, H - 82), sub, font=font(34), fill=(205, 209, 216))
+    out = os.path.join(HERE, "local", "preview")
+    os.makedirs(out, exist_ok=True)
+    im.save(os.path.join(out, name + ".png"), optimize=True)
+    print("wrote", os.path.join(out, name + ".png"))
+
+
 def icon():
     for size, name in ((180, "icon-180.png"), (32, "icon-32.png")):
         s = 4 * size
@@ -65,6 +91,13 @@ def icon():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--photo"]:
+        name, photo = sys.argv[2], sys.argv[3]
+        title, sub = {"records": ("Health records timeline", "Labs, scans, treatments and notes on one shared timeline"),
+                      "slides": ("Pathology slides", "Microscope slide photos by hospital, slide and date"),
+                      "story": ("Tell your story", "Photos, memories and the records from that time")}[name]
+        photo_card(name, title, sub, photo)
+        sys.exit()
     os.makedirs(OUT, exist_ok=True)
     card("records", "Health records timeline", "Labs, scans, treatments and notes on one shared timeline", 0)
     card("slides", "Pathology slides", "Microscope slide photos by hospital, slide and date", 2)

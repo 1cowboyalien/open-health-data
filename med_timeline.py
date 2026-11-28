@@ -26,7 +26,7 @@ from datetime import date, timedelta
 GAP_DAYS = 45          # facility doses closer than this form one bar
 OPEN_END_DAYS = 30     # shown length of a home order with no end date
 FACILITY_ROUTES = re.compile(r"intraven|iv\b|subcut|intramusc|inject|infus|push|ivpb", re.I)
-HOME_CATS = re.compile(r"community|discharge|outpatient", re.I)
+HOME_CATS = re.compile(r"community|discharge|outpatient|home", re.I)   # "home": typed from paper records (flatten_meds.py)
 
 
 # Brand names are taken only from how the records name the drug: a word in brackets

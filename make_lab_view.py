@@ -1415,6 +1415,8 @@ if os.path.exists(img_json):
                 thumbs[f[:10]] = "data:image/jpeg;base64," + base64.b64encode(open(os.path.join(tdir, f), "rb").read()).decode()
     imgjs = ("const IMG_DATA=" + open(img_json).read().strip().replace("</", "<\\/") + ";\n"
              + "IMG_DATA.thumbs=" + json.dumps(thumbs) + ";\n"
+             # the 3D timelapse panel (Library → Imaging → Brain MRI) is offered only when phone_view.js and its model are on the page
+             + "IMG_DATA.phone3d=" + json.dumps(os.path.exists(os.path.join(os.path.dirname(out), "phone", "model.json"))) + ";\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_chips.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "projection_dates.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lesion_trends_view.js")).read() + "\n"

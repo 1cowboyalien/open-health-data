@@ -4,6 +4,7 @@
 // "between scans"); layer buttons: Lesions, Skin, Brain, Radiation (treated lesions / whole brain light amber), Gravity grid
 // (an illustration: a 3D lattice pulled toward each lesion by its size); dragging only turns the head (the turning starts again, easing in, 4 s after letting go).
 // Shown on phones (760 px and under) when the page opens without a #link; ?phone=1 shows it on any screen, ?phone=0 never.
+// The same 3D timelapse is also a panel, Library → Imaging → Brain MRI → 3D timelapse (imaging_view.js calls Brain3D.mount; no cards there).
 // The 3D model is local/phone/model.json (make_phone_model.py; face cut away), served by serve_viewer.py at /phone/model.json.
 // three.js comes from cdnjs, like Chart.js; no data is sent anywhere. Radiation dates come from IMG_DATA.dose (brain courses only).
 (function () {
@@ -19,54 +20,80 @@
 
   const css = document.createElement('style');
   css.textContent = `
-#phHome{position:fixed;inset:0;z-index:1000;background:#0b0d12;color:#eef2f8;display:flex;flex-direction:column;font:14px/1.4 -apple-system,system-ui,sans-serif;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
-#phHome .ph3d{position:relative;flex:1;min-height:0}#phHome canvas.g{position:absolute;inset:0;width:100%;height:100%;display:block}
-#phHome .top{flex:none;padding:calc(env(safe-area-inset-top) + 8px) 16px 2px;pointer-events:none}
-#phHome .kick{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#aab3c2;display:flex;justify-content:space-between;align-items:baseline}
-#phHome .date{font-size:21px;font-weight:700;letter-spacing:-.01em;line-height:1.2}#phHome .meta{color:#aab3c2;font-size:12.5px}
-#phHome .tags{min-height:18px;margin-top:2px}
-#phHome .tx{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:rgba(224,160,32,.18);color:#f0c060;visibility:hidden;margin-right:6px}
-#phHome .hint{font-size:10px;letter-spacing:0;text-transform:none;color:#7d8696;transition:opacity .3s}
-#phHome .layers{flex:none;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;touch-action:pan-x;padding:4px 10px 0}#phHome .layers::-webkit-scrollbar{display:none}
-#phHome .layers button{flex:none;font-size:10.5px;padding:2px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#aab3c2}
-#phHome .layers button.on{border-color:#4d8dff;background:rgba(77,141,255,.22);color:#fff}
-#phHome .gnote{flex:none;padding:3px 12px 0;font-size:10px;color:#c9a978;display:none}#phHome.grid .gnote{display:block}
-#phHome .vlab{font-size:10.5px;color:#e8c27a}
-#phHome .msg{position:absolute;left:0;right:0;top:45%;text-align:center;color:#aab3c2;font-size:13px;padding:0 24px}
-#phHome .sheet{flex:none;padding:6px 14px calc(env(safe-area-inset-bottom) + 12px);background:#0b0d12}
-#phHome .lbl .scl{font-size:10.5px;padding:0 7px;border-radius:9px;border:1px solid #3a4352;background:none;color:#aab3c2;margin-left:2px}
-#phHome .lbl{font-size:11px;color:#aab3c2;display:flex;justify-content:space-between;margin:0 4px 4px}
-#phHome .bars{position:relative;height:110px}#phHome .bars canvas{width:100%;height:100%;display:block}
-#phHome .cards{display:flex;gap:6px;overflow-x:auto;padding:6px 2px 2px;scrollbar-width:none;touch-action:pan-x}#phHome .cards::-webkit-scrollbar{display:none}
-#phHome .card{flex:none;display:flex;align-items:baseline;gap:5px;background:#141923;border:1px solid #232a36;border-radius:12px;padding:4px 10px;color:inherit;font:inherit;white-space:nowrap}
-#phHome .card b{font-size:11px;font-weight:500;color:#aab3c2}#phHome .card span{display:none}#phHome .card i{font-style:normal;font-size:12px;font-weight:650}
-#phHome .enter{display:block;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:0;background:#4d8dff;color:#fff;font-size:15px;font-weight:600}
-#phHome .note{font-size:10px;color:#6f7888;margin:6px 4px 0;line-height:1.3}
+#phHome{position:fixed;inset:0;z-index:1000;touch-action:none;overscroll-behavior:none}
+.phx{background:#0b0d12;color:#eef2f8;display:flex;flex-direction:column;font:14px/1.4 -apple-system,system-ui,sans-serif;-webkit-user-select:none;user-select:none}
+.phx.inpanel{position:relative;border-radius:8px;overflow:hidden}.phx.inpanel .ph3d{touch-action:pan-y}.phx.inpanel .sheet{padding-bottom:8px}
+.phx .ph3d{position:relative;flex:1;min-height:0}.phx canvas.g{position:absolute;inset:0;width:100%;height:100%;display:block}
+.phx .top{flex:none;padding:calc(env(safe-area-inset-top) + 8px) 16px 2px;pointer-events:none}
+.phx .kick{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#aab3c2;display:flex;justify-content:space-between;align-items:baseline}
+.phx .date{font-size:21px;font-weight:700;letter-spacing:-.01em;line-height:1.2}.phx .meta{color:#aab3c2;font-size:12.5px}
+.phx .tags{min-height:18px;margin-top:2px}
+.phx .tx{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:rgba(224,160,32,.18);color:#f0c060;visibility:hidden;margin-right:6px}
+.phx .hint{font-size:10px;letter-spacing:0;text-transform:none;color:#7d8696;transition:opacity .3s}
+.phx .layers{flex:none;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;touch-action:pan-x;padding:4px 10px 0}.phx .layers::-webkit-scrollbar{display:none}
+.phx .layers button{flex:none;font-size:10.5px;padding:2px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#aab3c2}
+.phx .layers button.on{border-color:#4d8dff;background:rgba(77,141,255,.22);color:#fff}
+.phx .gnote{flex:none;padding:3px 12px 0;font-size:10px;color:#c9a978;display:none}.phx.grid .gnote{display:block}
+.phx .vlab{font-size:10.5px;color:#e8c27a}
+.phx .msg{position:absolute;left:0;right:0;top:45%;text-align:center;color:#aab3c2;font-size:13px;padding:0 24px}
+.phx .sheet{flex:none;padding:6px 14px calc(env(safe-area-inset-bottom) + 12px);background:#0b0d12}
+.phx .lbl .scl{font-size:10.5px;padding:0 7px;border-radius:9px;border:1px solid #3a4352;background:none;color:#aab3c2;margin-left:2px}
+.phx .lbl{font-size:11px;color:#aab3c2;display:flex;justify-content:space-between;margin:0 4px 4px}
+.phx .bars{position:relative;height:110px}.phx .bars canvas{width:100%;height:100%;display:block}
+.phx .cards{display:flex;gap:6px;overflow-x:auto;padding:6px 2px 2px;scrollbar-width:none;touch-action:pan-x}.phx .cards::-webkit-scrollbar{display:none}
+.phx .card{flex:none;display:flex;align-items:baseline;gap:5px;background:#141923;border:1px solid #232a36;border-radius:12px;padding:4px 10px;color:inherit;font:inherit;white-space:nowrap}
+.phx .card b{font-size:11px;font-weight:500;color:#aab3c2}.phx .card span{display:none}.phx .card i{font-style:normal;font-size:12px;font-weight:650}
+.phx .enter{display:block;width:100%;margin-top:8px;padding:10px;border-radius:14px;border:0;background:#4d8dff;color:#fff;font-size:15px;font-weight:600}
+.phx .note{font-size:10px;color:#6f7888;margin:6px 4px 0;line-height:1.3}
 #phOpen{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);z-index:900;border-radius:20px;padding:7px 12px;font-size:13px;background:#0b0d12;color:#fff;border:1px solid #4d8dff;box-shadow:0 2px 10px rgba(0,0,0,.35)}`;
   document.head.appendChild(css);
 
   let el = null, stop = null;
   function open() {
     if (el) return;
-    el = document.createElement('div'); el.id = 'phHome';
-    el.innerHTML = `<div class="top"><div class="kick"><span>Brain MRI timelapse</span><span class="hint">☝︎ drag to turn · pinch to zoom</span></div>
- <div class="date">Loading…</div><div class="meta"></div><div class="tags"><span class="tx"></span><span class="vlab"></span></div></div>
- <div class="ph3d"><canvas class="g"></canvas></div>
- <div class="layers"></div><div class="gnote">Gravity grid: an illustration. Space is pulled toward each lesion by its size, like mass bending space. It is not measured brain shift.</div>
- <div class="sheet"><div class="lbl"><span>Lesion volume (mm³): each lesion · <b style="color:#fff">Total</b> · <button class="scl"></button></span><span class="vnow"></span></div>
- <div class="bars"><canvas></canvas></div><div class="cards"></div>
- <button class="enter">Explore the records →</button>
-</div>`;
+    el = document.createElement('div'); el.id = 'phHome'; el.className = 'phx';
+    el.innerHTML = ui(true);
     document.body.appendChild(el); document.documentElement.style.overflow = 'hidden';
     const ob = document.getElementById('phOpen'); if (ob) ob.style.display = 'none';
     el.querySelector('.enter').onclick = () => close();
     cards();
-    const fail = m => { if (el) { el.querySelector('.date').textContent = ''; const d = document.createElement('div'); d.className = 'msg'; d.textContent = m; el.querySelector('.ph3d').appendChild(d); } };
-    const three = window.THREE ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
-    Promise.all([three, fetch('/phone/model.json').then(r => { if (!r.ok) throw 0; return r.json(); })])
-      .then(([, M]) => { if (el) stop = run(el, M); })
-      .catch(() => fail('The 3D picture could not load here. Explore the records below.'));
+    const fail = m => { if (el) failIn(el, m); };
+    load().then(M => { if (el) stop = run(el, M); }).catch(() => fail('The 3D picture could not load here. Explore the records below.'));
   }
+  function ui(phone) {
+    return `<div class="top"><div class="kick"><span>Brain MRI timelapse</span><span class="hint">☝︎ drag to turn · ${phone || matchMedia('(hover: none)').matches ? 'pinch to zoom' : 'ctrl + scroll to zoom'}</span></div>
+ <div class="date">Loading…</div><div class="meta"></div><div class="tags"><span class="tx"></span><span class="vlab"></span></div></div>
+ <div class="ph3d"><canvas class="g"></canvas></div>
+ <div class="layers"></div><div class="gnote">Gravity grid: an illustration. Space is pulled toward each lesion by its size, like mass bending space. It is not measured brain shift.</div>
+ <div class="sheet"><div class="lbl"><span>Lesion volume (mm³): each lesion · <b style="color:#fff">Total</b> · <button class="scl"></button></span><span class="vnow"></span></div>
+ <div class="bars"><canvas></canvas></div>${phone ? `<div class="cards"></div>
+ <button class="enter">Explore the records →</button>` : ''}
+</div>`;
+  }
+  function failIn(root, m) { root.querySelector('.date').textContent = ''; const d = document.createElement('div'); d.className = 'msg'; d.textContent = m; root.querySelector('.ph3d').appendChild(d); }
+  // three.js (cdnjs) and the model are loaded once and shared by the start screen and the panel; a failed load can be tried again
+  let loading = null;
+  function load() {
+    if (!loading) {
+      const three = window.THREE ? Promise.resolve() : new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+      loading = Promise.all([three, fetch('/phone/model.json').then(r => { if (!r.ok) throw 0; return r.json(); })]).then(([, M]) => M);
+      loading.catch(() => { loading = null; });
+    }
+    // each run changes the scans it is given (adds totals and times), so every run gets its own copy
+    return loading.then(M => JSON.parse(JSON.stringify(M)));
+  }
+  // the panel (Library → Imaging → Brain MRI → 3D timelapse): the same timelapse in a box of the given height, no cards
+  const MOUNTS = new Map();
+  function mount(body, h) {
+    const prev = MOUNTS.get(body); if (prev) { prev(); MOUNTS.delete(body); }
+    body.innerHTML = '';
+    const box = document.createElement('div'); box.className = 'phx inpanel'; box.style.height = h + 'px'; box.innerHTML = ui(false); body.appendChild(box);
+    let stopIt = null, gone = false;
+    MOUNTS.set(body, () => { gone = true; if (stopIt) stopIt(); });
+    load().then(M => { if (!gone && box.isConnected) stopIt = run(box, M, true); })
+      .catch(() => failIn(box, 'The 3D picture could not load here.'));
+  }
+  window.Brain3D = {mount};
   function close() {
     if (stop) stop(); stop = null;
     if (el) el.remove(); el = null; document.documentElement.style.overflow = '';
@@ -96,7 +123,7 @@
   }
 
   // ---- the 3D timelapse ----
-  function run(root, M) {
+  function run(root, M, inPanel) {
     const T = window.THREE;
     M.scans.forEach(s => { s.tot = s.lesions.reduce((a, l) => a + l.enh, 0); s.t = ms(s.date); });
     const T0 = M.scans[0].t - 40 * DAY, T1 = M.scans[M.scans.length - 1].t + 40 * DAY;
@@ -326,9 +353,17 @@
       p.x = e.clientX; p.y = e.clientY; });
     const up = e => { P.delete(e.pointerId); pinch = 0; };
     wrap.addEventListener('pointerup', up); wrap.addEventListener('pointercancel', up);
-    wrap.addEventListener('wheel', e => { e.preventDefault(); dist = Math.max(dist0 * .45, Math.min(dist0 * 3, dist * (1 + e.deltaY * .001))); take(); }, {passive: false});
+    wrap.addEventListener('wheel', e => { if (inPanel && !e.ctrlKey) return;   // in the panel a plain scroll keeps scrolling the page; a pinch (ctrl + scroll) zooms
+      e.preventDefault(); dist = Math.max(dist0 * .45, Math.min(dist0 * 3, dist * (1 + e.deltaY * .001))); take(); }, {passive: false});
     const ro = new ResizeObserver(size); ro.observe(wrap); size();
-    function frame(now) { const dt = Math.min(.05, (now - lastNow) / 1000); lastNow = now;
+    // in the panel: draw only while the box is on screen, and stop for good once the panel is closed or redrawn
+    let vis = true, io = null;   // drawn until the observer first says the box is off screen
+    if (inPanel) { io = new IntersectionObserver(es => { if (!root.isConnected) { stopAll(); return; } const was = vis; vis = es[es.length - 1].isIntersecting; if (vis && !was && !raf) { lastNow = performance.now(); raf = requestAnimationFrame(frame); } }); io.observe(root); }
+    function frame(now) { raf = 0;
+      if (inPanel && !root.isConnected) { stopAll(); return; }
+      if (!vis) return;
+      if (inPanel && document.getElementById('phHome')) { lastNow = now; raf = requestAnimationFrame(frame); return; }   // the phone start screen covers the page: draw only that one
+      const dt = Math.min(.05, (now - lastNow) / 1000); lastNow = now;
       play += dt; if (play >= TOTAL) play = 0;
       place(); lesions(); text(); bars();
       if (auto) { spin = Math.min(1, spin + dt / 1.5); az += dt * .35 * spin; el += (0.18 - el) * dt * spin; }
@@ -337,7 +372,9 @@
       cam.position.set(C.x + dist * Math.cos(az) * ce, C.y + dist * Math.sin(az) * ce, ty + dist * Math.sin(el)); cam.lookAt(C.x, C.y, ty);
       dl.position.copy(cam.position); R.render(S, cam); raf = requestAnimationFrame(frame); }
     raf = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); S.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); R.dispose(); };
+    let stopped = false;
+    function stopAll() { if (stopped) return; stopped = true; cancelAnimationFrame(raf); raf = 0; if (io) io.disconnect(); ro.disconnect(); S.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); R.dispose(); }
+    return stopAll;
   }
 
   if (q === '1' || (q !== '0' && narrow && !location.hash)) open();

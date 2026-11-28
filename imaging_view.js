@@ -5,20 +5,23 @@
    so the panels get the same ⤒ ↑ ↓ ⤓ − + × controls and Compare stacking.
    Panels:  img:brain:dates  = every brain MRI as a point on the shared time axis
             img:brain:viewer = NiiVue slice viewer (axial/coronal/sagittal + 3D) with our lesion outlines L01…
+            img:brain:3d     = the phone start screen's 3D timelapse (phone_view.js, Brain3D.mount), when IMG_DATA.phone3d says its model exists
    Data: IMG_DATA = {brain_mri: [...], viewer_scans: [{date, t1c, labels, lesions:[{id,n,name,rgb,enh,axial,ras}], marks?:[{id,label,rgb,note,ras}] (plan points: a row under the lesions that moves the crosshair there),
           series?: [{key, label, short, file, badge, note, probe, labels?, lesions?, lesions_note?}], series_main?, perf?: [{key, label, file, note?}]}]}
           (series = other kinds of picture of that date; perf note = said beside the perfusion scale, e.g. a map we computed ourselves). */
 (() => {
   const ROWS = IMG_DATA.brain_mri;
   const SCANS = IMG_DATA.viewer_scans || [];
-  const ID = 'img:brain:dates', IDV = 'img:brain:viewer', IDL = 'img:brain:lesions', IDD = 'img:brain:dose', IDP = 'img:brain:perf', IDW = 'img:brain:swell';
+  const ID = 'img:brain:dates', IDV = 'img:brain:viewer', IDL = 'img:brain:lesions', IDD = 'img:brain:dose', IDP = 'img:brain:perf', IDW = 'img:brain:swell', ID3 = 'img:brain:3d';
   const LS = IMG_DATA.lesion_series || {lesions: [], reports: [], measured: [], treatments: [], scans: []};
   const PANELS = {[ID]: {title: 'Brain MRI · Scan dates', unit: ROWS.length + ' scans', h0: 190},
                   [IDV]: {title: 'Brain MRI · Slice viewer', unit: 'our lesion outlines', h0: 520},
                   [IDL]: {title: 'Brain MRI · Lesions over time', unit: 'our volumes (mm³) · trends · report sizes', h0: 380},
                   [IDD]: {title: 'Brain MRI · Radiation dose by lesion', unit: 'estimated', h0: 260},
                   [IDP]: {title: 'Brain MRI · Perfusion by lesion', unit: 'blood volume & flow · × normal brain', h0: 340},
-                  [IDW]: {title: 'Brain MRI · Swelling by lesion', unit: '% room vs the normal control MRI', h0: 360}};
+                  [IDW]: {title: 'Brain MRI · Swelling by lesion', unit: '% room vs the normal control MRI', h0: 360},
+                  [ID3]: {title: 'Brain MRI · 3D timelapse', unit: 'every scan · shapes blended between scans', h0: 640}};
+  const B3D = !!IMG_DATA.phone3d;   // the 3D model (local/phone/model.json) exists, so phone_view.js is on the page
   const SWELL = !!(window.LesionSwelling && IMG_DATA.swelling && IMG_DATA.swelling.rows.length);   // swelling_view.js (swelling / shrinkage per lesion)
   const PERF = !!(window.LesionPerfusion && IMG_DATA.perfusion && IMG_DATA.perfusion.rows.length);   // perfusion_view.js (blood flow / volume per lesion)
   const DOSE = IMG_DATA.dose;   // radiation dose (imaging/radiation_dose), or null. ESTIMATED, except the maps and courses the data file marks `real`: a hospital's own dose file
@@ -1226,6 +1229,13 @@
     body.append(note);
   }
 
+  /* ================= 3D timelapse (the phone start screen in a panel; phone_view.js is loaded after this file) ================= */
+  function draw3D(id, body, tries = 0) {
+    if (window.Brain3D) return window.Brain3D.mount(body, hOf(id, PANELS[id].h0));
+    if (!body.firstChild) body.textContent = 'Loading the 3D timelapse…';
+    if (tries < 100 && body.isConnected) setTimeout(() => draw3D(id, body, tries + 1), 50);
+  }
+
   /* ================= plug into the viewer's hooks (same object the MRD panels use) ================= */
   const o = {isId: MRD.isId, title: MRD.title, unit: MRD.unit, h0: MRD.h0, panel: MRD.panel, refresh: MRD.refresh, section: MRD.section};
   const mine = id => typeof id === 'string' && id.startsWith('img:');
@@ -1233,8 +1243,8 @@
   MRD.title = id => mine(id) ? PANELS[id].title : o.title(id);
   MRD.unit = id => mine(id) ? (id === IDV && V.scan ? fd(V.scan.date) + (V.scan.sim ? ' · simulated ' + fd(V.scan.sim.date) : '') : PANELS[id].unit) : o.unit(id);
   MRD.h0 = id => mine(id) ? PANELS[id].h0 : o.h0(id);
-  MRD.panel = (id, body) => { if (!mine(id)) return o.panel(id, body); BODIES.set(id, body); (id === IDV ? drawViewer : id === IDL ? drawLesions : id === IDD ? drawDose : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, body); };
-  MRD.refresh = id => { if (!mine(id)) return o.refresh(id); if (id === IDV || id === IDD) return;   // the slice viewer doesn't follow the time window
+  MRD.panel = (id, body) => { if (!mine(id)) return o.panel(id, body); BODIES.set(id, body); (id === IDV ? drawViewer : id === ID3 ? draw3D : id === IDL ? drawLesions : id === IDD ? drawDose : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, body); };
+  MRD.refresh = id => { if (!mine(id)) return o.refresh(id); if (id === IDV || id === IDD || id === ID3) return;   // the slice viewer and the 3D timelapse don't follow the time window
     const b = BODIES.get(id); if (b && b.isConnected) (id === IDL ? drawLesions : id === IDP ? window.LesionPerfusion.draw : id === IDW ? window.LesionSwelling.draw : drawDates)(id, b); };
 
   /* one Projection switch for the imaging panels (projection_dates.js): when it changes, redraw the panels that draw a projection */
@@ -1243,9 +1253,9 @@
   /* Library: Imaging → Brain MRI → Scan dates / Slice viewer */
   MRD.section = (el, q) => {
     o.section(el, q);
-    if (q && !'imaging brain mri scans slice viewer lesions over time radiation dose perfusion blood flow volume swelling shrinkage displacement bent grid projection future'.includes(q)) return;
+    if (q && !'imaging brain mri scans slice viewer lesions over time radiation dose perfusion blood flow volume swelling shrinkage displacement bent grid projection future 3d timelapse head phone'.includes(q)) return;
     const S = section(el, 'img', 'Imaging', '1 group', true, 'sec', q);
-    const ids = [ID, IDL, IDV].concat(DOSE ? [IDD] : [], PERF ? [IDP] : [], SWELL ? [IDW] : []), k = ids.filter(i => sel.includes(i)).length;
+    const ids = [ID, IDL, IDV].concat(B3D ? [ID3] : [], DOSE ? [IDD] : [], PERF ? [IDP] : [], SWELL ? [IDW] : []), k = ids.filter(i => sel.includes(i)).length;
     const G = section(S, 'img:brain', 'Brain MRI', k ? k + '/' + ids.length : ROWS.length + ' scans', true, 'grp', q);
     // All / None / Only on the Imaging heading and the Brain MRI group (same buttons and behaviour as Vitals)
     [[S, 'grp:Imaging', 'Imaging', 'imaging panel'], [G, 'grp:img:brain', 'Brain MRI', 'brain MRI panel']].forEach(([D, key, label, what]) => { const s = D.firstChild;
@@ -1265,6 +1275,7 @@
     row(ID, 'Scan dates', ROWS.length + ' · ' + ROWS.filter(r => !r.images).length + ' no images', 'Every brain MRI as a point on the timeline');
     row(IDL, 'Lesions over time', LS.lesions.length + ' lesions · ' + LS.scans.length + ' reports', 'Each lesion (L01…): our measured volumes with trends and doubling times, plus what every report said (timeline, sizes, grid); treatments marked');
     row(IDV, 'Slice viewer', SCANS.length + ' measured', 'Scroll through a scan in 3 planes + 3D with our lesion outlines (L01…); layers: radiation dose, perfusion, swelling (colour or bent grid); brightness matched across dates; simulate a future scan');
+    if (B3D) row(ID3, '3D timelapse', SCANS.length + ' scans', 'The phone start screen in a panel: a turning glass head with the lesions playing through every scan (shapes blended between scans), vessels, eyes and vision pathway, radiation; drag to turn');
     if (DOSE) row(IDD, 'Radiation dose by lesion', DOSE_TAG, DOSE_REAL ? 'Radiation dose each lesion received, split by course (stacked bars); estimated, except a course marked dose file' : 'Estimated radiation dose each lesion received, split by course (stacked bars)');
     if (SWELL) row(IDW, 'Swelling by lesion', IMG_DATA.swelling.totals.length + ' scans', 'How much more (swollen) or less (shrunk) room the brain around each lesion takes than on the normal control MRI, over time (flexible-fit estimate); the map itself is a layer in the Slice viewer');
     if (PERF) row(IDP, 'Perfusion by lesion', new Set(IMG_DATA.perfusion.rows.map(r => r.date)).size + ' scans', 'Blood volume (rCBV) and blood flow (ASL) inside each lesion, compared with normal or nearby brain; the maps themselves are a layer in the Slice viewer');

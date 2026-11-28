@@ -563,6 +563,13 @@
         const setVT = (keys, show) => { keys.forEach(k => show ? vtOff.delete(k) : vtOff.add(k)); store.set('proc.vtOff', [...vtOff]); redrawAll(); };
         s0.insertBefore(miniBtn('All', 'Show every kind of visit', () => setVT(VT.map(v => v.key), true)), s0.lastChild);
         s0.insertBefore(miniBtn('None', 'Hide every kind of visit', () => setVT(VT.map(v => v.key), false)), s0.lastChild);
+        { const lo = store.get('proc.laneOnly', null), on = !!(lo && lo.key === 'visit');
+          const b = groupOnlyBtn('visit lane', 'lane:visit', [], on, false, () => {
+            if (on) { hidden = new Set(lo.prev.filter(k => LK.includes(k))); store.set('proc.laneOnly', null); }
+            else { store.set('proc.laneOnly', {key: 'visit', prev: [...hidden]}); hidden = new Set(LK.filter(k => k !== 'visit')); }
+            saveLanes(); redrawAll(); list(); });
+          b.title = on ? 'Turn off "only" and bring back the other lanes' : 'Show only the outpatient visits on the Procedures timeline (hide the other lanes)';
+          s0.insertBefore(b, s0.lastChild); }
         VT.forEach(v => { const cnt = VISITS.filter(x => x.sub === v.key).length; if (!cnt) return;
           const d = document.createElement('div'); d.className = 't';
           const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !vtOff.has(v.key); cb.title = 'Show these visits on the timeline';

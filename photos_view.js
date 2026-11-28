@@ -45,6 +45,12 @@
   const tOf = it => ms(String(it.t).slice(0, 10));
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const S = Object.assign({chapter: '', win: false, size: 130, stories: false}, store.get('photo.view', {}));
+  /* S.chapter: '' = every chapter, a title = one chapter, a list of titles = the chapters ticked in the Library */
+  const CHS = () => CH.filter(c => ALL.some(i => i.chapter === c.title)).map(c => c.title);
+  if (Array.isArray(S.chapter)) { S.chapter = S.chapter.filter(t => CHS().includes(t)); if (S.chapter.length === 1) S.chapter = S.chapter[0]; }
+  const inCh = t => !S.chapter || [].concat(S.chapter).includes(t);
+  const chPicks = () => S.chapter ? [].concat(S.chapter) : CHS();
+  const setChPicks = ts => { const ks = CHS().filter(t => ts.includes(t)); S.chapter = ks.length === CHS().length ? '' : ks.length === 1 ? ks[0] : ks; };
   const saveS = () => store.set('photo.view', S);
   let graphic = !!store.get('photo.graphic', false);
   const isG = it => it.level === 'graphic';
@@ -198,8 +204,8 @@
     body.innerHTML = '';
     const bar = document.createElement('div'); bar.className = 'photoBar';
     const sel_ = document.createElement('select'); sel_.setAttribute('aria-label', 'Chapter');
-    sel_.innerHTML = '<option value="">All chapters</option>' + CH.filter(c => ALL.some(i => i.chapter === c.title)).map(c => '<option' + (S.chapter === c.title ? ' selected' : '') + '>' + esc(c.title) + '</option>').join('');
-    sel_.onchange = () => { S.chapter = sel_.value; saveS(); galScroll = 0; drawGallery(id, body); };
+    sel_.innerHTML = '<option value="">All chapters</option>' + (Array.isArray(S.chapter) ? '<option value="__picks" selected>' + (S.chapter.length ? S.chapter.length + ' chapters (ticked in the Library)' : 'No chapter ticked') + '</option>' : '') + CH.filter(c => ALL.some(i => i.chapter === c.title)).map(c => '<option' + (S.chapter === c.title ? ' selected' : '') + '>' + esc(c.title) + '</option>').join('');
+    sel_.onchange = () => { if (sel_.value === '__picks') return; S.chapter = sel_.value; saveS(); galScroll = 0; drawGallery(id, body); };
     const tog = (label, key, tip) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'photoTog' + (S[key] ? ' on' : ''); b.textContent = label; b.title = tip;
       b.setAttribute('aria-pressed', !!S[key]); b.onclick = () => { S[key] = !S[key]; saveS(); galScroll = 0; drawGallery(id, body); }; return b; };
     const size = document.createElement('input'); size.type = 'range'; size.min = 80; size.max = 260; size.value = S.size; size.title = 'Picture size'; size.setAttribute('aria-label', 'Picture size');
@@ -219,11 +225,13 @@
     body.append(note);
     const box = document.createElement('div'); box.className = 'photoScroll'; box.style.height = hOf(id, PANELS[id].h0) + 'px'; body.append(box);
     const POOL = showHidden ? EVERY.filter(i => HID.has(i.id)) : TL;
-    let its = POOL.filter(i => (!S.chapter || i.chapter === S.chapter) && (!S.win || (tOf(i) >= W.a && tOf(i) <= W.b)) && (!S.stories || nStories(i)));
+    let its = POOL.filter(i => inCh(i.chapter) && (!S.win || (tOf(i) >= W.a && tOf(i) <= W.b)) && (!S.stories || nStories(i)));
     if (edit) { const n = document.createElement('div'); n.className = 'photoEditNote';
       n.textContent = showHidden ? 'Photos taken off the website. "Restore" puts one back.' :
         'Editing: every photo is shown, graphic ones too. "Hide" takes a photo off the website for everyone; the original is never touched. Changes are saved at once.';
       body.insertBefore(n, box); }
+    if (Array.isArray(S.chapter) && !S.chapter.length) { const n = document.createElement('div'); n.className = 'sub'; n.style.padding = '10px';
+      n.textContent = 'No chapter is ticked. Tick chapters in the Library, or choose "All chapters" above.'; box.append(n); }
     if (!S.chapter && !S.win && !S.stories && !showHidden && INTRO.length) {
       const sec = document.createElement('section'); sec.className = 'photoSec';
       sec.innerHTML = '<h3>Before &amp; after</h3>';
@@ -392,10 +400,20 @@
       d.append(cb, nm, n); d.onclick = onName || (() => { cb.checked = !cb.checked; onTick(cb.checked); }); return d; };
     SEC.append(row('Photos over time', TL.length, 'Small pictures on the time axis, lined up with every chart', sel.includes(IDS), v => setLabSel([IDS], v)));
     SEC.append(row('Gallery', ALL.length, 'Every photo and video by chapter and month; click one to open it, with its date and the stories told about it', sel.includes(IDG), v => setLabSel([IDG], v)));
-    const G = section(SEC, 'photo:ch', 'Chapters', CH.filter(c => ALL.some(i => i.chapter === c.title)).length, false, 'grp', q);
+    /* chapter ticks choose which chapters the Gallery shows (several at once); the name opens the gallery at just that chapter */
+    const shownC = () => sel.includes(IDG), nCh = CHS().length;
+    const showChs = ts => { setChPicks(ts); S.win = false; saveS(); if (!sel.includes(IDG)) setLabSel([IDG], true); else { redrawAll(); list(); } };
+    const kc = shownC() ? CHS().filter(inCh).length : 0;
+    const G = section(SEC, 'photo:ch', 'Chapters', (kc ? kc + '/' : '') + nCh, false, 'grp', q);
     CH.filter(c => ALL.some(i => i.chapter === c.title)).forEach(c => { const n = ALL.filter(i => i.chapter === c.title).length;
-      const open = () => { S.chapter = c.title; S.win = false; saveS(); if (!sel.includes(IDG)) setLabSel([IDG], true); else redrawAll(); };
-      G.append(row(c.title, n, (c.about || c.title) + '\nClick: open the gallery at this chapter', sel.includes(IDG) && S.chapter === c.title, v => { if (v) open(); else { S.chapter = ''; saveS(); redrawAll(); } }, open)); });
+      const open = () => { S.chapter = c.title; S.win = false; saveS(); if (!sel.includes(IDG)) setLabSel([IDG], true); else { redrawAll(); list(); } };
+      G.append(row(c.title, n, (c.about || c.title) + '\nTick: show this chapter in the Gallery (tick several to see them together)\nClick the name: open the gallery at just this chapter', shownC() && inCh(c.title),
+        v => { const base = shownC() ? chPicks() : []; showChs(v ? base.concat(c.title) : base.filter(t => t !== c.title)); }, open)); });
+    { const gs = G.firstChild, add = b => gs.insertBefore(b, gs.lastChild), gkey = 'grp:photo:ch';
+      add(miniBtn('All', 'Tick every chapter', () => showChs(CHS())));
+      add(miniBtn('None', 'Untick every chapter', () => showChs([])));
+      add(groupOnlyBtn('Gallery', gkey, [IDG], soloLab && soloLab.key === gkey, false, () => onlyLab(gkey, [IDG], 'Gallery')));
+      gs.lastChild.previousSibling.title = soloLab && soloLab.key === gkey ? 'Turn off "only" and bring back the earlier selection' : 'Show only the Gallery, with the chapters ticked here'; }
   };
 
   const saved = store.get('selected', []);

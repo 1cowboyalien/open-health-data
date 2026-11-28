@@ -72,12 +72,12 @@
     fit(); if (RO) RO.disconnect(); if (window.ResizeObserver) { RO = new ResizeObserver(fit); RO.observe(wrap); }
     body.querySelectorAll('[data-o]').forEach(cb => cb.onchange = () => { V[cb.dataset.o] = cb.checked; save(); redraw(); });
     body.querySelector('[data-all]').onclick = () => {
-      V.open = V.open.length ? [] : Array.from(body.querySelectorAll('.dec-c')).map(c => c.dataset.k); save(); redraw(); };
+      V.open = V.open.length ? [] : Array.from(body.querySelectorAll('.dec-c')).map(c => c.dataset.k); save(); redraw(); list(); };
     body.querySelectorAll('.dec-c').forEach(c => {
       const tog = e => { if (e.target.closest('.dec-x')) return; const k = c.dataset.k;
         V.open = V.open.includes(k) ? V.open.filter(x => x !== k) : V.open.concat(k); save();
         c.classList.toggle('on'); c.setAttribute('aria-expanded', c.classList.contains('on'));
-        const b = body.querySelector('[data-all]'); if (b) b.textContent = V.open.length ? 'Close all' : 'Open all'; };
+        const b = body.querySelector('[data-all]'); if (b) b.textContent = V.open.length ? 'Close all' : 'Open all'; list(); };
       c.onclick = tog; c.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tog(e); } };
     });
   }
@@ -99,7 +99,7 @@
     if (q && !hay.includes(q)) return;
     const nb = D.steps.reduce((n, s) => n + s.br.filter(b => b.k !== 'supp').length, 0);
     const SEC = section(el, 'dec', D.title, D.steps.length + ' steps', false, 'sec', q), s0 = SEC.firstChild;
-    s0.insertBefore(groupOnlyBtn(D.title + ' panel', 'grp:dec', [ID], soloLab && soloLab.key === 'grp:dec', false, () => onlyLab('grp:dec', [ID], D.title)), s0.lastChild);
+    panelBtns(SEC, D.title + ' panel', 'grp:dec', [ID], D.title);
     const d = document.createElement('div'); d.className = 't';
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sel.includes(ID); cb.setAttribute('aria-label', 'Show ' + D.title);
     cb.onclick = e => { e.stopPropagation(); setLabSel([ID], cb.checked); };
@@ -119,17 +119,32 @@
     years.forEach(Y => {
       const steps = D.steps.map((r, i) => ({r, i})).filter(x => yr(x.r) === Y);
       const n = steps.reduce((m, x) => m + 1 + x.r.br.length, 0);
-      const S = section(SEC, 'dec:' + Y, Y, n + ' items', false, 'grp', q);
+      /* tick = that box is open in the panel (its summary, quote, who and sources showing); All / None / Only per year */
+      const yk = steps.flatMap(({r, i}) => [key(i)].concat(r.br.map((b, j) => key(i, j)))), shownD = () => sel.includes(ID);
+      const kOpen = shownD() ? yk.filter(k => V.open.includes(k)).length : 0;
+      const setOpen = (ks, on) => { V.open = on ? V.open.concat(ks.filter(k => !V.open.includes(k))) : V.open.filter(k => !ks.includes(k)); save();
+        if (!shownD()) setLabSel([ID], true); else { redraw(); list(); } };
+      const S = section(SEC, 'dec:' + Y, Y, (kOpen ? kOpen + '/' : '') + n + ' items', false, 'grp', q);
       steps.forEach(({r, i}) => {
         const add = (o, k, kind, sub) => { const e = document.createElement('div'); e.className = 't';
-          e.title = (o.date ? o.date + ': ' : '') + o.t + (o.s ? '\n' + o.s : '') + '\nClick: open this box in the panel';
+          e.title = (o.date ? o.date + ': ' : '') + o.t + (o.s ? '\n' + o.s : '') + '\nTick: open this box in the panel (tick several to read them together)\nClick the name: open it and scroll to it';
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = shownD() && V.open.includes(k); cb.setAttribute('aria-label', 'Open ' + o.t);
+          cb.onclick = ev => { ev.stopPropagation(); if (cb.checked && kind === 'supp' && !V.supp) V.supp = true; setOpen([k], cb.checked); };
           const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = (sub ? '↳ ' : '') + o.t + (KS[kind] || '');
           if (sub) nm.style.paddingLeft = '12px';
           const c = document.createElement('span'); c.className = 'n'; c.textContent = String(o.date).replace(/\/\d{4}$/, '');
-          e.append(nm, c); e.onclick = () => focus(k, kind === 'supp'); S.append(e); };
+          e.append(cb, nm, c); e.onclick = () => focus(k, kind === 'supp'); S.append(e); };
         add(r, key(i), r.k === 'open' ? 'open' : 'taken', false);
         r.br.forEach((b, j) => add(b, key(i, j), b.k, true));
       });
+      const ys = S.firstChild, put = b => ys.insertBefore(b, ys.lastChild), gkey = 'grp:dec:' + Y;
+      const ySupp = steps.some(({r}) => r.br.some(b => b.k === 'supp'));
+      put(miniBtn('All', 'Open every ' + Y + ' box in the panel' + (ySupp ? ' (shows the supportive-care boxes too)' : ''), () => { if (ySupp) V.supp = true; setOpen(yk, true); }));
+      put(miniBtn('None', 'Close every ' + Y + ' box in the panel', () => setOpen(yk, false)));
+      put(groupOnlyBtn(D.title + ' panel', gkey, [ID], soloLab && soloLab.key === gkey, false, () => {
+        if (!(soloLab && soloLab.key === gkey)) { V.open = yk.slice(); save(); }
+        onlyLab(gkey, [ID], D.title + ' · ' + Y); }));
+      ys.lastChild.previousSibling.title = soloLab && soloLab.key === gkey ? 'Turn off "only" and bring back the earlier selection' : 'Show only the ' + D.title + ' panel, with just the ' + Y + ' boxes open';
     });
   };
 

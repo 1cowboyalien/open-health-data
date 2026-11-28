@@ -145,6 +145,8 @@ function medSection(el,q){const groups=medGroups().map(g=>({cls:g.cls,drugs:g.dr
  const allNames=groups.flatMap(g=>g.drugs.map(d=>d.drug)),ms=M.firstChild;
  ms.insertBefore(miniBtn('None','Untick every medication',()=>setMedSel(allNames,false)),ms.lastChild);
  ms.insertBefore(miniBtn('All','Tick every medication',()=>setMedSel(allNames,true)),ms.lastChild.previousSibling);
+ {const on=soloLab&&soloLab.key==='grp:meds';ms.insertBefore(groupOnlyBtn('medication','grp:meds',[],on,false,()=>{if(!on)txReveal();onlyLab('grp:meds',[],'Medications')}),ms.lastChild);
+  ms.lastChild.previousSibling.title=on?'Turn off "only" and bring back the earlier selection':'Show only the Treatment panel with the ticked medications (hide the chart panels)'}
  groups.forEach(g=>{const names=g.drugs.map(d=>d.drug),k=names.filter(d=>txSel.includes(d)).length;
   const G=section(M,'med:'+g.cls,g.cls,k?k+'/'+names.length:names.length,k>0,'grp',q);
   const all=document.createElement('input');all.type='checkbox';all.checked=k===names.length;all.indeterminate=k>0&&k<names.length;
@@ -382,7 +384,9 @@ function momentSection(el,q){migratePresets();const P=section(el,'presets','Pres
 function keyframeGroup(P,q){const all=(E.moments||[]).filter(m=>!q||(m.title+' '+(m.group||'')+' '+(m.note||'')).toLowerCase().includes(q)||'keyframes moments presets'.includes(q));
  const k0=all.filter(momentOn).length;const S=section(P,'moments','Keyframes',(E.moments||[]).length?k0+'/'+all.length:'none yet',true,'grp',q),ss=S.firstChild,ids=all.map(m=>m.id);
  {const ma=miniBtn('+ Add','Add a keyframe',()=>openMoment(null));ma.classList.add('madd');ss.insertBefore(ma,ss.lastChild)}
- if(all.length){ss.insertBefore(miniBtn('All','Show every keyframe',()=>setMomentsOn(ids,true)),ss.lastChild);ss.insertBefore(miniBtn('None','Hide every keyframe',()=>setMomentsOn(ids,false)),ss.lastChild)}
+ if(all.length){ss.insertBefore(miniBtn('All','Show every keyframe',()=>setMomentsOn(ids,true)),ss.lastChild);ss.insertBefore(miniBtn('None','Hide every keyframe',()=>setMomentsOn(ids,false)),ss.lastChild);
+  ss.insertBefore(groupOnlyBtn('keyframe','grp:kf',[],soloLab&&soloLab.key==='grp:kf',false,()=>onlyLab('grp:kf',[],'Keyframes')),ss.lastChild);
+  ss.lastChild.previousSibling.title=soloLab&&soloLab.key==='grp:kf'?'Turn off "only" and bring back the earlier selection':'Show only the keyframes (hide the chart panels; the Keyframes track and Treatment panel stay)'}
  const groups={};all.forEach(m=>(groups[m.group||'Ungrouped']=groups[m.group||'Ungrouped']||[]).push(m));
  Object.keys(groups).sort((a,b)=>a==='Ungrouped'?1:b==='Ungrouped'?-1:a.localeCompare(b)).forEach(g=>{const ms_=groups[g].sort((a,b)=>(momentT(a)??9e15)-(momentT(b)??9e15)),gid=ms_.map(m=>m.id),k=ms_.filter(momentOn).length;
   const G=section(S,'mom:'+g,g,k+'/'+ms_.length,true,'grp',q),gs=G.firstChild;

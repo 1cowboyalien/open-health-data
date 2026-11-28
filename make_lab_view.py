@@ -616,9 +616,9 @@ function panelBtns(D,what,key,ids,label,opt){opt=opt||{};const s=D.firstChild,ad
  add(groupOnlyBtn(what,key,ids,soloLab&&soloLab.key===key,!!(soloLab&&soloLab.key!==key&&soloLab.ids.length===1&&ids.includes(soloLab.ids[0])),()=>onlyLab(key,ids,label)))}
 /* the pills at the top: "Only: <name> ✕" for labs and for medications */
 function soloBarRender(){const el=$('soloBar');el.innerHTML='';
- const pill=(what,name,off)=>{const p=document.createElement('span');p.className='solo';const t=document.createElement('span');t.textContent='Only '+what+': '+name;t.title=t.textContent;
+ const pill=(what,name,off)=>{const p=document.createElement('span');p.className='solo';const t=document.createElement('span');t.textContent=(what?'Only '+what+': ':'Only: ')+name;t.title=t.textContent;
   const b=document.createElement('button');b.textContent='✕ Show all again';b.title='Turn off "only" and bring back the earlier selection';b.onclick=off;p.append(t,b);el.appendChild(p)};
- if(soloLab)pill(soloLab.key.startsWith('grp:')?'lab group':'lab',soloLab.label,endSoloLab);
+ if(soloLab){const labs=soloLab.ids.length&&soloLab.ids.every(id=>BYID[id]);pill(!labs?'':soloLab.key.startsWith('grp:')?'lab group':'lab',soloLab.label,endSoloLab)}
  if(typeof soloMed!=='undefined'&&soloMed)pill(soloMed.key.startsWith('grp:')?'medication group':'medication',soloMed.label,endSoloMed)}
 function list(){const q=$('q').value.toLowerCase();const el=$('list');el.innerHTML='';sectionIds=[];
  const groups={};D.tests.forEach(t=>{if(t.kind==='vital'||(q&&!labSearch(t).includes(q)))return;(groups[t.panel]=groups[t.panel]||[]).push(t)});

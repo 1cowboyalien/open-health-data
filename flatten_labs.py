@@ -9,6 +9,7 @@ Usage:
 - Duplicates (the same result present in two systems, e.g. shared via Care Everywhere)
   are merged: same test (LOINC, or name when there's no LOINC), same collection
   minute and same value. The kept row lists every site it came from in `source`.
+Also adds results typed from paper records in local/labs_manual*.tsv (same columns).
 Output stays private in local/ (git-ignored).
 """
 import csv
@@ -206,6 +207,14 @@ for site, d in sorted(latest.items()):
     rows = flatten(site, d)
     per_site[site] = len(rows)
     all_rows += rows
+
+# Results typed from paper records (e.g. a handwritten office chart or a faxed lab report):
+# local/labs_manual*.tsv, same columns as the output, each row with its own source.
+for mf in sorted(glob.glob(os.path.join(os.path.dirname(out) or ".", "labs_manual*.tsv"))):
+    for r in csv.DictReader(open(mf), delimiter="\t"):
+        r["collected_at"] = r.get("collected_at") or r["date"]   # date only: keep each day apart when merging
+        all_rows.append({c: r.get(c, "") for c in COLS})
+        per_site[r["source"]] += 1
 
 parse_text_numbers(all_rows)
 apply_concepts(all_rows)

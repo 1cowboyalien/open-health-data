@@ -10,6 +10,7 @@ Usage:
   are skipped.
 - Readings present at two sites (same measurement, minute and value) are merged; the kept
   row lists every site in `source`, as in flatten_labs.py.
+Also adds readings typed from paper records in local/vitals_manual*.tsv (same columns).
 Output stays private in local/ (git-ignored). make_lab_view.py shows it as the "Vitals" section.
 """
 import csv
@@ -82,6 +83,15 @@ for site, d in sorted(latest.items()):
     rows = flatten(site, d)
     per_site[site] = len(rows)
     all_rows += rows
+
+# Readings typed from paper records (e.g. a handwritten office chart): local/vitals_manual*.tsv,
+# same columns as the output, each row with its own source. A blood pressure is two rows
+# (BP systolic + BP diastolic) sharing one result_id.
+for mf in sorted(glob.glob(os.path.join(os.path.dirname(out) or ".", "vitals_manual*.tsv"))):
+    for r in csv.DictReader(open(mf), delimiter="\t"):
+        r["collected_at"] = r.get("collected_at") or r["date"]   # date only: keep each day apart when merging
+        all_rows.append({c: r.get(c, "") for c in COLS})
+        per_site[r["source"]] += 1
 
 merged, seen = [], {}
 for r in sorted(all_rows, key=lambda x: (x["collected_at"], x["source"])):

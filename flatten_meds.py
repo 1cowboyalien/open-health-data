@@ -15,6 +15,8 @@ Usage:
 - Medications you entered in the lab viewer and exported to local/med_edits.json are added
   as rows with source "you" (request_id "user:<id>"). Bar corrections and dose marks from that
   file are not copied here; they stay in med_edits.json and are applied by the viewer.
+- Medications typed from paper records (local/meds_manual*.json, same shape plus "source")
+  are added with that source and request_id "manual:<id>".
 - Orders whose medication is a placeholder ("Generic External Medication" etc.) are
   flagged in `name_placeholder`; their real drug is not in the data we have.
 Output stays private in local/ (git-ignored).
@@ -273,27 +275,38 @@ for site, d in sorted(latest.items()):
     per_site[site], disp_site[site] = len(rows), len(disp)
     all_rows += rows
     disp_rows += disp
-edits_file = os.path.join(os.path.dirname(out) or ".", "med_edits.json")
-user_rows = []
+def entered_row(m, source="you", how="entered by you", prefix="user:"):
+    """One row for a medication entered by hand (viewer edits, or typed from paper records)."""
+    num = re.match(r"\s*([\d.]+)\s*(.*)$", m.get("dose", "") or "")
+    sched = "" if m.get("prn") else f"{m.get('perDay', 1)}/day every {m.get('every', 1)} day(s)" + \
+        (f", {m['on']} on / {m['off']} off" if m.get("on") else "")
+    return ({c: "" for c in COLS} | {
+        "date": m["a"], "source": source, "drug": m["drug"].lower(), "drug_class": m.get("cls", "other"),
+        "drug_name_original": m["drug"],
+        "dose_value": num.group(1) if num else "", "dose_unit": num.group(2) if num else "",
+        "dosage_text": "; ".join(dict.fromkeys(x for x in (
+            m.get("dose", ""), m.get("freq", ""), sched, "as needed" if m.get("prn") else "", m.get("note", ""),
+            "dates given: " + ",".join(m["given"]) if m.get("given") else "") if x)),
+        "route": m.get("route", ""), "frequency": m.get("freq", ""), "as_needed": "yes" if m.get("prn") else "",
+        "start": m["a"], "end": m.get("b", ""), "start_end_from": m.get("start_end_from", how),
+        "status": m.get("status", ""), "intent": how,
+        "category": "home" if m.get("setting") == "home" else "hospital/clinic",
+        "request_id": prefix + m["id"]})
+
+
+local_dir = os.path.dirname(out) or "."
+edits_file = os.path.join(local_dir, "med_edits.json")
 if os.path.exists(edits_file):
-    for m in json.load(open(edits_file)).get("added", []):
-        num = re.match(r"\s*([\d.]+)\s*(.*)$", m.get("dose", "") or "")
-        sched = "" if m.get("prn") else f"{m.get('perDay', 1)}/day every {m.get('every', 1)} day(s)" + \
-            (f", {m['on']} on / {m['off']} off" if m.get("on") else "")
-        user_rows.append({c: "" for c in COLS} | {
-            "date": m["a"], "source": "you", "drug": m["drug"].lower(), "drug_class": m.get("cls", "other"),
-            "drug_name_original": m["drug"],
-            "dose_value": num.group(1) if num else "", "dose_unit": num.group(2) if num else "",
-            "dosage_text": "; ".join(dict.fromkeys(x for x in (
-                m.get("dose", ""), m.get("freq", ""), sched, "as needed" if m.get("prn") else "", m.get("note", ""),
-                "dates given: " + ",".join(m["given"]) if m.get("given") else "") if x)),
-            "route": m.get("route", ""), "frequency": m.get("freq", ""), "as_needed": "yes" if m.get("prn") else "",
-            "start": m["a"], "end": m.get("b", ""), "start_end_from": "entered by you",
-            "status": m.get("status", ""), "intent": "entered by you",
-            "category": "home" if m.get("setting") == "home" else "hospital/clinic",
-            "request_id": "user:" + m["id"]})
+    user_rows = [entered_row(m) for m in json.load(open(edits_file)).get("added", [])]
     all_rows += user_rows
     per_site["you"] = len(user_rows)
+# Medications typed from paper records (e.g. a handwritten office chart): local/meds_manual*.json,
+# a list in the same shape as med_edits.json "added", each with its own "source".
+for mf in sorted(glob.glob(os.path.join(local_dir, "meds_manual*.json"))):
+    for m in json.load(open(mf)):
+        src = m.get("source", "paper")
+        all_rows.append(entered_row(m, src, "typed from paper records", "manual:"))
+        per_site[src] += 1
 by_req = {}
 for x in disp_rows:
     if x["status"] == "completed" and x["date"]:

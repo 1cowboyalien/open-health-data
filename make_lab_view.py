@@ -1423,6 +1423,12 @@ if os.path.exists(img_json):
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfusion_view.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "swelling_view.js")).read() + "\n"
              + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "imaging_view.js")).read())
+    # PET (Library → Imaging → PET; pet_view.js): only if local/imaging/pet/pet.json exists (made outside this repo: scan facts,
+    # our liver and brain numbers, the turning whole-body pictures served from local/imaging/pet/*.jpg)
+    pet_json = os.path.join(os.path.dirname(out), "imaging", "pet", "pet.json")
+    if os.path.exists(pet_json):
+        imgjs += ("\nconst PET_DATA=" + open(pet_json).read().strip().replace("</", "<\\/") + ";\n"
+                  + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pet_view.js")).read())
 # Procedures (Library → Procedures): only if local/procedures/procedures.json exists. It is made outside this repo
 # (procedures, devices, hospital stays, visits, radiation fractions, with their sources); drawn by procedures_view.js.
 proc_json = os.path.join(os.path.dirname(out), "procedures", "procedures.json")

@@ -7,7 +7,8 @@ Usage:
     python3 serve_viewer.py --port 8800
 
 - Serves only local/labs.html (no folder listing, no other files), plus the imaging viewer's files:
-  GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps) and .obj (3D lesion models).
+  GET /imaging/<path> from local/imaging/ only, only .nii.gz (scans, outlines, dose maps), .obj (3D lesion models)
+  and .jpg (PET whole-body pictures, local/imaging/pet/).
 - Phone start screen: GET /phone/model.json = local/phone/model.json (make_phone_model.py), nothing else from local/phone/.
 - Pathology slide photos: GET /pathology/<path> from local/pathology/ only, only .jpg (plus <case>/spots/*.json, the automatic
   nucleus spots, and <case>/masks/*.json, the automatic tissue maps).
@@ -94,7 +95,7 @@ LOCAL = os.path.join(HERE, "local")
 PAGE = os.path.join(LOCAL, "labs.html")
 EDITS = os.path.join(LOCAL, "med_edits.json")
 HIST = os.path.join(LOCAL, "edits_history")
-IMG_TYPES = (".nii.gz", ".obj")
+IMG_TYPES = (".nii.gz", ".obj", ".jpg")   # .jpg: the PET whole-body pictures (local/imaging/pet/)
 KEEP = 300
 PHOTO_EDITS = os.path.join(LOCAL, "photos", "photo_edits.json")
 
@@ -435,7 +436,7 @@ class Handler(BaseHTTPRequestHandler):
             base = os.path.realpath(os.path.join(LOCAL, "imaging"))
             f = os.path.realpath(os.path.join(base, rel))
             if (f.startswith(base + os.sep) and f.endswith(IMG_TYPES) and os.path.isfile(f)):
-                return self.send(200, open(f, "rb").read(), "application/octet-stream")
+                return self.send(200, open(f, "rb").read(), "image/jpeg" if f.endswith(".jpg") else "application/octet-stream")
             return self.send(404, {"error": "not found"})
         if path == "/phone/model.json":   # phone start screen 3D model (make_phone_model.py), the one file in local/phone/
             f = os.path.join(LOCAL, "phone", "model.json")
